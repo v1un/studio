@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), and world facts.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, and series-specific context.
  *
  * - generateNextScene - A function that takes the current story state and user input, and returns the next scene and updated state.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
@@ -90,13 +90,14 @@ const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
   storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, etc.).'),
+  seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
+  seriesStyleGuide: z.string().optional().describe('A brief style guide for the series to maintain tone and themes.'),
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchemaInternal>;
 
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
   formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, and objectives."),
-  // formattedActiveQuestsString: z.string().describe("Pre-formatted string of active quest descriptions."), // Removed as quests are now more structured
 });
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
@@ -158,6 +159,10 @@ const prompt = ai.definePrompt({
   output: {schema: GenerateNextSceneOutputSchemaInternal},
   tools: [lookupLoreTool],
   prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
+This story is set in the universe of: {{seriesName}}.
+{{#if seriesStyleGuide}}
+Series Style Guide: {{seriesStyleGuide}}
+{{/if}}
 
 Current Scene:
 {{currentScene}}
@@ -204,7 +209,7 @@ Known World Facts:
 
 Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. An item's 'equipSlot' property determines where it can go. 'ring' items can go in 'ring1' or 'ring2'.
 
-If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore, use the 'lookupLoreTool' to get more information about it. Integrate this information naturally into your response if relevant.
+If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore *within the "{{seriesName}}" universe*, use the 'lookupLoreTool' (providing the current 'seriesName' to it) to get more information about it. Integrate this information naturally into your response if relevant.
 
 Based on the current scene, player's input, and detailed story state, generate the next scene.
 Describe any quest-related developments (new quests, progress, completion, rewards) clearly in the \`nextScene\` text.
@@ -233,7 +238,7 @@ Crucially, you must also update the story state. This includes:
   - The 'updatedStoryState.equippedItems' object must include all 10 slots, with 'null' for empty ones.
 - Quests:
   - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects. Each quest object must include \`id: string\`, \`description: string\`, and \`status: 'active' | 'completed'\`.
-  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration"); if no category is clear, omit the \`category\` field. If the quest is complex, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`. Narrate this new quest in \`nextScene\`.
+  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`. Narrate this new quest in \`nextScene\`.
   - If an existing quest in \`quests\` is progressed:
     - If it has \`objectives\`, update the \`isCompleted\` status of relevant objectives to \`true\`.
     - You can update the main quest \`description\` if needed.
@@ -245,13 +250,13 @@ Crucially, you must also update the story state. This includes:
   - Ensure quest IDs are unique.
   - If a quest's \`category\` is not applicable, omit the field. If objectives are not needed, omit the \`objectives\` array. If a completed quest has no specific rewards, omit the \`rewards\` field.
 - World Facts:
-  - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment.
+  - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment within the "{{seriesName}}" context.
   - **Adding Facts**: If the character makes a new, significant observation or learns a piece of information relevant to the immediate situation that isn't broad enough for the lorebook, add it as a string to \`worldFacts\`.
   - **Modifying Facts**: If an existing fact needs refinement based on new developments, you can suggest replacing the old fact with a new one (effectively removing the old and adding the new).
   - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes), you can remove it from the \`worldFacts\` array.
   - **Narrate Changes**: If you add, modify, or remove a world fact in a way that the character would perceive or that's significant for the player to know, briefly mention this in the \`nextScene\` (e.g., "You now realize the guard captain is missing," or "The strange humming sound from the basement has stopped.").
 
-The next scene should logically follow the player's input and advance the narrative.
+The next scene should logically follow the player's input and advance the narrative, respecting the style and lore of {{seriesName}}.
 Ensure your entire response strictly adheres to the JSON schema for the output.
 The 'updatedStoryState.character' must include all fields required by its schema.
 The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
@@ -276,7 +281,24 @@ const generateNextSceneFlow = ai.defineFlow(
       formattedQuestsString: formattedQuestsString,
     };
 
-    const {output} = await prompt(promptPayload);
+    // Logic for calling lookupLoreTool needs to be adapted if it's directly used with seriesName.
+    // Currently, the prompt guides the AI to use the tool, and the tool itself needs to be made series-aware if not already.
+    // This example assumes the tool is called by the AI model based on prompt instructions.
+    // If the tool call needs seriesName, the prompt's instruction to use the tool should specify how seriesName is provided.
+    // The prompt above tells the AI to provide seriesName when using lookupLoreTool.
+
+    const {output} = await prompt(promptPayload, {
+        tools: [
+            // Ensure lookupLoreTool is correctly configured to accept seriesName if needed by its schema
+            // or if it's part of its internal logic for context.
+            // For now, we assume the tool's Zod schema (`LoreLookupInputSchema` in lore-tool.ts) is updated.
+            ai.tool(lookupLoreTool, async (toolInput) => {
+                // The AI should be providing 'seriesName' in its call to the tool.
+                // If not, we inject it here from the flow's input.
+                return lookupLoreTool({...toolInput, seriesName: input.seriesName});
+            }),
+        ],
+    });
 
     if (output?.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
@@ -331,8 +353,7 @@ const generateNextSceneFlow = ai.defineFlow(
                 obj.description = "Objective details missing";
             }
           });
-
-          // Process rewards
+          
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
             if (typeof quest.rewards.experiencePoints === 'number') {

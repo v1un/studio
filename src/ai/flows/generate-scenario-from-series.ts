@@ -5,16 +5,16 @@
  * @fileOverview A Genkit flow for generating an initial game scenario based on a real-life series.
  * This includes the starting scene, character state (potentially based on user input for name/class),
  * initial inventory, quests (with objectives, categories, but no rewards initially), world facts,
- * and a set of pre-populated lorebook entries relevant to the series.
+ * a set of pre-populated lorebook entries relevant to the series, and a brief series style guide.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
  * - GenerateScenarioFromSeriesInput - Input type (series name, optional character name/class).
- * - GenerateScenarioFromSeriesOutput - Output type (scene, story state, initial lore).
+ * - GenerateScenarioFromSeriesOutput - Output type (scene, story state, initial lore, style guide).
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType } from '@/types/story'; // Removed QuestObjectiveType, QuestRewardsType as they are part of QuestType
+import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
@@ -64,7 +64,7 @@ const QuestObjectiveSchemaInternal = z.object({
   isCompleted: z.boolean().describe("Whether this specific objective is completed (should be false for initial quests).")
 });
 
-const QuestRewardsSchemaInternal = z.object({ // This schema is for potential rewards, not used for initial quests.
+const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
   items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded.")
 }).describe("Rewards for completing the quest. This field should be omitted for initial quests as they are not yet completed.");
@@ -104,6 +104,7 @@ const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character.'),
   storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any).'),
   initialLoreEntries: z.array(RawLoreEntrySchemaInternal).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
+  seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
 });
 export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFromSeriesOutputSchemaInternal>;
 
@@ -134,6 +135,7 @@ Your goal is to generate:
     *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore and character, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest", "Personal Goal") – if no category is clear, omit the 'category' field. For added depth, if a quest is complex, provide an array of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. **The 'rewards' field for these initial 'active' quests must be omitted.** These quests should provide clear initial direction.
     *   'worldFacts': An array of 3-5 key 'worldFacts' (strings) about the "{{seriesName}}" universe, particularly those relevant to the character's starting situation or the immediate environment.
 3.  A list of 6-8 'initialLoreEntries'. Each entry an object with 'keyword', 'content', and optional 'category'. **If 'category' is not applicable for a lore entry, omit the field.** Ensure entries are accurate and relevant to the character and starting scenario.
+4.  A 'seriesStyleGuide' field: Provide a very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the "{{seriesName}}" series (e.g., for "Naruto": 'Ninja world, themes of friendship, perseverance, and overcoming adversity, with mystical martial arts (jutsu) and powerful tailed beasts.' or for "Death Note": 'Psychological thriller, themes of justice, morality, and the corrupting nature of power, featuring a supernatural notebook that kills anyone whose name is written in it.'). This guide will help maintain consistency in future scene generation. If the series is very generic or a distinct style is hard to summarize concisely, this field can be omitted.
 
 **Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties (id, name, description, and 'equipSlot' if it's equippable gear, otherwise 'equipSlot' omitted).
 
@@ -142,6 +144,7 @@ Make sure all IDs for items and quests are unique.
 The 'equippedItems' object in 'storyState' must include all 10 slots, with 'null' for empty slots.
 The 'quests' array in 'storyState' must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category' and 'objectives'. The 'rewards' field must be omitted for initial 'active' quests.
 Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable) if provided, or omitted if appropriate and allowed by the schema. For optional string fields like 'Item.equipSlot' or 'RawLoreEntry.category' or 'Quest.category', omit the field if not applicable.
+If 'seriesStyleGuide' is not generated (e.g., for very obscure series where a concise guide is hard to form), omit the field.
 `,
 });
 
@@ -201,7 +204,6 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
              obj.description = "Objective details missing";
           }
         });
-        // Ensure rewards are not present for initial active quests
         delete (quest as Partial<QuestType>).rewards;
       });
 
@@ -238,9 +240,11 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     } else if (output) {
         output.initialLoreEntries = [];
     }
+    
+    if (output && (output.seriesStyleGuide === null || output.seriesStyleGuide === '')) {
+        delete output.seriesStyleGuide;
+    }
 
     return output!;
   }
 );
-
-    

@@ -79,7 +79,8 @@ export interface GameSession {
   storyHistory: StoryTurn[];
   createdAt: string;
   lastPlayedAt: string;
-  seriesName?: string; 
+  seriesName: string; 
+  seriesStyleGuide?: string;
 }
 
 export interface LoreEntry {
@@ -89,11 +90,40 @@ export interface LoreEntry {
   category?: string; 
   source: 'AI-Generated' | 'System' | 'User-Added' | 'AI-Generated-Scenario-Start';
   createdAt: string; 
-  updatedAt?: string; // Added for edit tracking
+  updatedAt?: string;
 }
 
 export interface RawLoreEntry {
   keyword: string;
   content: string;
   category?: string;
+}
+
+// Input/Output types for AI Flows (already defined in respective flow files, but good to have central reference if needed)
+// For GenerateScenarioFromSeries
+export interface GenerateScenarioFromSeriesInput {
+  seriesName: string;
+  characterNameInput?: string;
+  characterClassInput?: string;
+}
+
+export interface GenerateScenarioFromSeriesOutput {
+  sceneDescription: string;
+  storyState: StructuredStoryState;
+  initialLoreEntries: RawLoreEntry[];
+  seriesStyleGuide?: string; // Added for enhanced tailoring
+}
+
+// For GenerateNextScene
+export interface GenerateNextSceneInput {
+  currentScene: string;
+  userInput: string;
+  storyState: StructuredStoryState;
+  seriesName: string; // Added for enhanced tailoring
+  seriesStyleGuide?: string; // Added for enhanced tailoring
+}
+
+export interface GenerateNextSceneOutput {
+  nextScene: string;
+  updatedStoryState: StructuredStoryState;
 }
