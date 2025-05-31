@@ -76,7 +76,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear), and other item properties like `isConsumable` if applicable.")
 }).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
@@ -88,12 +88,12 @@ const QuestSchemaInternal = z.object({
   rewards: QuestRewardsSchemaInternal.optional()
 });
 
-const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
     npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their significant verbal response."),
     turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
+
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC, e.g., npc_bartender_giles_001."),
     name: z.string().describe("NPC's name."),
@@ -101,7 +101,7 @@ const NPCProfileSchemaInternal = z.object({
     classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain'."),
     firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
-    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's initial relationship with the NPC (e.g., 'Neutral', 'Unknown')."),
+    relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value, typically 0 for Neutral start."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Should be empty or reflect general world knowledge if pre-populated and not yet met."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Should be empty or omitted for initial scenario."),
     lastKnownLocation: z.string().optional().describe("Last known location of the NPC. If pre-populated and not met, this could be their canonical location."),
@@ -166,9 +166,9 @@ Based on the theme and any user suggestions, generate the following:
     -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** If items are consumable (like potions), set \`isConsumable: true\` and provide an \`effectDescription\`. If an item is a quest item, set \`isQuestItem: true\` and optionally \`relevantQuestId\`.
     -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
     -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'.
-    -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable to reward items. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
+    -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear), and other relevant item properties like \`isConsumable\`, \`effectDescription\`. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
     -   One or two initial 'worldFacts'.
-    -   'trackedNPCs': If any significant NPCs (e.g., named characters, quest givers) are introduced in the initial scene, create profiles for them in this array. Each NPC profile needs a unique 'id', 'name', 'description', initial 'relationshipStatus' (e.g., 'Neutral' or 'Unknown'), 'firstEncounteredLocation' (current location), 'firstEncounteredTurnId' (use "initial_turn_0"), and 'knownFacts' (initially an empty array or one or two basic facts if revealed). 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId' can be omitted or empty for initial NPCs. 'seriesContextNotes' is usually not applicable here.
+    -   'trackedNPCs': If any significant NPCs (e.g., named characters, quest givers) are introduced in the initial scene, create profiles for them in this array. Each NPC profile needs a unique 'id', 'name', 'description', initial numerical 'relationshipStatus' (e.g., 0 for Neutral), 'firstEncounteredLocation' (current location), 'firstEncounteredTurnId' (use "initial_turn_0"), and 'knownFacts' (initially an empty array or one or two basic facts if revealed). 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId' can be omitted or empty for initial NPCs. 'seriesContextNotes' is usually not applicable here.
 
 Your entire response must strictly follow the JSON schema defined for the output.
 The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', 'worldFacts', and 'trackedNPCs'.
@@ -176,7 +176,7 @@ The 'character' object must have all fields required by its schema, including 's
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
 The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category', 'objectives', and 'rewards'.
 For items in inventory, equipped, or as rewards, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
-The 'trackedNPCs' array should contain NPCProfile objects.
+The 'trackedNPCs' array should contain NPCProfile objects, with 'relationshipStatus' as a number.
 `,
 });
 
@@ -294,7 +294,6 @@ const generateStoryStartFlow = ai.defineFlow(
               if ((newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
                 delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
               }
-              // Ensure new item properties are not present or undefined for equipped items, as they are less likely to be consumable/quest items while equipped.
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
@@ -303,11 +302,10 @@ const generateStoryStartFlow = ai.defineFlow(
         }
         output.storyState.equippedItems = newEquippedItems as any;
 
-        // NPC Tracker post-processing
         output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
         const npcIdSet = new Set<string>();
         output.storyState.trackedNPCs.forEach((npc, index) => {
-            if (!npc.id) { // Generate ID if missing
+            if (!npc.id) {
                 let baseId = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
                 let newId = baseId;
                 let counter = 0;
@@ -316,7 +314,7 @@ const generateStoryStartFlow = ai.defineFlow(
                 }
                 npc.id = newId;
             }
-            while(npcIdSet.has(npc.id)){ // Ensure ID is unique even if AI provided one
+            while(npcIdSet.has(npc.id)){ 
                  let baseId = npc.id;
                  let counter = 0;
                  let tempNewId = npc.id;
@@ -329,7 +327,7 @@ const generateStoryStartFlow = ai.defineFlow(
 
             npc.name = npc.name || "Unnamed NPC";
             npc.description = npc.description || "No description provided.";
-            npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
+            npc.relationshipStatus = typeof npc.relationshipStatus === 'number' ? npc.relationshipStatus : 0; // Default to 0 (Neutral)
             npc.knownFacts = npc.knownFacts ?? [];
             npc.dialogueHistory = npc.dialogueHistory ?? [];
             
@@ -338,12 +336,9 @@ const generateStoryStartFlow = ai.defineFlow(
             npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
             npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
 
-
             if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
             if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
-            // Do not delete firstEncounteredTurnId
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
-            // Do not delete lastSeenTurnId
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
         });
     }

@@ -73,7 +73,8 @@ export interface Quest {
   updatedAt?: string;
 }
 
-export type NPCRelationshipStatus = 'Friendly' | 'Neutral' | 'Hostile' | 'Allied' | 'Cautious' | 'Unknown';
+// NPCRelationshipStatus enum is removed as relationshipStatus is now a number.
+// UI will map numbers to descriptive labels.
 
 export interface NPCDialogueEntry {
   playerInput?: string;
@@ -88,7 +89,7 @@ export interface NPCProfile {
   classOrRole?: string; // e.g., "Merchant", "Guard Captain"
   firstEncounteredLocation?: string;
   firstEncounteredTurnId?: string; // ID of the StoryTurn when first met
-  relationshipStatus: NPCRelationshipStatus;
+  relationshipStatus: number; // Numerical score, e.g., -100 (Hostile) to 100 (Allied), 0 is Neutral.
   knownFacts: string[]; // Specific pieces of information player has learned
   dialogueHistory?: NPCDialogueEntry[]; // Logs key interaction moments
   lastKnownLocation?: string;

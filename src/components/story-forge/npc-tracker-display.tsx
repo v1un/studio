@@ -2,37 +2,38 @@
 "use client";
 
 import * as React from "react";
-import type { NPCProfile, NPCDialogueEntry, NPCRelationshipStatus } from "@/types/story";
+import type { NPCProfile, NPCDialogueEntry } from "@/types/story";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, UserCogIcon, CircleHelpIcon } from "lucide-react";
+import { Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface NPCTrackerDisplayProps {
   trackedNPCs: NPCProfile[];
   currentTurnId: string; // To determine "last seen" relative freshness
 }
 
-const getRelationshipBadgeVariant = (status: NPCRelationshipStatus): "default" | "secondary" | "destructive" | "outline" => {
-  switch (status) {
-    case 'Friendly':
-    case 'Allied':
-      return 'default'; // Uses primary color
-    case 'Hostile':
-      return 'destructive';
-    case 'Neutral':
-    case 'Cautious':
-      return 'secondary';
-    case 'Unknown':
-    default:
-      return 'outline';
-  }
+interface RelationshipInfo {
+  label: string;
+  variant: "default" | "secondary" | "destructive" | "outline";
+  icon?: React.ElementType;
+}
+
+const getRelationshipInfo = (score: number): RelationshipInfo => {
+  if (score <= -75) return { label: "Arch-Nemesis", variant: "destructive", icon: TrendingDown };
+  if (score <= -25) return { label: "Hostile", variant: "destructive", icon: TrendingDown };
+  if (score < 25) return { label: "Neutral", variant: "secondary", icon: Minus };
+  if (score < 75) return { label: "Friendly", variant: "default", icon: TrendingUp };
+  return { label: "Staunch Ally", variant: "default", icon: TrendingUp }; // Consider a different primary/accent color for very high scores
 };
+
 
 const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, currentTurnId }) => {
   const isLastSeenCurrent = npc.lastSeenTurnId === currentTurnId;
+  const relationshipInfo = getRelationshipInfo(npc.relationshipStatus);
+  const RelationshipIcon = relationshipInfo.icon || HeartHandshakeIcon;
 
   return (
     <AccordionItem value={npc.id} className="border-b-0">
@@ -43,8 +44,9 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                 <span className="text-lg font-semibold">{npc.name}</span>
                 {npc.classOrRole && <Badge variant="outline" className="ml-2 text-xs">{npc.classOrRole}</Badge>}
             </div>
-            <Badge variant={getRelationshipBadgeVariant(npc.relationshipStatus)} className="text-xs">
-                {npc.relationshipStatus}
+            <Badge variant={relationshipInfo.variant} className="text-xs">
+                <RelationshipIcon className="w-3 h-3 mr-1"/>
+                {relationshipInfo.label} ({npc.relationshipStatus})
             </Badge>
         </div>
       </AccordionTrigger>
@@ -131,7 +133,6 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
     );
   }
   
-  // Sort NPCs by name for consistent display
   const sortedNPCs = [...trackedNPCs].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
@@ -144,7 +145,7 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
           Profiles of significant characters encountered in your story.
         </CardDescription>
       </CardHeader>
-      <CardContent className="p-0 sm:p-2"> {/* Remove padding for accordion to use full width */}
+      <CardContent className="p-0 sm:p-2"> 
         <Accordion type="multiple" className="w-full space-y-1">
           {sortedNPCs.map((npc) => (
             <NPCEntry key={npc.id} npc={npc} currentTurnId={currentTurnId} />

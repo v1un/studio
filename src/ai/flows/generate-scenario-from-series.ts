@@ -94,12 +94,12 @@ const QuestSchemaInternal = z.object({
   rewards: QuestRewardsSchemaInternal.optional()
 });
 
-const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
     npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their significant verbal response."),
     turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
+
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC, e.g., npc_series_charactername_001."),
     name: z.string().describe("NPC's name."),
@@ -107,7 +107,7 @@ const NPCProfileSchemaInternal = z.object({
     classOrRole: z.string().optional().describe("e.g., 'Hokage', 'Soul Reaper Captain', 'Keyblade Master'."),
     firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, their typical location if pre-populated, or a general description like 'Known from series lore' if not a specific place."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
-    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's initial relationship with the NPC (e.g., 'Neutral', 'Unknown', or specific to series context)."),
+    relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value based on series context or 0 for Neutral for OCs."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player would know initially about this NPC based on the series, or empty if an OC. If this NPC is pre-populated and not directly in the scene, these facts should reflect general world knowledge/rumors, NOT direct player character knowledge from interaction."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Should be empty or omitted for initial scenario."),
     lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup if not directly in scene, or their current canonical location if different. If in scene, this is the current location."),
@@ -123,7 +123,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion, including item details like `isConsumable`). These quests should be compelling and provide clear direction."),
   worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', 'relationshipStatus', 'firstEncounteredLocation' (their canonical location if not in scene), 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts' (general world knowledge if not in scene), and optionally 'seriesContextNotes'. Dialogue history should be empty.")
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation' (their canonical location if not in scene), 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts' (general world knowledge if not in scene), and optionally 'seriesContextNotes'. Dialogue history should be empty.")
 });
 
 const RawLoreEntrySchemaInternal = z.object({
@@ -257,12 +257,12 @@ Generate ONLY:
 1. 'trackedNPCs': A list of NPC profiles.
     - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
         - 'firstEncounteredLocation' MUST be '{{currentLocation}}' (the Player's Starting Location).
-        - 'relationshipStatus' should be based on their initial interaction in the scene (e.g., 'Neutral', 'Hostile if attacking').
+        - 'relationshipStatus' (numerical score, e.g., 0 for Neutral, 50 for Friendly based on initial interaction).
         - 'knownFacts' can include details observed by the player character in the 'Initial Scene', or be empty if no specific facts are revealed directly.
         - 'lastKnownLocation' MUST be '{{currentLocation}}'.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): You MAY also include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe who are NOT in the 'Initial Scene'.
         - 'firstEncounteredLocation': Set this to their canonical or widely-known location from series lore (e.g., "Hogwarts Castle", "The Jedi Temple", "Their shop in the Market District"). DO NOT use '{{currentLocation}}' for these NPCs.
-        - 'relationshipStatus': Typically 'Unknown' or 'Neutral' towards the player character, unless a strong canonical reason dictates otherwise (e.g. a known villain to a hero).
+        - 'relationshipStatus' (numerical score): Typically 0 (Neutral) towards the player character, unless a strong canonical reason dictates otherwise (e.g. a known villain to a hero might be -50).
         - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
         - 'lastKnownLocation': Set this to their canonical or widely-known location, similar to their 'firstEncounteredLocation'.
     - For ALL NPCs (both in-scene and pre-populated):
@@ -272,7 +272,7 @@ Generate ONLY:
         - 'lastSeenTurnId' MUST be "initial_turn_0".
         - 'dialogueHistory' should be empty or omitted.
         - 'seriesContextNotes' (optional, for major characters, about their canon role).
-Adhere strictly to the JSON schema. Ensure NPC IDs are unique. Ensure all required fields for NPCProfile are present.`,
+Adhere strictly to the JSON schema. Ensure NPC IDs are unique. Ensure all required fields for NPCProfile are present, and 'relationshipStatus' is a number.`,
 });
 
 
@@ -508,7 +508,6 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
             if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
             }
-             // Ensure new item properties are not present or undefined for equipped items
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
@@ -533,7 +532,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
              let baseId = npc.id;
              let counter = 0;
              let tempNewId = npc.id;
-             while(npcIdSet.has(tempNewId)) { // Check against already processed in this loop
+             while(npcIdSet.has(tempNewId)) { 
                 tempNewId = `${baseId}_u${counter++}`;
              }
              npc.id = tempNewId;
@@ -542,7 +541,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
           npc.name = npc.name || "Unnamed NPC";
           npc.description = npc.description || "No description provided.";
-          npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
+          npc.relationshipStatus = typeof npc.relationshipStatus === 'number' ? npc.relationshipStatus : 0; // Default to 0 (Neutral)
           npc.knownFacts = npc.knownFacts ?? [];
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           

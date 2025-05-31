@@ -88,12 +88,12 @@ const QuestSchemaInternal = z.object({
   rewards: QuestRewardsSchemaInternal.optional()
 });
 
-const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
     npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their significant verbal response."),
     turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
+
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC. If creating a new NPC profile, make this unique (e.g., npc_[name]_[unique_suffix]). If updating, use existing ID."),
     name: z.string().describe("NPC's name."),
@@ -101,7 +101,7 @@ const NPCProfileSchemaInternal = z.object({
     classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain', 'Mysterious Stranger'."),
     firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met. Set only when creating new profile."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met. Set only when creating new profile."),
-    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's relationship with the NPC. Update based on interactions."),
+    relationshipStatus: z.number().describe("Numerical score representing the player's relationship with the NPC (e.g., -100 Hostile, 0 Neutral, 100 Allied). Update based on interactions."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Add new facts as they are discovered."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Add new significant dialogues."),
     lastKnownLocation: z.string().optional().describe("Last known location of the NPC. Update if they move or are seen elsewhere."),
@@ -205,7 +205,14 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         return "None known or tracked.";
     }
     return npcs.map(npc => {
-        let npcStr = `- ${npc.name} (ID: ${npc.id}, Status: ${npc.relationshipStatus})`;
+        let relationshipLabel = "Unknown";
+        if (npc.relationshipStatus <= -75) relationshipLabel = "Arch-Nemesis";
+        else if (npc.relationshipStatus <= -25) relationshipLabel = "Hostile";
+        else if (npc.relationshipStatus < 25) relationshipLabel = "Neutral";
+        else if (npc.relationshipStatus < 75) relationshipLabel = "Friendly";
+        else if (npc.relationshipStatus >= 75) relationshipLabel = "Staunch Ally";
+
+        let npcStr = `- ${npc.name} (ID: ${npc.id}, Relationship: ${relationshipLabel} [${npc.relationshipStatus}])`;
         if (npc.classOrRole) npcStr += ` [${npc.classOrRole}]`;
         if (npc.lastKnownLocation) npcStr += ` (Last seen: ${npc.lastKnownLocation})`;
         npcStr += `\n  Description: ${npc.description}`;
@@ -309,7 +316,7 @@ Based on the current scene, player's input, and detailed story state, generate t
   - Consult the skill's \`name\` and \`description\` from their profile.
   - Narrate the skill's activation and its immediate consequences clearly.
   - **Purely Narrative Success/Failure:** Based on the skill's nature and the character's relevant stats (e.g., Intelligence for a spell, Dexterity for an agile maneuver, Strength for a powerful blow), you can narrate varying degrees of success or minor complications. For example: "Your Fireball, fueled by your high Intelligence, erupts with great force." or "You attempt to leap across the chasm using your Acrobatics skill; with your impressive Dexterity, you land gracefully. If it were a more difficult jump, you might have stumbled." Do not implement dice rolls; this is for narrative flavor.
-  - Update the \`storyState\` accordingly (e.g., if a skill heals, update \`character.health\`; if it damages an NPC, reflect this in the NPC's state or \`worldFacts\`; if it consumes character mana, update \`character.mana\`).
+  - **Crucially, when a skill is used, its effects as described MUST be reflected in the \`updatedStoryState\`. For example, if a potion heals, \`character.health\` must increase. If a spell damages an NPC, their state (or a relevant \`worldFact\`) must change. If a skill costs mana, \`character.mana\` must decrease.**
 
 **NPC Management & Tracking:**
 - If new, significant NPCs are introduced (named, have dialogue, clear role):
@@ -317,7 +324,7 @@ Based on the current scene, player's input, and detailed story state, generate t
   - Assign a unique 'id' (e.g., "npc_[name in lowercase with underscores]_[timestamp/random suffix]").
   - Set 'name', 'description', 'classOrRole' (if applicable).
   - Set 'firstEncounteredLocation' to 'storyState.currentLocation' and 'firstEncounteredTurnId' to '{{currentTurnId}}'.
-  - Set initial 'relationshipStatus' (e.g., 'Neutral', 'Unknown', or specific like 'Friendly' if established).
+  - Set initial 'relationshipStatus' (numerical score, e.g., 0 for Neutral, or a specific starting value like -10 if they are initially wary).
   - 'knownFacts' can start empty or with 1-2 initial series-based facts.
   - 'seriesContextNotes' can be a brief note on their canon role if applicable.
   - Set 'lastKnownLocation' to 'storyState.currentLocation' and 'lastSeenTurnId' to '{{currentTurnId}}'.
@@ -325,8 +332,8 @@ Based on the current scene, player's input, and detailed story state, generate t
 - If interacting with an existing NPC from 'storyState.trackedNPCs' (match by name):
   - Update their profile in 'updatedStoryState.trackedNPCs' with their existing ID.
   - If new details about their appearance or demeanor are revealed, update 'description'.
-  - **Relationship Dynamics:** Based on the interaction, update 'relationshipStatus' more dynamically. Significant positive actions (e.g., helping an NPC, completing a quest for them) should improve it (e.g., Neutral to Friendly). Hostile actions or betrayals should worsen it (e.g., Neutral to Hostile). Narrate these shifts subtly if appropriate.
-  - **NPC Memory & Consistency:** NPCs should demonstrate memory. Refer to their \`knownFacts\` about the player/world and their \`dialogueHistory\` (if available and relevant) to inform their current dialogue and reactions. An NPC who was previously helped should be more welcoming.
+  - **Relationship Dynamics:** NPC \`relationshipStatus\` is a numerical score (e.g., -100 Hostile, 0 Neutral, 100 Allied). Based on the player's interactions, you should propose an update to this numerical score in \`updatedStoryState.trackedNPCs\`. For example, completing a quest for an NPC might increase it by +20 or +30. Betraying them might decrease it by -40. Narrate significant shifts in perceived relationship if the score crosses a major threshold (e.g., from Neutral to Friendly).
+  - **NPC Memory & Consistency:** NPCs should demonstrate memory. Refer to their \`knownFacts\` about the player/world and their \`dialogueHistory\` (if available and relevant) to inform their current dialogue and reactions. An NPC who was previously helped should be more welcoming. NPCs should not contradict previously established information about themselves or the world, as recorded in their \`knownFacts\` or past \`dialogueHistory\`.
   - If the player learns new, distinct information directly about the NPC, add it to 'knownFacts' (avoid duplicates).
   - If there's key dialogue, consider adding an entry to 'dialogueHistory': { playerInput: "{{userInput}}", npcResponse: "Relevant NPC quote", turnId: "{{currentTurnId}}" }.
   - If their location changes, update 'lastKnownLocation'.
@@ -341,8 +348,8 @@ Based on the current scene, player's input, and detailed story state, generate t
 **Item Interaction & Utility:**
 - **Using Consumable Items:** If the player's input indicates they are using an item from their \`inventory\` and that item has \`isConsumable: true\`:
   - Narrate the item being consumed.
-  - Remove one instance of the item from the \`updatedStoryState.inventory\`. Ensure the item's ID is correctly targeted for removal.
-  - Apply its effects based on its \`effectDescription\`. This might involve updating \`character.health\`, \`character.mana\`, adding a temporary \`worldFact\` (e.g., "Character is invisible for a short while"), or other described outcomes.
+  - Remove one instance of the item from the \`updatedStoryState.inventory\`.
+  - Apply its effects based on its \`effectDescription\`. This might involve updating \`character.health\`, \`character.mana\`, adding a temporary \`worldFact\` (e.g., "Character is invisible for a short while"), or other described outcomes. **Ensure these state changes are reflected in \`updatedStoryState\`**.
 - **Using Key/Quest Items:** If the player uses an item from \`inventory\` that has \`isQuestItem: true\` (and potentially a \`relevantQuestId\`):
   - Evaluate if the context of usage is appropriate for the item's purpose (e.g., using a specific key on the correct door mentioned in a quest).
   - If the usage is correct and relevant to a quest: Narrate the outcome, update the relevant quest \`objectives\` (e.g., mark as completed), and/or add/modify \`worldFacts\`.
@@ -353,16 +360,16 @@ Based on the current scene, player's input, and detailed story state, generate t
 - When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
 - **Branching Quest Objectives:** When a player completes an objective or takes a significant action related to a quest:
   - You may modify the \`description\` of subsequent objectives in that quest to reflect the new situation.
-  - You may add new, logical objectives to the quest if the player's actions open up a new path or complication.
+  - You may add new, logical objectives to the quest if the player's actions open up a new path or complication. If a player's actions create a new logical path or sub-goal for an existing quest, you can add a new objective to that quest's \`objectives\` array.
   - If a player's actions make a current objective impossible or failed, update its status or description and potentially offer an alternative objective or path for the quest.
-- **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences. If a significant \`worldFact\` is added or changed (e.g., 'The ancient artifact is recovered,' 'The bandit leader is defeated'), describe how this impacts the \`currentLocation\`, NPC behaviors, or available dialogue and actions. The world should feel responsive.
+- **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences. If a significant \`worldFact\` is added or changed (e.g., 'The ancient artifact is recovered,' 'The bandit leader is defeated'), describe how this impacts the \`currentLocation\`, NPC behaviors, or available dialogue and actions. The world should feel responsive. Describe tangible consequences or changes in the environment or NPC behavior due to significant \`worldFacts\` updates.
 
 **Character Progression:**
 - **Learning New Skills:** As a reward for completing significant quests, achieving major story milestones, or through specific interactions (e.g., finding a rare tome, being taught by a master NPC), you can award the character a new skill. Add this new skill object (with a unique \`id\`, \`name\`, \`description\`, and series-appropriate \`type\`) to \`updatedStoryState.character.skillsAndAbilities\`. Narrate how the character learned or acquired this new skill.
 - **Stat Increases (Rare):** For exceptionally impactful achievements or the use of powerful, unique artifacts, you may grant a small, permanent increase (e.g., +1) to one of the character's core stats (Strength, Dexterity, etc.). This should be rare. Clearly state the stat and the increase in your narration and update it in \`updatedStoryState.character\`.
 
 Crucially, you must also update the story state. This includes:
-- Character: Update all character fields as necessary.
+- Character: Update all character fields as necessary, **including effects from skills, items, and progression.**
   - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats.
   - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs. Note: The system applies XP from quest rewards automatically, but you can narrate other XP gains.
   - **Skills & Abilities**: The character's \`skillsAndAbilities\` array should be updated if they learn a new skill or an existing one changes. New skills should have a unique \`id\`, \`name\`, \`description\`, and \`type\`.
@@ -407,6 +414,7 @@ Crucially, you must also update the story state. This includes:
   - Ensure 'updatedStoryState.trackedNPCs' contains all previously tracked NPCs, plus any new ones, with their profiles updated as described above.
   - All fields in each NPCProfile must adhere to their schema definitions. 'id' must be unique for new NPCs.
   - For existing NPCs, ensure their 'id' is preserved from the input 'storyState.trackedNPCs'.
+  - **Ensure `relationshipStatus` is a number reflecting the cumulative interactions.**
 
 The next scene should logically follow the player's input and advance the narrative, respecting the style and lore of {{seriesName}}.
 Ensure your entire response strictly adheres to the JSON schema for the output.
@@ -414,7 +422,7 @@ The 'updatedStoryState.character' must include all fields required by its schema
 The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
-The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects.
+The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects, with 'relationshipStatus' as a number.
 The 'activeNPCsInScene' array (if provided) should contain objects with 'name', and optional 'description' and 'keyDialogueOrAction'.
 `,
 });
@@ -450,7 +458,6 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
 
-      // Apply stat increases proposed by AI, defaulting to original if not changed
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
       updatedChar.dexterity = updatedChar.dexterity ?? originalChar.dexterity ?? 10;
       updatedChar.constitution = updatedChar.constitution ?? originalChar.constitution ?? 10;
@@ -470,7 +477,7 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.skillsAndAbilities = updatedChar.skillsAndAbilities ?? originalChar.skillsAndAbilities ?? [];
       const skillIdSet = new Set<string>();
       updatedChar.skillsAndAbilities.forEach((skill, index) => {
-        if (!skill.id || skillIdSet.has(skill.id)) { // Ensure unique ID
+        if (!skill.id || skillIdSet.has(skill.id)) { 
             let baseId = `skill_generated_next_${skill.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
             let newId = baseId;
             let counter = 0;
@@ -486,12 +493,8 @@ const generateNextSceneFlow = ai.defineFlow(
       });
     }
 
-    // General storyState post-processing
      if (output.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
-        // Ensure removed consumable items are actually gone.
-        // This might be tricky if AI doesn't perfectly match item IDs.
-        // For now, trust AI's inventory output but clean item properties.
         output.updatedStoryState.inventory.forEach(item => {
           if (!item.id) {
             item.id = `item_generated_inv_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -540,7 +543,6 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
                   delete (cleanedRewardItem as Partial<ItemType>).equipSlot;
                 }
-                // Add item properties
                 if (cleanedRewardItem.isConsumable === undefined) delete cleanedRewardItem.isConsumable;
                 if (cleanedRewardItem.effectDescription === undefined || cleanedRewardItem.effectDescription === '') delete cleanedRewardItem.effectDescription;
                 if (cleanedRewardItem.isQuestItem === undefined) delete cleanedRewardItem.isQuestItem;
@@ -593,7 +595,6 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
                   delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
                 }
-                 // Ensure new item properties are not present or undefined for equipped items
                 delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
                 delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
                 delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
@@ -602,14 +603,12 @@ const generateNextSceneFlow = ai.defineFlow(
         }
         output.updatedStoryState.equippedItems = newEquippedItems as any;
 
-        // NPC Tracker post-processing
         output.updatedStoryState.trackedNPCs = output.updatedStoryState.trackedNPCs ?? [];
         const npcIdMap = new Map<string, NPCProfileType>();
         const existingNpcIdsFromInput = new Set(input.storyState.trackedNPCs.map(npc => npc.id));
 
         output.updatedStoryState.trackedNPCs.forEach((npc) => {
             let currentNpcId = npc.id;
-            // Ensure ID exists or is unique if new
             if (!currentNpcId || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
                  let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
                  let newId = baseId;
@@ -619,20 +618,25 @@ const generateNextSceneFlow = ai.defineFlow(
                  }
                  currentNpcId = newId;
             }
-            npc.id = currentNpcId; // Assign the final ID
+            npc.id = currentNpcId; 
             
-            if (npcIdMap.has(npc.id)) { // Should ideally not happen if ID generation above is robust
-                // This NPC (with this ID) was already processed from the AI's current output list. Merge or log.
-                // For now, let's skip adding it again to prevent crash, but ideally merge logic or better ID handling by AI
+            if (npcIdMap.has(npc.id)) { 
                 console.warn(`Duplicate NPC ID ${npc.id} encountered in AI output for current turn. Skipping duplicate.`);
                 return; 
             }
             npcIdMap.set(npc.id, npc);
 
-
             npc.name = npc.name || "Unnamed NPC";
             npc.description = npc.description || "No description provided.";
-            npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
+            
+            const originalNpcProfile = input.storyState.trackedNPCs.find(onpc => onpc.id === npc.id);
+            if (typeof npc.relationshipStatus !== 'number') {
+                npc.relationshipStatus = originalNpcProfile?.relationshipStatus ?? 0;
+            } else {
+                 // Cap relationship score
+                npc.relationshipStatus = Math.max(-100, Math.min(100, npc.relationshipStatus));
+            }
+
             npc.knownFacts = npc.knownFacts ?? [];
             npc.dialogueHistory = npc.dialogueHistory ?? [];
             npc.dialogueHistory.forEach(dh => {
@@ -650,7 +654,7 @@ const generateNextSceneFlow = ai.defineFlow(
             }
             
             npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation || input.storyState.currentLocation;
-            npc.lastSeenTurnId = input.currentTurnId; // Always update last seen to current turn
+            npc.lastSeenTurnId = input.currentTurnId; 
             npc.updatedAt = new Date().toISOString();
 
             if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
