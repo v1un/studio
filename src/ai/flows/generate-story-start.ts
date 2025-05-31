@@ -3,6 +3,8 @@
 
 /**
  * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, and initial empty equipment.
+ * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts.
+ * It can be kept for a more generic, non-series specific start if desired, or removed.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
  * - GenerateStoryStartInput - The input type for the generateStoryStart function.
@@ -12,6 +14,8 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import type { EquipmentSlot } from '@/types/story';
+import type { Item as ItemType } from '@/types/story';
+
 
 const EquipSlotEnum = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
@@ -44,17 +48,8 @@ const CharacterProfileSchema = z.object({
   experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100.'),
 });
 
-const EquipmentSlotsSchema = z.record(z.nativeEnum(Object.values({ // Define enum for Zod validation
-  Weapon: 'weapon',
-  Shield: 'shield',
-  Head: 'head',
-  Body: 'body',
-  Legs: 'legs',
-  Feet: 'feet',
-  Hands: 'hands',
-  Neck: 'neck',
-  Ring1: 'ring1',
-  Ring2: 'ring2',
+const EquipmentSlotsSchema = z.record(z.nativeEnum(Object.values({ 
+  Weapon: 'weapon', Shield: 'shield', Head: 'head', Body: 'body', Legs: 'legs', Feet: 'feet', Hands: 'hands', Neck: 'neck', Ring1: 'ring1', Ring2: 'ring2',
 } as const satisfies Record<string, EquipmentSlot>)), ItemSchema.nullable())
   .describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. Initialize all slots to null.");
 
@@ -149,12 +144,17 @@ const generateStoryStartFlow = ai.defineFlow(
         output.storyState.inventory = output.storyState.inventory ?? [];
         output.storyState.activeQuests = output.storyState.activeQuests ?? [];
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
-        // Ensure equippedItems is initialized correctly
-        const defaultEquippedItems: Record<EquipmentSlot, null> = {
+        
+        const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
             weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
         };
-        output.storyState.equippedItems = {...defaultEquippedItems, ...(output.storyState.equippedItems || {})};
-
+        // Ensure all slots are present, merging with AI output
+        const aiEquipped = output.storyState.equippedItems || {};
+        const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
+        for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
+            newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
+        }
+        output.storyState.equippedItems = newEquippedItems;
     }
     return output!;
   }

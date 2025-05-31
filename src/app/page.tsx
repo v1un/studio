@@ -2,10 +2,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { generateStoryStart } from "@/ai/flows/generate-story-start";
-import type { GenerateStoryStartInput } from "@/ai/flows/generate-story-start";
-import { generateNextScene } from "@/ai/flows/generate-next-scene";
-import type { StoryTurn, CharacterProfile, StructuredStoryState, GameSession } from "@/types/story";
+// import { generateStoryStart } from "@/ai/flows/generate-story-start"; // Old flow
+// import type { GenerateStoryStartInput } from "@/ai/flows/generate-story-start"; // Old type
+import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
+import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/ai/flows/generate-scenario-from-series";
+
+import type { StoryTurn, GameSession } from "@/types/story";
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
 import UserInputForm from "@/components/story-forge/user-input-form";
@@ -13,7 +15,7 @@ import StoryControls from "@/components/story-forge/story-controls";
 import CharacterSheet from "@/components/story-forge/character-sheet";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles } from "lucide-react";
-import { clearLorebook } from "@/lib/lore-manager"; // Import clearLorebook
+import { initializeLorebook, clearLorebook } from "@/lib/lore-manager"; 
 import { Button } from "@/components/ui/button";
 
 
@@ -23,11 +25,10 @@ const SESSION_KEY_PREFIX = "storyForgeSession_";
 export default function StoryForgePage() {
   const [storyHistory, setStoryHistory] = useState<StoryTurn[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [isLoadingPage, setIsLoadingPage] = useState(true); // For initial page load
-  const [isLoadingInteraction, setIsLoadingInteraction] = useState(false); // For AI calls
+  const [isLoadingPage, setIsLoadingPage] = useState(true); 
+  const [isLoadingInteraction, setIsLoadingInteraction] = useState(false); 
   const { toast } = useToast();
 
-  // Load session on mount
   useEffect(() => {
     setIsLoadingPage(true);
     const activeId = localStorage.getItem(ACTIVE_SESSION_ID_KEY);
@@ -38,21 +39,22 @@ export default function StoryForgePage() {
           const session: GameSession = JSON.parse(sessionData);
           setStoryHistory(session.storyHistory);
           setCurrentSessionId(session.id);
+          // Assuming lorebook is also tied to session, could re-initialize if needed,
+          // but for now lorebook persists across browser sessions unless cleared by new game.
         } catch (e) {
           console.error("Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
           localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
         }
       } else {
-        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); // Clean up if ID exists but no data
+        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); 
       }
     }
     setIsLoadingPage(false);
   }, []);
 
-  // Save session whenever storyHistory or currentSessionId changes meaningfully
   useEffect(() => {
-    if (isLoadingPage) return; // Don't save during initial load
+    if (isLoadingPage) return; 
 
     if (currentSessionId && storyHistory.length > 0) {
       const sessionKey = `${SESSION_KEY_PREFIX}${currentSessionId}`;
@@ -62,11 +64,14 @@ export default function StoryForgePage() {
       if (existingSessionRaw) {
         try {
           const existingSession: GameSession = JSON.parse(existingSessionRaw);
-          if (JSON.stringify(existingSession.storyHistory) !== JSON.stringify(storyHistory)) {
+          if (JSON.stringify(existingSession.storyHistory) !== JSON.stringify(storyHistory) || 
+              existingSession.seriesName !== storyHistory[0]?.storyStateAfterScene.character.name) { // A bit of a heuristic for change
             sessionToSave = {
               ...existingSession,
               storyHistory: storyHistory,
               lastPlayedAt: new Date().toISOString(),
+              characterName: storyHistory[0].storyStateAfterScene.character.name, // Update character name on save
+              seriesName: existingSession.seriesName, // Retain original series name
             };
           } else if (new Date().getTime() - new Date(existingSession.lastPlayedAt).getTime() > 60000) { 
              sessionToSave = {
@@ -89,19 +94,14 @@ export default function StoryForgePage() {
   const currentTurn = storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null;
   const character = currentTurn?.storyStateAfterScene.character;
 
-  const handleStartStory = async (data: {
-    prompt: string;
-    characterName?: string;
-    characterClass?: string;
-  }) => {
+  const handleStartStoryFromSeries = async (seriesName: string) => {
     setIsLoadingInteraction(true);
     try {
-      const input: GenerateStoryStartInput = {
-        prompt: data.prompt,
-        characterNameInput: data.characterName,
-        characterClassInput: data.characterClass,
-      };
-      const result = await generateStoryStart(input);
+      const input: GenerateScenarioFromSeriesInput = { seriesName };
+      const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
+      
+      initializeLorebook(result.initialLoreEntries);
+
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
         sceneDescription: result.sceneDescription,
@@ -111,28 +111,28 @@ export default function StoryForgePage() {
       const newSessionId = crypto.randomUUID();
       const newSession: GameSession = {
         id: newSessionId,
-        storyPrompt: data.prompt,
+        storyPrompt: `Adventure in the world of: ${seriesName}`, // Use series name as prompt
         characterName: result.storyState.character.name,
         storyHistory: [firstTurn],
         createdAt: new Date().toISOString(),
         lastPlayedAt: new Date().toISOString(),
+        seriesName: seriesName,
       };
 
       localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
       localStorage.setItem(ACTIVE_SESSION_ID_KEY, newSession.id);
-      clearLorebook(); // Clear any previous lorebook for a new game
-
+      
       setStoryHistory([firstTurn]);
       setCurrentSessionId(newSession.id);
       toast({
-        title: "New Adventure Begun!",
-        description: `Character ${newSession.characterName} created.`,
+        title: `Adventure in ${seriesName} Begun!`,
+        description: `Playing as ${newSession.characterName}.`,
       });
     } catch (error) {
-      console.error("Failed to start story:", error);
+      console.error("Failed to start story from series:", error);
       toast({
-        title: "Error Starting Story",
-        description: "The AI encountered an issue. Please try a different prompt.",
+        title: "Error Starting Scenario",
+        description: "The AI encountered an issue creating the scenario. Please try a different series or try again.",
         variant: "destructive",
       });
     }
@@ -143,6 +143,8 @@ export default function StoryForgePage() {
     if (!currentTurn || !currentSessionId) return;
     setIsLoadingInteraction(true);
     try {
+      // generateNextScene import and usage remains the same for now
+      const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
       const result = await generateNextScene({
         currentScene: currentTurn.sceneDescription,
         userInput: userInput,
@@ -171,7 +173,7 @@ export default function StoryForgePage() {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last action undone."});
     } else if (storyHistory.length === 1) {
-      handleRestart();
+      handleRestart(); // If only initial scene exists, restart clears it
     }
   };
 
@@ -180,12 +182,12 @@ export default function StoryForgePage() {
       localStorage.removeItem(`${SESSION_KEY_PREFIX}${currentSessionId}`);
     }
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
-    clearLorebook(); // Also clear the lorebook on restart
+    clearLorebook(); 
     setStoryHistory([]);
     setCurrentSessionId(null);
     toast({
       title: "Story Session Cleared",
-      description: "Let the new adventure begin!",
+      description: "Ready for a new adventure!",
     });
   };
   
@@ -206,7 +208,7 @@ export default function StoryForgePage() {
           Story Forge
         </h1>
         <p className="text-muted-foreground text-lg mt-2">
-          Craft your own epic tales with the power of AI.
+          Forge your legend in worlds you know, or discover new ones.
         </p>
       </header>
 
@@ -219,7 +221,10 @@ export default function StoryForgePage() {
         )}
 
         {!currentSessionId && !isLoadingInteraction && (
-          <InitialPromptForm onSubmit={handleStartStory} isLoading={isLoadingInteraction} />
+          <InitialPromptForm 
+            onSubmitSeries={handleStartStoryFromSeries} // Changed prop name and function
+            isLoading={isLoadingInteraction} 
+          />
         )}
         
         {currentSessionId && currentTurn && (
@@ -230,7 +235,7 @@ export default function StoryForgePage() {
             <StoryControls
               onUndo={handleUndo}
               onRestart={handleRestart}
-              canUndo={storyHistory.length > 0}
+              canUndo={storyHistory.length > 0} // Undo if any history exists
               isLoading={isLoadingInteraction}
             />
             <StoryDisplay
