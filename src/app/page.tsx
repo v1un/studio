@@ -13,6 +13,9 @@ import StoryControls from "@/components/story-forge/story-controls";
 import CharacterSheet from "@/components/story-forge/character-sheet";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles } from "lucide-react";
+import { clearLorebook } from "@/lib/lore-manager"; // Import clearLorebook
+import { Button } from "@/components/ui/button";
+
 
 const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
 const SESSION_KEY_PREFIX = "storyForgeSession_";
@@ -59,14 +62,13 @@ export default function StoryForgePage() {
       if (existingSessionRaw) {
         try {
           const existingSession: GameSession = JSON.parse(existingSessionRaw);
-          // Check if storyHistory actually changed to avoid redundant saves
           if (JSON.stringify(existingSession.storyHistory) !== JSON.stringify(storyHistory)) {
             sessionToSave = {
               ...existingSession,
               storyHistory: storyHistory,
               lastPlayedAt: new Date().toISOString(),
             };
-          } else if (new Date().getTime() - new Date(existingSession.lastPlayedAt).getTime() > 60000) { // Or if lastPlayedAt is old, update it
+          } else if (new Date().getTime() - new Date(existingSession.lastPlayedAt).getTime() > 60000) { 
              sessionToSave = {
               ...existingSession,
               lastPlayedAt: new Date().toISOString(),
@@ -74,11 +76,9 @@ export default function StoryForgePage() {
           }
         } catch (e) {
           console.error("Error parsing existing session for update:", e);
-          // Potentially corrupted data, avoid saving over it unless it's a new session start
         }
       }
-      // If sessionToSave is prepared (meaning it's an update or forced update), save it.
-      // Initial save is handled by handleStartStory.
+      
       if (sessionToSave) {
         localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
       }
@@ -120,6 +120,7 @@ export default function StoryForgePage() {
 
       localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
       localStorage.setItem(ACTIVE_SESSION_ID_KEY, newSession.id);
+      clearLorebook(); // Clear any previous lorebook for a new game
 
       setStoryHistory([firstTurn]);
       setCurrentSessionId(newSession.id);
@@ -154,7 +155,6 @@ export default function StoryForgePage() {
         userInputThatLedToScene: userInput,
       };
       setStoryHistory((prevHistory) => [...prevHistory, nextTurnItem]);
-      // Save will be handled by useEffect
     } catch (error) {
       console.error("Failed to generate next scene:", error);
       toast({
@@ -170,9 +170,7 @@ export default function StoryForgePage() {
     if (storyHistory.length > 1) {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last action undone."});
-      // Save will be handled by useEffect
     } else if (storyHistory.length === 1) {
-      // Undoing the very first turn means restarting the session
       handleRestart();
     }
   };
@@ -182,6 +180,7 @@ export default function StoryForgePage() {
       localStorage.removeItem(`${SESSION_KEY_PREFIX}${currentSessionId}`);
     }
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
+    clearLorebook(); // Also clear the lorebook on restart
     setStoryHistory([]);
     setCurrentSessionId(null);
     toast({

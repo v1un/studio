@@ -3,8 +3,7 @@ export interface Item {
   id: string;
   name: string;
   description: string;
-  equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring'; // Simplified for now, 'ring' can be generic
-  // Future: type, rarity, effects, equipSlot etc.
+  equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
 }
 
 export interface CharacterProfile {
@@ -42,7 +41,7 @@ export interface StructuredStoryState {
   character: CharacterProfile;
   currentLocation: string;
   inventory: Item[];
-  equippedItems: Partial<Record<EquipmentSlot, Item | null>>; // Item object or null if empty
+  equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   activeQuests: string[];
   worldFacts: string[];
 }
@@ -61,4 +60,13 @@ export interface GameSession {
   storyHistory: StoryTurn[];
   createdAt: string;
   lastPlayedAt: string;
+}
+
+export interface LoreEntry {
+  id: string; // unique ID for the entry
+  keyword: string; // The term being defined (e.g., "Blade of Marmora", "Hogwarts")
+  content: string; // The lore description
+  category?: string; // Optional: e.g., "Character", "Location", "Artifact", "Concept"
+  source: 'AI-Generated' | 'System' | 'User-Added'; // Who/what created this entry
+  createdAt: string; // ISO date string
 }
