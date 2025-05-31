@@ -78,6 +78,11 @@ const GenerateNextSceneInputSchema = z.object({
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema>;
 
+// Internal schema for the prompt, extending the main input schema with the pre-formatted string
+const PromptInternalInputSchema = GenerateNextSceneInputSchema.extend({
+  formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
+});
+
 const GenerateNextSceneOutputSchema = z.object({
   nextScene: z.string().describe('The generated text for the next scene.'),
   updatedStoryState: StructuredStoryStateSchema.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, and equipment changes.'),
@@ -104,7 +109,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, Item |
 
 const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
-  input: {schema: GenerateNextSceneInputSchema},
+  input: {schema: PromptInternalInputSchema}, // Use the internal schema
   output: {schema: GenerateNextSceneOutputSchema},
   tools: [lookupLoreTool],
   prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
@@ -129,7 +134,7 @@ Current Character:
   - Charisma: {{storyState.character.charisma}}
 
 Equipped Items:
-{{{formatEquippedItems storyState.equippedItems}}}
+{{{formattedEquippedItemsString}}}
 
 Current Location: {{storyState.currentLocation}}
 
@@ -196,17 +201,26 @@ The 'updatedStoryState.character' must include all fields.
 The 'updatedStoryState.inventory' must be an array of item objects.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 `,
-  helpers: { formatEquippedItems }
+  // Removed helpers: { formatEquippedItems }
 });
 
 const generateNextSceneFlow = ai.defineFlow(
   {
     name: 'generateNextSceneFlow',
-    inputSchema: GenerateNextSceneInputSchema,
+    inputSchema: GenerateNextSceneInputSchema, // Flow's external input schema
     outputSchema: GenerateNextSceneOutputSchema,
   },
-  async input => {
-    const {output} = await prompt(input);
+  async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => { // Type input according to flow's schema
+    const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
+    
+    // Create the payload for the prompt, matching PromptInternalInputSchema
+    const promptPayload = {
+      ...input,
+      formattedEquippedItemsString: formattedEquippedItemsString,
+    };
+
+    const {output} = await prompt(promptPayload);
+
     if (output?.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
@@ -247,3 +261,4 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
+
