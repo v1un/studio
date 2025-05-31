@@ -64,7 +64,7 @@ const QuestObjectiveSchemaInternal = z.object({
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
   items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
-}).describe("Rewards for completing the quest.");
+}).describe("Potential rewards to be given upon quest completion, defined when the quest is created. Omit if no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_main_001' or 'quest_side_witch_forest_003'. Must be unique among all quests."),
@@ -72,7 +72,7 @@ const QuestSchemaInternal = z.object({
   status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed'."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Personal Goal', 'Exploration'). Omit if not clearly classifiable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. Use for more complex quests. If the quest is simple, this can be omitted."),
-  rewards: QuestRewardsSchemaInternal.optional().describe("Optional rewards given upon quest completion. This field should ONLY be present if the quest's status is 'completed'.")
+  rewards: QuestRewardsSchemaInternal.optional() // Description moved to QuestRewardsSchemaInternal
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
@@ -80,7 +80,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status'. Optionally include 'category', a list of 'objectives' (each with 'description' and 'isCompleted'), and 'rewards' (with 'experiencePoints' and/or 'items') if the quest status is 'completed'."),
+  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status'. Optionally include 'category', a list of 'objectives' (each with 'description' and 'isCompleted'), and 'rewards' (which specify what the player will get on completion)."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
 });
 
@@ -102,7 +102,7 @@ const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, equipment changes, and quest updates (including rewards for completed quests).'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, equipment changes, and quest updates. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object.'),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -138,16 +138,18 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
         questStr += `    - ${obj.description} (${obj.isCompleted ? 'Completed' : 'Pending'})\n`;
       });
     }
-    if (q.status === 'completed' && q.rewards) {
-      questStr += "\n  Rewards:\n";
-      if (q.rewards.experiencePoints) {
-        questStr += `    - XP: ${q.rewards.experiencePoints}\n`;
-      }
-      if (q.rewards.items && q.rewards.items.length > 0) {
-        q.rewards.items.forEach(item => {
-          questStr += `    - Item: ${item.name}\n`;
-        });
-      }
+    // Display potential rewards for active quests, and confirmed for completed.
+    if (q.rewards) {
+        const rewardLabel = q.status === 'completed' ? "Rewards Received" : "Potential Rewards";
+        questStr += `\n  ${rewardLabel}:\n`;
+        if (q.rewards.experiencePoints) {
+            questStr += `    - XP: ${q.rewards.experiencePoints}\n`;
+        }
+        if (q.rewards.items && q.rewards.items.length > 0) {
+            q.rewards.items.forEach(item => {
+            questStr += `    - Item: ${item.name}\n`;
+            });
+        }
     }
     return questStr;
   }).join("\n");
@@ -197,7 +199,7 @@ Current Inventory (Unequipped Items):
 Empty
 {{/if}}
 
-Quests:
+Quests (Rewards are pre-defined; they are granted by the system upon completion):
 {{{formattedQuestsString}}}
 
 Known World Facts:
@@ -212,15 +214,16 @@ Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, 
 If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore *within the "{{seriesName}}" universe*, use the 'lookupLoreTool' (providing the current 'seriesName' to it) to get more information about it. Integrate this information naturally into your response if relevant.
 
 Based on the current scene, player's input, and detailed story state, generate the next scene.
-Describe any quest-related developments (new quests, progress, completion, rewards) clearly in the \`nextScene\` text.
+Describe any quest-related developments (new quests, progress, completion) clearly in the \`nextScene\` text.
+When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
 
 Crucially, you must also update the story state. This includes:
 - Character: Update all character fields as necessary.
   - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats.
-  - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs.
+  - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs. Note: The system applies XP from quest rewards automatically, but you can narrate other XP gains.
 - Location: Update if the character moved.
 - Inventory:
-  - If new items are found (including quest rewards): Add them as objects to the \`inventory\` array. Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Describe these new items clearly in the \`nextScene\` text.
+  - If new items are found (excluding pre-defined quest rewards, which are handled by the system): Add them as objects to the \`inventory\` array. Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Describe these new items clearly in the \`nextScene\` text.
   - If items are used, consumed, or lost: Remove them from \`inventory\` or \`equippedItems\` as appropriate.
 - Equipped Items:
   - If the player tries to equip an item:
@@ -237,19 +240,18 @@ Crucially, you must also update the story state. This includes:
   - Ensure an item is either in \`inventory\` OR \`equippedItems\`, never both.
   - The 'updatedStoryState.equippedItems' object must include all 10 slots, with 'null' for empty ones.
 - Quests:
-  - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects. Each quest object must include \`id: string\`, \`description: string\`, and \`status: 'active' | 'completed'\`.
-  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`. Narrate this new quest in \`nextScene\`.
+  - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects. Each quest object must include \`id: string\`, \`description: string\`, and \`status: 'active' | 'completed'\`. It will also include its pre-defined \`rewards\` if any.
+  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`.
+    - **Pre-defined Quest Rewards**: When creating a new quest, you MUST also define a 'rewards' object for it. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object {} for it.
   - If an existing quest in \`quests\` is progressed:
     - If it has \`objectives\`, update the \`isCompleted\` status of relevant objectives to \`true\`.
     - You can update the main quest \`description\` if needed.
     - Narrate the progress in \`nextScene\`. The quest status remains \`'active'\` until fully completed (all essential objectives are done).
-  - **VERY IMPORTANT for quest completion**: When updating objectives: if ALL objectives for a given quest are marked as \`isCompleted: true\`, you MUST then update the parent quest's \`status\` to \`'completed'\`. If a quest is marked \`'completed'\`, you should then consider defining appropriate \`rewards\` for it (experience points and/or items).
+  - **VERY IMPORTANT for quest completion**: When updating objectives: if ALL objectives for a given quest are marked as \`isCompleted: true\`, you MUST then update the parent quest's \`status\` to \`'completed'\`.
   - If an existing quest from \`quests\` is completed: Find the quest object in the \`quests\` array. Update its \`status\` to \`'completed'\`. If it has \`objectives\`, ensure all relevant ones are marked \`isCompleted: true\`. Do NOT remove it from the array. Clearly state the completion in \`nextScene\`.
-    - **Quest Rewards**: If the quest is completed, you can optionally specify \`rewards\` for it within the completed quest object in \`updatedStoryState.quests[...].rewards\`. This object can contain \`experiencePoints: number\` and/or an array of \`items: Item[]\`.
-    - For rewarded items: Each item MUST be a NEW item object with a unique \`id\`, \`name\`, and \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot'. If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
-    - The system will automatically add rewarded items to the character's inventory and apply XP based on the \`rewards\` field you define. Narrate the rewards received in the \`nextScene\`.
+    - **Quest Rewards are Pre-defined**: The system will automatically apply the rewards (XP and items) associated with this quest from its existing \`rewards\` field. You do not need to redefine or specify rewards again here. Your narration should reflect that the quest is done and rewards are obtained.
   - Ensure quest IDs are unique.
-  - If a quest's \`category\` is not applicable, omit the field. If objectives are not needed, omit the \`objectives\` array. If a completed quest has no specific rewards, omit the \`rewards\` field.
+  - If a quest's \`category\` is not applicable, omit the field. If objectives are not needed, omit the \`objectives\` array.
 - World Facts:
   - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment within the "{{seriesName}}" context.
   - **Adding Facts**: If the character makes a new, significant observation or learns a piece of information relevant to the immediate situation that isn't broad enough for the lorebook, add it as a string to \`worldFacts\`.
@@ -262,7 +264,7 @@ Ensure your entire response strictly adheres to the JSON schema for the output.
 The 'updatedStoryState.character' must include all fields required by its schema.
 The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
-The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category', 'objectives', and 'rewards' (for completed quests only).
+The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
 `,
 });
 
@@ -338,6 +340,7 @@ const generateNextSceneFlow = ai.defineFlow(
             }
           });
           
+          // Apply rewards if quest status changes to completed and rewards exist
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
             if (typeof quest.rewards.experiencePoints === 'number') {
@@ -345,8 +348,8 @@ const generateNextSceneFlow = ai.defineFlow(
             }
             if (quest.rewards.items && Array.isArray(quest.rewards.items)) {
               quest.rewards.items.forEach(rewardItem => {
-                const cleanedRewardItem = { ...rewardItem };
-                 if (!cleanedRewardItem.id) {
+                const cleanedRewardItem = { ...rewardItem }; // Clone to avoid mutating original rewards
+                 if (!cleanedRewardItem.id) { // Ensure rewarded items have IDs if AI forgets
                     cleanedRewardItem.id = `item_reward_${Date.now()}_${Math.random().toString(36).substring(7)}`;
                 }
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
@@ -357,12 +360,23 @@ const generateNextSceneFlow = ai.defineFlow(
             }
           }
           
-          if (quest.status !== 'completed' || !quest.rewards || (Object.keys(quest.rewards).length === 0) || (quest.rewards.experiencePoints === undefined && (!quest.rewards.items || quest.rewards.items.length === 0)) ) {
-            delete (quest as Partial<QuestType>).rewards;
-          } else if (quest.rewards) { 
-              if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
-              if (quest.rewards.items === undefined || quest.rewards.items.length === 0) delete quest.rewards.items;
-              if (Object.keys(quest.rewards).length === 0) delete (quest as Partial<QuestType>).rewards;
+          // Clean up quest.rewards object if it's empty or contains only empty/undefined fields
+          if (quest.rewards) {
+            quest.rewards.items = quest.rewards.items ?? []; // Ensure items array exists for cleaning
+             quest.rewards.items.forEach(rewardItem => { // Clean reward items
+                if (!rewardItem.id) {
+                    rewardItem.id = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                }
+                if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
+                    delete (rewardItem as Partial<ItemType>).equipSlot;
+                }
+            });
+            if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0) {
+              delete quest.rewards;
+            } else {
+                if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
+                if (quest.rewards.items.length === 0) delete quest.rewards.items;
+            }
           }
         });
 
@@ -392,7 +406,3 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
-
-    
-
-      

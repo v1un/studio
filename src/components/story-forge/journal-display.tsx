@@ -8,14 +8,14 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox"; 
 import { Label } from "@/components/ui/label"; 
-import { ScrollTextIcon, BookOpenIcon, CheckCircle2Icon, ListChecksIcon, TagIcon, TargetIcon, GiftIcon, StarIcon, ShieldPlusIcon, PackageIcon } from "lucide-react";
+import { ScrollTextIcon, BookOpenIcon, CheckCircle2Icon, ListChecksIcon, TagIcon, TargetIcon, GiftIcon, StarIcon, ShieldPlusIcon, PackageIcon, TrophyIcon } from "lucide-react";
 
 interface JournalDisplayProps {
   quests: Quest[];
   worldFacts: string[];
 }
 
-const QuestRewardsDisplay: React.FC<{ rewards: QuestRewards }> = ({ rewards }) => {
+const QuestRewardsDisplay: React.FC<{ rewards: QuestRewards, status: 'active' | 'completed' }> = ({ rewards, status }) => {
   const hasXP = typeof rewards.experiencePoints === 'number' && rewards.experiencePoints > 0;
   const hasItems = rewards.items && rewards.items.length > 0;
 
@@ -23,10 +23,14 @@ const QuestRewardsDisplay: React.FC<{ rewards: QuestRewards }> = ({ rewards }) =
     return null;
   }
 
+  const rewardLabel = status === 'completed' ? "Rewards Received" : "Potential Rewards";
+  const iconColor = status === 'completed' ? "text-yellow-500" : "text-yellow-400";
+
+
   return (
     <div className="mt-1.5 pl-4 pt-1 border-t border-border/30">
       <h5 className="text-xs font-semibold text-foreground/90 mb-0.5 flex items-center">
-        <GiftIcon className="w-3.5 h-3.5 mr-1 text-yellow-500"/> Rewards:
+        <TrophyIcon className={`w-3.5 h-3.5 mr-1 ${iconColor}`}/> {rewardLabel}:
       </h5>
       <ul className="list-none pl-2 space-y-0.5">
         {hasXP && (
@@ -80,8 +84,8 @@ const QuestItem: React.FC<{ quest: Quest }> = ({ quest }) => {
           ))}
         </ul>
       )}
-      {quest.status === 'completed' && quest.rewards && (
-        <QuestRewardsDisplay rewards={quest.rewards} />
+      {quest.rewards && (Object.keys(quest.rewards).length > 0 && (quest.rewards.experiencePoints || (quest.rewards.items && quest.rewards.items.length > 0) )) && (
+        <QuestRewardsDisplay rewards={quest.rewards} status={quest.status} />
       )}
     </li>
   );
@@ -103,7 +107,7 @@ export default function JournalDisplay({ quests, worldFacts }: JournalDisplayPro
             Active Quests
           </h4>
           {activeQuests.length > 0 ? (
-            <ScrollArea className="h-40 rounded-md border p-3 bg-background/50">
+            <ScrollArea className="h-48 rounded-md border p-3 bg-background/50">
               <ul className="space-y-1">
                 {activeQuests.map((quest) => (
                   <QuestItem key={quest.id} quest={quest} />

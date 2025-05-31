@@ -44,7 +44,7 @@ export interface QuestObjective {
 
 export interface QuestRewards {
   experiencePoints?: number;
-  items?: Item[];
+  items?: Item[]; // Items to be awarded
 }
 
 export interface Quest {
@@ -53,7 +53,8 @@ export interface Quest {
   status: 'active' | 'completed';
   category?: string; 
   objectives?: QuestObjective[];
-  rewards?: QuestRewards;
+  rewards?: QuestRewards; // Potential rewards defined at quest creation
+  updatedAt?: string; // Added in a previous step, keeping it
 }
 
 export interface StructuredStoryState {
@@ -73,7 +74,7 @@ export interface StoryTurn {
 }
 
 export interface GameSession {
-  id: string;
+  id:string;
   storyPrompt: string; 
   characterName: string;
   storyHistory: StoryTurn[];
@@ -111,7 +112,7 @@ export interface GenerateScenarioFromSeriesOutput {
   sceneDescription: string;
   storyState: StructuredStoryState;
   initialLoreEntries: RawLoreEntry[];
-  seriesStyleGuide?: string; // Added for enhanced tailoring
+  seriesStyleGuide?: string;
 }
 
 // For GenerateNextScene
@@ -119,8 +120,8 @@ export interface GenerateNextSceneInput {
   currentScene: string;
   userInput: string;
   storyState: StructuredStoryState;
-  seriesName: string; // Added for enhanced tailoring
-  seriesStyleGuide?: string; // Added for enhanced tailoring
+  seriesName: string;
+  seriesStyleGuide?: string;
 }
 
 export interface GenerateNextSceneOutput {

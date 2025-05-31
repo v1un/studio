@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, and initial quests (with optional objectives, categories, and placeholder for rewards).
+ * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, and initial quests (with optional objectives, categories, and pre-defined rewards).
  * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
@@ -64,8 +64,8 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded.")
-}).describe("Rewards for completing the quest. This field should typically be omitted for initial quests as they are not yet completed.");
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
+}).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_generic_001'."),
@@ -73,7 +73,7 @@ const QuestSchemaInternal = z.object({
   status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Tutorial'). Omit if not clearly classifiable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'."),
-  rewards: QuestRewardsSchemaInternal.optional().describe("Optional rewards. For initial quests with 'active' status, this field should be omitted.")
+  rewards: QuestRewardsSchemaInternal.optional() // Description moved to QuestRewardsSchemaInternal
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
@@ -81,7 +81,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category and objectives. The rewards field should be omitted for initial quests.'),
+  quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion).'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
@@ -95,7 +95,7 @@ export type GenerateStoryStartInput = z.infer<typeof GenerateStoryStartInputSche
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, and any initial quests (with categories and objectives, but no rewards yet).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, and any initial quests (with categories, objectives, and pre-defined rewards).'),
 });
 export type GenerateStoryStartOutput = z.infer<typeof GenerateStoryStartOutputSchemaInternal>;
 
@@ -128,15 +128,16 @@ Based on the theme and any user suggestions, generate the following:
     -   A starting location relevant to the scene.
     -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
     -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
-    -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. **The 'rewards' field for initial quests should be omitted, as they are not yet completed.**
+    -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'.
+    -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing the quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omit 'equipSlot' if the item is not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
     -   One or two initial 'worldFacts'.
 
 Your entire response must strictly follow the JSON schema defined for the output.
 The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', and 'worldFacts'.
 The 'character' object must have all fields required by its schema.
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
-The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category' and 'objectives'. The 'rewards' field must be omitted for initial 'active' quests.
-For items in inventory or equipped, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
+The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category', 'objectives', and 'rewards'.
+For items in inventory, equipped, or as rewards, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 `,
 });
 
@@ -166,6 +167,9 @@ const generateStoryStartFlow = ai.defineFlow(
     if (output?.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
         output.storyState.inventory.forEach(item => {
+          if (!item.id) {
+            item.id = `item_generated_inv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          }
           if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
             delete (item as Partial<ItemType>).equipSlot;
           }
@@ -187,12 +191,28 @@ const generateStoryStartFlow = ai.defineFlow(
             if (typeof obj.isCompleted !== 'boolean') {
               obj.isCompleted = false;
             }
-             if (typeof obj.description !== 'string') {
+             if (typeof obj.description !== 'string' || obj.description.trim() === '') {
                 obj.description = "Objective details missing";
             }
           });
-          // Ensure rewards are not present for initial active quests
-          delete (quest as Partial<QuestType>).rewards;
+          
+          if (quest.rewards) {
+            quest.rewards.items = quest.rewards.items ?? [];
+            quest.rewards.items.forEach(rewardItem => {
+              if (!rewardItem.id) {
+                rewardItem.id = `item_reward_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+              }
+              if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
+                delete (rewardItem as Partial<ItemType>).equipSlot;
+              }
+            });
+            if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0) {
+              delete quest.rewards;
+            } else {
+              if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
+              if (quest.rewards.items.length === 0) delete quest.rewards.items;
+            }
+          }
         });
 
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
@@ -204,8 +224,13 @@ const generateStoryStartFlow = ai.defineFlow(
         const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
-            if (newEquippedItems[slotKey] && (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+            if (newEquippedItems[slotKey]) {
+               if (!newEquippedItems[slotKey]!.id) {
+                    newEquippedItems[slotKey]!.id = `item_generated_equip_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                }
+              if ((newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
+                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+              }
             }
         }
         output.storyState.equippedItems = newEquippedItems as any;
