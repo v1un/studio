@@ -357,9 +357,22 @@ Skills: {{#each character.skillsAndAbilities}} - {{this.name}}: {{this.descripti
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
-Generate ONLY 'quests': 1-2 initial quests (unique id, description, status 'active').
-    - Optionally include 'category', 'objectives' (with 'isCompleted: false').
-    - MUST include 'rewards' (experiencePoints, currency, and/or items). For items in rewards, include unique id, name, description, 'basePrice', optional 'equipSlot', and other item properties like \`isConsumable\`, \`effectDescription\` if applicable. If no material rewards, omit 'rewards' or use {}.
+**Contextual Quest Generation Guidance:**
+-   Consider the character's immediate situation as described in the scene and their background from "{{seriesName}}".
+-   If the character is new to their environment (e.g., just arrived in a new world like Subaru Natsuki in Re:Zero, or an OC unfamiliar with the setting), initial quests MUST reflect their need to understand their surroundings, find help, ensure basic safety, or address immediate, pressing needs. For such characters, avoid giving them complex tasks or quests from unknown entities immediately, unless this specific scenario is a well-established part of the series canon for that character's beginning.
+-   If the character is established in the world or is a known figure from the series starting in a familiar context, the quests can be more aligned with their typical role or ongoing narrative threads from "{{seriesName}}".
+-   Quests should feel like natural next steps or initial challenges arising directly from the 'sceneDescription' and 'currentLocation'.
+
+Generate ONLY 'quests': 1-2 initial quests that are thematically appropriate to the character's starting context in "{{seriesName}}".
+    - Each quest requires:
+        - 'id': A unique identifier (e.g., "quest_re_zero_orientation_001").
+        - 'description': A clear goal (e.g., "Figure out where you are and what happened.").
+        - 'status': Must be 'active'.
+    - Optionally include:
+        - 'category': (e.g., "Introduction", "Survival", "Exploration").
+        - 'objectives': An array of 1-2 specific steps, each with 'description' and 'isCompleted: false' (e.g., objective: "Try to find someone who can communicate with you.").
+    - MUST include 'rewards' if appropriate (experiencePoints, currency, and/or items). For items in rewards, ensure they have unique id, name, description, 'basePrice', optional 'equipSlot', and other item properties like \`isConsumable\`, \`effectDescription\` if applicable. If no material rewards are immediately obvious for an orientation-type quest, 'rewards' can be omitted or specify only XP.
+
 Adhere strictly to the JSON schema. Ensure quest and item IDs are unique. Output ONLY the object: { "quests": [...] }.`,
 });
 
@@ -711,8 +724,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
                 if (quest.rewards.items.length === 0) delete quest.rewards.items;
                 if (quest.rewards.currency === undefined) delete quest.rewards.currency;
             }
-        }
-      });
+          }
+        });
 
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts ?? [];
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
@@ -775,7 +788,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-          npc.updatedAt = new Date().toISOString(); // Ensure correct timestamp at creation
+          npc.updatedAt = new Date().toISOString(); 
           npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; 
           npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; 
           
