@@ -15,7 +15,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType } from '@/types/story';
+import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, QuestObjective as QuestObjectiveType, QuestRewards as QuestRewardsType } from '@/types/story';
 
 // --- Schemas for AI communication (Internal, consistent with types/story.ts) ---
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -143,7 +143,7 @@ Your goal is to generate ONLY the following two things:
     *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore and character, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest", "Personal Goal") – if no category is clear or applicable, omit the 'category' field. For added depth, if a quest is complex, provide an array of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. **The 'rewards' field for these initial 'active' quests MUST be omitted.** These quests should provide clear initial direction.
     *   'worldFacts': An array of 3-5 key 'worldFacts' (strings) about the "{{seriesName}}" universe, particularly those relevant to the character's starting situation or the immediate environment.
 
-**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties.
+**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties (id, name, description, and 'equipSlot' if it's equippable gear, otherwise 'equipSlot' omitted).
 
 DO NOT generate 'initialLoreEntries' or 'seriesStyleGuide' in THIS step.
 The entire response for this step must strictly follow the JSON schema for the 'sceneDescription' and 'storyState' output. Make sure all IDs for items and quests are unique.
@@ -183,7 +183,7 @@ const styleGuidePrompt = ai.definePrompt({
   input: { schema: StyleGuideInputSchema },
   output: { schema: z.string().optional() },
   prompt: `You are a literary analyst. For the series "{{seriesName}}", provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
-If the series is very obscure or a distinct style is hard to summarize concisely, you may output nothing, or an empty string.
+If the series is very obscure or a distinct style is hard to summarize concisely, you MUST output an empty string (\`""\`).
 Output ONLY the style guide string.`,
 });
 
@@ -224,10 +224,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       sceneDescription: coreOutput.sceneDescription,
       storyState: coreOutput.storyState,
       initialLoreEntries: loreEntries || [],
-      seriesStyleGuide: styleGuide,
+      seriesStyleGuide: styleGuide, // Will be undefined if AI returns empty string and handled by post-processing
     };
 
-    // --- Post-processing --- (copied and adapted from original single-step flow)
+    // --- Post-processing ---
     if (finalOutput.storyState.character) {
       const char = finalOutput.storyState.character;
       char.mana = char.mana ?? 0;
@@ -315,5 +315,3 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
-
-    
