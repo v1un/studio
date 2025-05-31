@@ -255,7 +255,7 @@ export default function StoryForgePage() {
                 canUndo={storyHistory.length > 0}
                 isLoading={isLoadingInteraction}
               />
-              {character && <MinimalCharacterStatus character={character} />}
+              {character && <MinimalCharacterStatus character={character} currentLocation={storyState?.currentLocation} />}
               <StoryDisplay
                 sceneDescription={currentTurn.sceneDescription}
                 keyProp={currentTurn.id}

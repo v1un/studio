@@ -2,19 +2,21 @@
 "use client";
 
 import type { CharacterProfile } from "@/types/story";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { HeartIcon, ZapIcon, AwardIcon } from "lucide-react";
+import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon } from "lucide-react";
 
 interface MinimalCharacterStatusProps {
   character: CharacterProfile;
+  currentLocation?: string;
 }
 
-export default function MinimalCharacterStatus({ character }: MinimalCharacterStatusProps) {
+export default function MinimalCharacterStatus({ character, currentLocation }: MinimalCharacterStatusProps) {
   const healthPercentage = character.maxHealth > 0 ? (character.health / character.maxHealth) * 100 : 0;
   const manaPercentage = (character.maxMana ?? 0) > 0 ? ((character.mana ?? 0) / (character.maxMana ?? 1)) * 100 : 0;
+  const xpPercentage = character.experienceToNextLevel > 0 ? (character.experiencePoints / character.experienceToNextLevel) * 100 : 0;
 
   return (
     <Card className="w-full shadow-md bg-card/70 backdrop-blur-sm mb-4 animate-fade-in">
@@ -46,6 +48,25 @@ export default function MinimalCharacterStatus({ character }: MinimalCharacterSt
               <span className="text-xs text-muted-foreground">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
             </div>
             <Progress value={manaPercentage} aria-label={`${manaPercentage}% mana`} className="h-2 [&>div]:bg-blue-500" />
+          </div>
+        )}
+        <div>
+          <div className="flex justify-between items-center mb-0.5">
+            <Label className="text-xs font-medium flex items-center">
+              <GaugeIcon className="w-3.5 h-3.5 mr-1 text-green-500" />
+              XP
+            </Label>
+            <span className="text-xs text-muted-foreground">{character.experiencePoints} / {character.experienceToNextLevel}</span>
+          </div>
+          <Progress value={xpPercentage} aria-label={`${xpPercentage}% experience points`} className="h-2 [&>div]:bg-green-500" />
+        </div>
+        {currentLocation && (
+          <div className="pt-1">
+            <Label className="text-xs font-medium flex items-center">
+              <MapPinIcon className="w-3.5 h-3.5 mr-1 text-purple-500" />
+              Location
+            </Label>
+            <p className="text-sm text-foreground truncate" title={currentLocation}>{currentLocation}</p>
           </div>
         )}
       </CardContent>
