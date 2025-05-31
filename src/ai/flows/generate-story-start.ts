@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, and initial quests (with optional objectives, categories, and pre-defined rewards).
+ * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, initial quests (with optional objectives, categories, and pre-defined rewards), and initial tracked NPCs.
  * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
@@ -12,7 +12,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, QuestObjective as QuestObjectiveType, QuestRewards as QuestRewardsType } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, NPCDialogueEntry as NPCDialogueEntryType, NPCRelationshipStatus } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
@@ -73,8 +73,31 @@ const QuestSchemaInternal = z.object({
   status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Tutorial'). Omit if not clearly classifiable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'."),
-  rewards: QuestRewardsSchemaInternal.optional() // Description moved to QuestRewardsSchemaInternal
+  rewards: QuestRewardsSchemaInternal.optional()
 });
+
+const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
+const NPCDialogueEntrySchemaInternal = z.object({
+    playerInput: z.string().optional(),
+    npcResponse: z.string(),
+    turnId: z.string(),
+});
+const NPCProfileSchemaInternal = z.object({
+    id: z.string().describe("Unique identifier for the NPC, e.g., npc_bartender_giles_001."),
+    name: z.string().describe("NPC's name."),
+    description: z.string().describe("Physical appearance, general demeanor, key characteristics."),
+    classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain'."),
+    firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met."),
+    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met."),
+    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's relationship with the NPC."),
+    knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC."),
+    dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments."),
+    lastKnownLocation: z.string().optional().describe("Last known location of the NPC."),
+    lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with."),
+    seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player)."),
+    updatedAt: z.string().optional().describe("Timestamp of the last update to this profile."),
+});
+
 
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
@@ -83,6 +106,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion).'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene.")
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
@@ -95,7 +119,7 @@ export type GenerateStoryStartInput = z.infer<typeof GenerateStoryStartInputSche
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, and any initial quests (with categories, objectives, and pre-defined rewards).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards), and profiles for any NPCs introduced.'),
 });
 export type GenerateStoryStartOutput = z.infer<typeof GenerateStoryStartOutputSchemaInternal>;
 
@@ -131,13 +155,15 @@ Based on the theme and any user suggestions, generate the following:
     -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'.
     -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing the quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omit 'equipSlot' if the item is not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
     -   One or two initial 'worldFacts'.
+    -   'trackedNPCs': If any significant NPCs (e.g., named characters, quest givers) are introduced in the initial scene, create profiles for them in this array. Each NPC profile needs a unique 'id', 'name', 'description', initial 'relationshipStatus' (e.g., 'Neutral' or 'Unknown'), 'firstEncounteredLocation' (current location), 'firstEncounteredTurnId' (use "initial_turn_0"), and 'knownFacts' (initially an empty array or one or two basic facts if revealed). 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId', 'seriesContextNotes' can be omitted or empty for initial NPCs.
 
 Your entire response must strictly follow the JSON schema defined for the output.
-The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', and 'worldFacts'.
+The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', 'worldFacts', and 'trackedNPCs'.
 The 'character' object must have all fields required by its schema.
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
 The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category', 'objectives', and 'rewards'.
 For items in inventory, equipped, or as rewards, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
+The 'trackedNPCs' array should contain NPCProfile objects.
 `,
 });
 
@@ -149,7 +175,10 @@ const generateStoryStartFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    if (output?.storyState.character) {
+    if (!output) throw new Error("Failed to generate story start output.");
+
+    // Character post-processing
+    if (output.storyState.character) {
       const char = output.storyState.character;
       char.mana = char.mana ?? 0;
       char.maxMana = char.maxMana ?? 0;
@@ -164,7 +193,9 @@ const generateStoryStartFlow = ai.defineFlow(
       char.experienceToNextLevel = char.experienceToNextLevel ?? 100;
       if (char.experienceToNextLevel <= 0) char.experienceToNextLevel = 100;
     }
-    if (output?.storyState) {
+
+    // General storyState post-processing
+    if (output.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
         output.storyState.inventory.forEach(item => {
           if (!item.id) {
@@ -216,6 +247,7 @@ const generateStoryStartFlow = ai.defineFlow(
         });
 
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
+        output.storyState.worldFacts = output.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
         const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
             weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
@@ -234,7 +266,37 @@ const generateStoryStartFlow = ai.defineFlow(
             }
         }
         output.storyState.equippedItems = newEquippedItems as any;
+
+        // NPC Tracker post-processing
+        output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
+        const npcNameSet = new Set<string>();
+        output.storyState.trackedNPCs.forEach((npc, index) => {
+            if (!npc.id) {
+                npc.id = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+            }
+            while(npcNameSet.has(npc.id)){ // ensure id is unique
+                 npc.id = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}`;
+            }
+            npcNameSet.add(npc.id);
+
+            npc.name = npc.name || "Unnamed NPC";
+            npc.description = npc.description || "No description provided.";
+            npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
+            npc.knownFacts = npc.knownFacts ?? [];
+            npc.dialogueHistory = npc.dialogueHistory ?? [];
+            
+            if (!npc.firstEncounteredTurnId) npc.firstEncounteredTurnId = "initial_turn_0";
+            if (!npc.updatedAt) npc.updatedAt = new Date().toISOString();
+
+            if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
+            if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
+            if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
+            if (npc.lastSeenTurnId === null || (npc.lastSeenTurnId as unknown) === '') delete npc.lastSeenTurnId;
+            if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
+
+        });
     }
     return output!;
   }
 );
+

@@ -1,10 +1,10 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/types/story"; // Adjusted import path
-import type { StoryTurn, GameSession, StructuredStoryState, Quest } from "@/types/story";
+import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -14,9 +14,11 @@ import CharacterSheet from "@/components/story-forge/character-sheet";
 import MinimalCharacterStatus from "@/components/story-forge/minimal-character-status";
 import JournalDisplay from "@/components/story-forge/journal-display";
 import LorebookDisplay from "@/components/story-forge/lorebook-display";
+import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
+
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,11 +45,7 @@ export default function StoryForgePage() {
           const session: GameSession = JSON.parse(sessionData);
           setStoryHistory(session.storyHistory);
           setCurrentSession(session);
-          if (session.storyHistory.length > 0 && session.storyHistory[0].storyStateAfterScene?.worldFacts) { // Check if lore was initialized with this session
-            // Assuming lorebook is initialized from initialLoreEntries when a new session starts
-            // If loading an existing session, we might need to re-initialize lore from somewhere or assume it's persistent
-            // For now, if lore isn't in the session, it uses whatever is in localStorage from lore-manager
-          }
+          // Lorebook is initialized when a new session starts. If loading, it relies on existing localStorage.
         } catch (e) {
           console.error("Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
@@ -55,7 +53,7 @@ export default function StoryForgePage() {
           setCurrentSession(null);
         }
       } else {
-        localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
+        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); // Clean up if session data is missing
         setCurrentSession(null);
       }
     } else {
@@ -75,28 +73,15 @@ export default function StoryForgePage() {
       };
     
     const sessionKey = `${SESSION_KEY_PREFIX}${currentSession.id}`;
-    const existingSessionRaw = localStorage.getItem(sessionKey);
-
-    if (existingSessionRaw) {
-        try {
-            const existingSession: GameSession = JSON.parse(existingSessionRaw);
-            if (JSON.stringify(existingSession) !== JSON.stringify(sessionToSave)) {
-                 localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
-            }
-        } catch (e) {
-            console.error("Error comparing/saving session:", e);
-            localStorage.setItem(sessionKey, JSON.stringify(sessionToSave)); // Save new one anyway
-        }
-    } else {
-        localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
-    }
+    // Debounce or conditional save could be added here if performance becomes an issue
+    localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
     
   }, [storyHistory, currentSession, isLoadingPage]);
 
 
-  const currentTurn = storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null;
-  const character = currentTurn?.storyStateAfterScene.character;
-  const storyState = currentTurn?.storyStateAfterScene;
+  const currentTurn = useMemo(() => storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null, [storyHistory]);
+  const character = useMemo(() => currentTurn?.storyStateAfterScene.character, [currentTurn]);
+  const storyState = useMemo(() => currentTurn?.storyStateAfterScene, [currentTurn]);
 
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string }) => {
     setIsLoadingInteraction(true);
@@ -109,7 +94,9 @@ export default function StoryForgePage() {
       const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
       
       clearLorebook(); 
-      initializeLorebook(result.initialLoreEntries);
+      if (result.initialLoreEntries) {
+        initializeLorebook(result.initialLoreEntries);
+      }
 
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
@@ -161,6 +148,7 @@ export default function StoryForgePage() {
         storyState: storyState,
         seriesName: currentSession.seriesName,
         seriesStyleGuide: currentSession.seriesStyleGuide,
+        currentTurnId: currentTurn.id, // Pass current turn ID
       });
       const nextTurnItem: StoryTurn = {
         id: crypto.randomUUID(),
@@ -185,6 +173,7 @@ export default function StoryForgePage() {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last action undone."});
     } else if (storyHistory.length === 1) {
+      // Undoing the first turn means restarting the session
       handleRestart();
     }
   };
@@ -197,7 +186,7 @@ export default function StoryForgePage() {
     clearLorebook(); 
     setStoryHistory([]);
     setCurrentSession(null);
-    setActiveTab("story");
+    setActiveTab("story"); // Reset to story tab
     toast({
       title: "Story Session Cleared",
       description: "Ready for a new adventure!",
@@ -242,12 +231,15 @@ export default function StoryForgePage() {
         
         {currentSession && currentTurn && character && storyState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-4">
+            <TabsList className="grid w-full grid-cols-5 mb-4"> {/* Updated to 5 columns */}
               <TabsTrigger value="story" className="text-xs sm:text-sm">
                 <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
               </TabsTrigger>
               <TabsTrigger value="character" className="text-xs sm:text-sm">
                 <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
+              </TabsTrigger>
+               <TabsTrigger value="npcs" className="text-xs sm:text-sm"> {/* New NPCs Tab */}
+                <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
               </TabsTrigger>
               <TabsTrigger value="journal" className="text-xs sm:text-sm">
                 <StickyNote className="w-4 h-4 mr-1 sm:mr-2" /> Journal
@@ -276,6 +268,10 @@ export default function StoryForgePage() {
               <CharacterSheet character={character} storyState={storyState} />
             </TabsContent>
 
+            <TabsContent value="npcs"> {/* New NPCs Tab Content */}
+              <NPCTrackerDisplay trackedNPCs={storyState.trackedNPCs as NPCProfile[]} currentTurnId={currentTurn.id} />
+            </TabsContent>
+
             <TabsContent value="journal">
               <JournalDisplay 
                 quests={storyState.quests as Quest[]} 
@@ -288,7 +284,7 @@ export default function StoryForgePage() {
             </TabsContent>
           </Tabs>
         )}
-         {currentSession && !currentTurn && !isLoadingInteraction && (
+         {currentSession && !currentTurn && !isLoadingInteraction && ( // Handles empty/corrupted session
             <div className="text-center p-6 bg-card rounded-lg shadow-md">
                 <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
                 <Button onClick={handleRestart}>Start a New Adventure</Button>
@@ -301,3 +297,4 @@ export default function StoryForgePage() {
     </div>
   );
 }
+

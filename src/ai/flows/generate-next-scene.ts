@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, and series-specific context.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, and series-specific context.
  *
  * - generateNextScene - A function that takes the current story state and user input, and returns the next scene and updated state.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
@@ -11,7 +11,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, NPCDialogueEntry as NPCDialogueEntryType, NPCRelationshipStatus } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -75,6 +75,28 @@ const QuestSchemaInternal = z.object({
   rewards: QuestRewardsSchemaInternal.optional()
 });
 
+const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
+const NPCDialogueEntrySchemaInternal = z.object({
+    playerInput: z.string().optional(),
+    npcResponse: z.string(),
+    turnId: z.string(),
+});
+const NPCProfileSchemaInternal = z.object({
+    id: z.string().describe("Unique identifier for the NPC. If creating a new NPC profile, make this unique (e.g., npc_[name]_[unique_suffix]). If updating, use existing ID."),
+    name: z.string().describe("NPC's name."),
+    description: z.string().describe("Physical appearance, general demeanor, key characteristics. Update if new details are learned."),
+    classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain', 'Mysterious Stranger'."),
+    firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met. Set only when creating new profile."),
+    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met. Set only when creating new profile."),
+    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's relationship with the NPC. Update based on interactions."),
+    knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Add new facts as they are discovered."),
+    dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Add new significant dialogues."),
+    lastKnownLocation: z.string().optional().describe("Last known location of the NPC. Update if they move or are seen elsewhere."),
+    lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with. Update with current turn ID."),
+    seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player). Set once if applicable."),
+    updatedAt: z.string().optional().describe("Timestamp of the last update to this profile. Update with current time."),
+});
+
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
@@ -82,6 +104,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with."),
 });
 
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
@@ -89,15 +112,17 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInte
 const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, worldFacts, etc.).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, worldFacts, trackedNPCs, etc.).'),
   seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
   seriesStyleGuide: z.string().optional().describe('A brief style guide for the series to maintain tone and themes.'),
+  currentTurnId: z.string().describe('The ID of the current story turn, for logging in NPC dialogue history etc.'),
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchemaInternal>;
 
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
   formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, objectives, and potential rewards."),
+  formattedTrackedNPCsString: z.string().describe("Pre-formatted string summarizing tracked NPCs."),
 });
 
 const ActiveNPCInfoSchemaInternal = z.object({
@@ -108,7 +133,7 @@ const ActiveNPCInfoSchemaInternal = z.object({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion), and world fact updates. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion), world fact updates, and NPC profile updates/additions in trackedNPCs. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active.")
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
@@ -145,7 +170,6 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
         questStr += `    - ${obj.description} (${obj.isCompleted ? 'Completed' : 'Pending'})\n`;
       });
     }
-    // Display potential rewards for active quests, and confirmed for completed.
     if (q.rewards) {
         const rewardLabel = q.status === 'completed' ? "Rewards Received" : "Potential Rewards";
         questStr += `\n  ${rewardLabel}:\n`;
@@ -162,6 +186,24 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
   }).join("\n");
 }
 
+function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
+    if (!npcs || !Array.isArray(npcs) || npcs.length === 0) {
+        return "None known or tracked.";
+    }
+    return npcs.map(npc => {
+        let npcStr = `- ${npc.name} (ID: ${npc.id}, Status: ${npc.relationshipStatus})`;
+        if (npc.classOrRole) npcStr += ` [${npc.classOrRole}]`;
+        if (npc.lastKnownLocation) npcStr += ` (Last seen: ${npc.lastKnownLocation})`;
+        npcStr += `\n  Description: ${npc.description}`;
+        if (npc.knownFacts && npc.knownFacts.length > 0) {
+            npcStr += "\n  Known Facts:\n";
+            npc.knownFacts.forEach(fact => npcStr += `    - ${fact}\n`);
+        }
+        return npcStr;
+    }).join("\n");
+}
+
+
 const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
   input: {schema: PromptInternalInputSchema},
@@ -173,13 +215,13 @@ This story is set in the universe of: {{seriesName}}.
 Series Style Guide: {{seriesStyleGuide}}
 {{/if}}
 
-Current Scene:
+Current Scene Narrative:
 {{currentScene}}
 
 Player Input:
 {{userInput}}
 
-Current Character:
+Current Player Character:
 - Name: {{storyState.character.name}}, the {{storyState.character.class}} (Level: {{storyState.character.level}})
 - Health: {{storyState.character.health}}/{{storyState.character.maxHealth}}
 - Mana: {{#if storyState.character.mana}}{{storyState.character.mana}}/{{storyState.character.maxMana}}{{else}}N/A{{/if}}
@@ -209,12 +251,16 @@ Empty
 Quests (Rewards are pre-defined; they are granted by the system upon completion):
 {{{formattedQuestsString}}}
 
-Known World Facts:
+Known World Facts (Reflect immediate environment & character's current understanding):
 {{#each storyState.worldFacts}}
 - {{{this}}}
 {{else}}
 - None known.
 {{/each}}
+
+Tracked NPCs (Summary - full details in storyState.trackedNPCs):
+{{{formattedTrackedNPCsString}}}
+
 
 Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. An item's 'equipSlot' property determines where it can go. 'ring' items can go in 'ring1' or 'ring2'.
 
@@ -222,12 +268,31 @@ If the player's input or the unfolding scene mentions a specific named entity (l
 
 Based on the current scene, player's input, and detailed story state, generate the 'nextScene' text.
 
-NPC Management:
-- If NPCs are present or introduced, clearly attribute their dialogue (e.g., Guard Captain: "Halt!") and actions.
-- Make NPCs react to the player's actions and dialogue in character.
-- Narrate when significant NPCs enter or leave the scene.
-- Consider giving NPCs distinct mannerisms or ways of speaking, fitting the "{{seriesName}}" context.
-- If distinct NPCs were active (spoke, performed notable actions) in the scene you generate, populate the 'activeNPCsInScene' array in the output. For each NPC, provide their 'name', an optional 'description' (especially if new or their appearance is relevant), and an optional 'keyDialogueOrAction'.
+NPC Management & Tracking:
+- If new, significant NPCs are introduced (named, have dialogue, clear role):
+  - Create a new profile in 'updatedStoryState.trackedNPCs'.
+  - Assign a unique 'id' (e.g., "npc_[name in lowercase with underscores]_[timestamp/random suffix]").
+  - Set 'name', 'description', 'classOrRole' (if applicable).
+  - Set 'firstEncounteredLocation' to 'storyState.currentLocation' and 'firstEncounteredTurnId' to '{{currentTurnId}}'.
+  - Set initial 'relationshipStatus' (e.g., 'Neutral', 'Unknown', or specific like 'Friendly' if established).
+  - 'knownFacts' can start empty or with 1-2 initial series-based facts.
+  - 'seriesContextNotes' can be a brief note on their canon role if applicable.
+  - Set 'lastKnownLocation' to 'storyState.currentLocation' and 'lastSeenTurnId' to '{{currentTurnId}}'.
+  - Set 'updatedAt' to the current time (system will handle actual timestamp).
+- If interacting with an existing NPC from 'storyState.trackedNPCs' (match by name):
+  - Update their profile in 'updatedStoryState.trackedNPCs' with their existing ID.
+  - If new details about their appearance or demeanor are revealed, update 'description'.
+  - Based on the interaction, update 'relationshipStatus' (e.g., from 'Neutral' to 'Friendly' if helped).
+  - If the player learns new, distinct information directly about the NPC, add it to 'knownFacts' (avoid duplicates).
+  - If there's key dialogue, consider adding an entry to 'dialogueHistory': { playerInput: "{{userInput}}", npcResponse: "Relevant NPC quote", turnId: "{{currentTurnId}}" }.
+  - If their location changes, update 'lastKnownLocation'.
+  - Always update 'lastSeenTurnId' to '{{currentTurnId}}' and 'updatedAt'.
+- Do not create duplicate NPC profiles. If an NPC with the same name exists, update their record.
+- For the 'nextScene' narrative:
+  - Clearly attribute dialogue (e.g., Guard Captain: "Halt!") and actions.
+  - Make NPCs react to the player's actions and dialogue in character. Narrate when significant NPCs enter or leave.
+  - Consider giving NPCs distinct mannerisms or ways of speaking, fitting the "{{seriesName}}" context.
+- If distinct NPCs were active in the scene you generate, populate 'activeNPCsInScene' array in the output.
 
 Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
 When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
@@ -273,6 +338,10 @@ Crucially, you must also update the story state. This includes:
   - **Modifying Facts**: If an existing fact needs refinement based on new developments, you can suggest replacing the old fact with a new one (effectively removing the old and adding the new).
   - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes, an NPC leaves the scene), you can remove it from the \`worldFacts\` array.
   - **Narrate Changes**: If you add, modify, or remove a world fact in a way that the character would perceive or that's significant for the player to know, briefly mention this in the \`nextScene\` (e.g., "You now realize the guard captain is missing," or "The strange humming sound from the basement has stopped.").
+- Tracked NPCs:
+  - Ensure 'updatedStoryState.trackedNPCs' contains all previously tracked NPCs, plus any new ones, with their profiles updated as described above.
+  - All fields in each NPCProfile must adhere to their schema definitions. 'id' must be unique for new NPCs.
+  - For existing NPCs, ensure their 'id' is preserved from the input 'storyState.trackedNPCs'.
 
 The next scene should logically follow the player's input and advance the narrative, respecting the style and lore of {{seriesName}}.
 Ensure your entire response strictly adheres to the JSON schema for the output.
@@ -280,6 +349,7 @@ The 'updatedStoryState.character' must include all fields required by its schema
 The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
+The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects.
 The 'activeNPCsInScene' array (if provided) should contain objects with 'name', and optional 'description' and 'keyDialogueOrAction'.
 `,
 });
@@ -293,16 +363,20 @@ const generateNextSceneFlow = ai.defineFlow(
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
     const formattedQuestsString = formatQuests(input.storyState.quests);
+    const formattedTrackedNPCsString = formatTrackedNPCs(input.storyState.trackedNPCs);
 
     const promptPayload: z.infer<typeof PromptInternalInputSchema> = {
       ...input,
       formattedEquippedItemsString: formattedEquippedItemsString,
       formattedQuestsString: formattedQuestsString,
+      formattedTrackedNPCsString: formattedTrackedNPCsString,
     };
 
     const {output} = await prompt(promptPayload);
+    if (!output) throw new Error("Failed to generate next scene output.");
 
-    if (output?.updatedStoryState.character && input.storyState.character) {
+    // Character post-processing
+    if (output.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
@@ -324,7 +398,8 @@ const generateNextSceneFlow = ai.defineFlow(
       }
     }
 
-     if (output?.updatedStoryState) {
+    // General storyState post-processing
+     if (output.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
         output.updatedStoryState.inventory.forEach(item => {
           if (!item.id) {
@@ -356,7 +431,6 @@ const generateNextSceneFlow = ai.defineFlow(
             }
           });
 
-          // Apply rewards if quest status changes to completed and rewards exist
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
             if (typeof quest.rewards.experiencePoints === 'number') {
@@ -417,6 +491,66 @@ const generateNextSceneFlow = ai.defineFlow(
             }
         }
         output.updatedStoryState.equippedItems = newEquippedItems as any;
+
+        // NPC Tracker post-processing
+        output.updatedStoryState.trackedNPCs = output.updatedStoryState.trackedNPCs ?? [];
+        const npcIdMap = new Map<string, NPCProfileType>();
+        const existingNpcIds = new Set(input.storyState.trackedNPCs.map(npc => npc.id));
+
+        output.updatedStoryState.trackedNPCs.forEach((npc, index) => {
+            // Ensure ID exists: if it's an existing NPC, preserve ID. If new, generate one.
+            if (!npc.id || !existingNpcIds.has(npc.id)) {
+                 let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
+                 let newId = baseId;
+                 let counter = 0;
+                 while(npcIdMap.has(newId) || existingNpcIds.has(newId)) { // Check against already processed new NPCs and existing ones
+                     newId = `${baseId}_${counter++}`;
+                 }
+                 npc.id = newId;
+            }
+            
+            // Deduplication based on the now potentially new ID
+            if (npcIdMap.has(npc.id)) { // Should only happen if AI hallucinates duplicate IDs for new NPCs
+                console.warn(`Duplicate NPC ID ${npc.id} encountered during AI output processing. Attempting to make unique.`);
+                 let baseId = npc.id;
+                 let counter = 0;
+                 while(npcIdMap.has(npc.id)) {
+                     npc.id = `${baseId}_dup_${counter++}`;
+                 }
+            }
+            npcIdMap.set(npc.id, npc);
+
+
+            npc.name = npc.name || "Unnamed NPC";
+            npc.description = npc.description || "No description provided.";
+            npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
+            npc.knownFacts = npc.knownFacts ?? [];
+            npc.dialogueHistory = npc.dialogueHistory ?? [];
+            npc.dialogueHistory.forEach(dh => {
+                if(!dh.turnId) dh.turnId = input.currentTurnId; // Ensure turnId for dialogue history
+            });
+
+            // For new NPCs, set first encounter details if missing
+            const originalNpc = input.storyState.trackedNPCs.find(onpc => onpc.id === npc.id);
+            if (!originalNpc) { // This is a new NPC
+                npc.firstEncounteredLocation = npc.firstEncounteredLocation || input.storyState.currentLocation;
+                npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || input.currentTurnId;
+            } else { // Preserve original first encounter details
+                 npc.firstEncounteredLocation = originalNpc.firstEncounteredLocation;
+                 npc.firstEncounteredTurnId = originalNpc.firstEncounteredTurnId;
+            }
+            
+            npc.lastSeenTurnId = npc.lastSeenTurnId || input.currentTurnId;
+            npc.updatedAt = new Date().toISOString();
+
+            if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
+            if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
+            // Don't delete firstEncounteredTurnId, it's important
+            if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
+            // Don't delete lastSeenTurnId
+            if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
+        });
+         output.updatedStoryState.trackedNPCs = Array.from(npcIdMap.values()); // Use the de-duplicated list
     }
 
     if (output && output.activeNPCsInScene) {
@@ -433,3 +567,4 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
+

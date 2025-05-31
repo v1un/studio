@@ -1,0 +1,156 @@
+
+"use client";
+
+import * as React from "react";
+import type { NPCProfile, NPCDialogueEntry, NPCRelationshipStatus } from "@/types/story";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, UserCogIcon, CircleHelpIcon } from "lucide-react";
+
+interface NPCTrackerDisplayProps {
+  trackedNPCs: NPCProfile[];
+  currentTurnId: string; // To determine "last seen" relative freshness
+}
+
+const getRelationshipBadgeVariant = (status: NPCRelationshipStatus): "default" | "secondary" | "destructive" | "outline" => {
+  switch (status) {
+    case 'Friendly':
+    case 'Allied':
+      return 'default'; // Uses primary color
+    case 'Hostile':
+      return 'destructive';
+    case 'Neutral':
+    case 'Cautious':
+      return 'secondary';
+    case 'Unknown':
+    default:
+      return 'outline';
+  }
+};
+
+const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, currentTurnId }) => {
+  const isLastSeenCurrent = npc.lastSeenTurnId === currentTurnId;
+
+  return (
+    <AccordionItem value={npc.id} className="border-b-0">
+      <AccordionTrigger className="hover:no-underline p-3 rounded-md hover:bg-accent/50 data-[state=open]:bg-accent/80 data-[state=open]:text-accent-foreground">
+        <div className="flex items-center justify-between w-full">
+            <div className="flex items-center">
+                <Users2Icon className="w-5 h-5 mr-3 text-primary shrink-0"/>
+                <span className="text-lg font-semibold">{npc.name}</span>
+                {npc.classOrRole && <Badge variant="outline" className="ml-2 text-xs">{npc.classOrRole}</Badge>}
+            </div>
+            <Badge variant={getRelationshipBadgeVariant(npc.relationshipStatus)} className="text-xs">
+                {npc.relationshipStatus}
+            </Badge>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="pt-2 pb-3 px-3 text-sm space-y-3 bg-background/30 rounded-b-md">
+        <p className="text-muted-foreground italic">{npc.description}</p>
+        
+        <Separator/>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            {npc.firstEncounteredLocation && (
+                <div className="flex items-start">
+                    <MapPinIcon className="w-3.5 h-3.5 mr-1.5 mt-0.5 text-primary/70 shrink-0"/> 
+                    <div>
+                        <span className="font-medium">First Met: </span> 
+                        <span className="text-muted-foreground">{npc.firstEncounteredLocation} (Turn: {npc.firstEncounteredTurnId?.substring(0,8)}...)</span>
+                    </div>
+                </div>
+            )}
+            {npc.lastKnownLocation && (
+                 <div className="flex items-start">
+                    <MapPinIcon className="w-3.5 h-3.5 mr-1.5 mt-0.5 text-primary/70 shrink-0"/>
+                    <div>
+                        <span className="font-medium">Last Seen: </span>
+                        <span className="text-muted-foreground">{npc.lastKnownLocation} (Turn: {npc.lastSeenTurnId?.substring(0,8)}...{isLastSeenCurrent && <Badge variant="secondary" className="ml-1 py-0 px-1 text-green-600 border-green-500 text-[10px]">Current</Badge>})</span>
+                    </div>
+                </div>
+            )}
+        </div>
+
+        {npc.knownFacts && npc.knownFacts.length > 0 && (
+          <div>
+            <h4 className="font-semibold mb-1 flex items-center text-sm">
+                <FileTextIcon className="w-4 h-4 mr-1.5 text-accent"/>Known Facts
+            </h4>
+            <ScrollArea className="h-20 rounded-md border p-2 bg-background/50">
+              <ul className="list-disc list-inside pl-2 space-y-1 text-xs">
+                {npc.knownFacts.map((fact, index) => (
+                  <li key={index} className="text-muted-foreground">{fact}</li>
+                ))}
+              </ul>
+            </ScrollArea>
+          </div>
+        )}
+
+        {npc.dialogueHistory && npc.dialogueHistory.length > 0 && (
+          <div>
+            <h4 className="font-semibold mb-1 flex items-center text-sm">
+                <HistoryIcon className="w-4 h-4 mr-1.5 text-accent"/>Dialogue History
+            </h4>
+            <ScrollArea className="h-24 rounded-md border p-2 bg-background/50">
+              <ul className="space-y-2 text-xs">
+                {npc.dialogueHistory.slice(-5).map((entry, index) => ( // Show last 5 entries
+                  <li key={index} className="border-b border-border/50 pb-1 last:border-b-0 last:pb-0">
+                    {entry.playerInput && <p><span className="font-medium text-primary/80">You:</span> <span className="text-muted-foreground italic">"{entry.playerInput}"</span></p>}
+                    <p><span className="font-medium text-accent">{npc.name}:</span> <span className="text-muted-foreground">"{entry.npcResponse}"</span></p>
+                    <p className="text-right text-muted-foreground/70 text-[10px]">Turn: {entry.turnId.substring(0,8)}...</p>
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          </div>
+        )}
+        {npc.updatedAt && <p className="text-xs text-muted-foreground/60 text-right mt-1">Profile updated: {new Date(npc.updatedAt).toLocaleString()}</p>}
+      </AccordionContent>
+    </AccordionItem>
+  );
+};
+
+export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTrackerDisplayProps) {
+  if (!trackedNPCs || trackedNPCs.length === 0) {
+    return (
+      <Card className="w-full shadow-lg animate-fade-in">
+        <CardHeader>
+          <CardTitle className="font-headline text-2xl text-primary flex items-center">
+            <UserCogIcon className="w-6 h-6 mr-2 text-accent" /> NPC Tracker
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center text-center p-8 min-h-[200px]">
+          <CircleHelpIcon className="w-16 h-16 text-muted-foreground/50 mb-4" />
+          <p className="text-lg text-muted-foreground">No significant NPCs tracked yet.</p>
+          <p className="text-sm text-muted-foreground">As you meet and interact with characters, their profiles will appear here.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  // Sort NPCs by name for consistent display
+  const sortedNPCs = [...trackedNPCs].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <Card className="w-full shadow-lg animate-fade-in">
+      <CardHeader>
+        <CardTitle className="font-headline text-2xl text-primary flex items-center">
+          <UserCogIcon className="w-6 h-6 mr-2 text-accent" /> NPC Tracker ({sortedNPCs.length})
+        </CardTitle>
+        <CardDescription>
+          Profiles of significant characters encountered in your story.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0 sm:p-2"> {/* Remove padding for accordion to use full width */}
+        <Accordion type="multiple" className="w-full space-y-1">
+          {sortedNPCs.map((npc) => (
+            <NPCEntry key={npc.id} npc={npc} currentTurnId={currentTurnId} />
+          ))}
+        </Accordion>
+      </CardContent>
+    </Card>
+  );
+}

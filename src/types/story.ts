@@ -57,6 +57,30 @@ export interface Quest {
   updatedAt?: string;
 }
 
+export type NPCRelationshipStatus = 'Friendly' | 'Neutral' | 'Hostile' | 'Allied' | 'Cautious' | 'Unknown';
+
+export interface NPCDialogueEntry {
+  playerInput?: string;
+  npcResponse: string;
+  turnId: string;
+}
+
+export interface NPCProfile {
+  id: string; // Unique identifier, e.g., npc_borin_the_dwarf_001
+  name: string;
+  description: string; // Physical appearance, general demeanor, key characteristics
+  classOrRole?: string; // e.g., "Merchant", "Guard Captain"
+  firstEncounteredLocation?: string;
+  firstEncounteredTurnId?: string; // ID of the StoryTurn when first met
+  relationshipStatus: NPCRelationshipStatus;
+  knownFacts: string[]; // Specific pieces of information player has learned
+  dialogueHistory?: NPCDialogueEntry[]; // Logs key interaction moments
+  lastKnownLocation?: string;
+  lastSeenTurnId?: string;
+  seriesContextNotes?: string; // AI-internal note about their role if from a known series
+  updatedAt?: string; // Timestamp of the last update to this profile
+}
+
 export interface StructuredStoryState {
   character: CharacterProfile;
   currentLocation: string;
@@ -64,6 +88,7 @@ export interface StructuredStoryState {
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   quests: Quest[];
   worldFacts: string[];
+  trackedNPCs: NPCProfile[];
 }
 
 export interface StoryTurn {
