@@ -240,9 +240,22 @@ Location: {{currentLocation}}
 
 Generate ONLY:
 1. 'trackedNPCs':
-    - MUST include profiles for NPCs in 'sceneDescription'.
-    - MAY include 2-4 other major, known characters from "{{seriesName}}".
-    - Each NPC profile: unique 'id', 'name', 'description', 'classOrRole' (optional), 'firstEncounteredLocation' (current for scene NPCs, typical for major), 'firstEncounteredTurnId' ("initial_turn_0"), 'relationshipStatus', 'knownFacts' (initial player knowledge), 'seriesContextNotes' (optional for major), empty 'dialogueHistory'.
+    - MUST include profiles for NPCs in 'sceneDescription'. For these NPCs:
+        - 'firstEncounteredLocation' should be '{{currentLocation}}'.
+        - 'firstEncounteredTurnId' should be "initial_turn_0".
+        - 'knownFacts' can include details observed or learned in the 'sceneDescription', or be empty.
+        - 'relationshipStatus' should be based on the initial interaction in the scene (e.g., 'Neutral', 'Cautious', 'Friendly' if applicable).
+    - MAY include profiles for 2-4 other major, well-known characters from "{{seriesName}}" who are NOT in the 'sceneDescription'. For these pre-populated major characters:
+        - 'firstEncounteredLocation' could be their typical location in the series or a note like "Known from series lore".
+        - 'firstEncounteredTurnId' should be "initial_turn_0" (as they are known from the start of the game's context).
+        - 'knownFacts' should be 1-2 pieces of common knowledge or widely known rumors about this character within the '{{seriesName}}' universe. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
+        - 'relationshipStatus' should typically be 'Unknown' or 'Neutral', unless a strong canonical reason dictates otherwise for any protagonist.
+    - For ALL NPCs:
+        - Ensure each profile has a unique 'id', 'name', 'description', 'classOrRole' (optional).
+        - 'seriesContextNotes' (optional, for major characters, about their canon role).
+        - 'dialogueHistory' should be empty or omitted.
+        - 'lastKnownLocation' should generally match 'firstEncounteredLocation' for these initial profiles.
+        - 'lastSeenTurnId' should be "initial_turn_0".
 Adhere strictly to the JSON schema. Ensure NPC IDs are unique.`,
 });
 
@@ -277,7 +290,7 @@ const StyleGuideInputSchema = z.object({
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().nullable() },
+  output: { schema: z.string().nullable() }, // Allows AI to return null for style guide
   prompt: `You are a literary analyst. For the series "{{seriesName}}", your task is to provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
 
 - If you can generate a suitable, concise summary for "{{seriesName}}", please provide it as a string.
@@ -476,7 +489,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
            while(npcIdSet.has(npc.id)){
              let baseId = npc.id;
              let counter = 0;
-             while(npcIdSet.has(npc.id)) {
+             while(npcIdSet.has(npc.id)) { // Check original and newly generated ones
                 npc.id = `${baseId}_u${counter++}`;
              }
           }
@@ -489,9 +502,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-          npc.updatedAt = npc.updatedAt || new Date().toISOString();
-          npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
-          npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
+          npc.updatedAt = npc.updatedAt || new Date().toISOString(); // Set if not present
+          npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; // Default last known to first encountered
+          npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; // Default last seen to first encountered
           
           if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
           if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
@@ -515,4 +528,5 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
+
 
