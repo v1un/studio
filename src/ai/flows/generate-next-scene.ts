@@ -157,7 +157,7 @@ const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
   input: {schema: PromptInternalInputSchema},
   output: {schema: GenerateNextSceneOutputSchemaInternal},
-  tools: [lookupLoreTool],
+  tools: [lookupLoreTool], // lookupLoreTool is defined here for the prompt
   prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
 This story is set in the universe of: {{seriesName}}.
 {{#if seriesStyleGuide}}
@@ -281,24 +281,11 @@ const generateNextSceneFlow = ai.defineFlow(
       formattedQuestsString: formattedQuestsString,
     };
 
-    // Logic for calling lookupLoreTool needs to be adapted if it's directly used with seriesName.
-    // Currently, the prompt guides the AI to use the tool, and the tool itself needs to be made series-aware if not already.
-    // This example assumes the tool is called by the AI model based on prompt instructions.
-    // If the tool call needs seriesName, the prompt's instruction to use the tool should specify how seriesName is provided.
-    // The prompt above tells the AI to provide seriesName when using lookupLoreTool.
-
-    const {output} = await prompt(promptPayload, {
-        tools: [
-            // Ensure lookupLoreTool is correctly configured to accept seriesName if needed by its schema
-            // or if it's part of its internal logic for context.
-            // For now, we assume the tool's Zod schema (`LoreLookupInputSchema` in lore-tool.ts) is updated.
-            ai.tool(lookupLoreTool, async (toolInput) => {
-                // The AI should be providing 'seriesName' in its call to the tool.
-                // If not, we inject it here from the flow's input.
-                return lookupLoreTool({...toolInput, seriesName: input.seriesName});
-            }),
-        ],
-    });
+    // The `lookupLoreTool` is already defined in the `tools` array of `generateNextScenePrompt`.
+    // The prompt instructs the AI to provide `seriesName` when calling the tool.
+    // The tool's schema (`LoreLookupInputSchema`) requires `seriesName`.
+    // Therefore, no special handling for tools is needed in the `prompt()` call itself here.
+    const {output} = await prompt(promptPayload);
 
     if (output?.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
@@ -408,3 +395,5 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
+
+    
