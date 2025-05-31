@@ -8,7 +8,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { 
+    Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, 
+    UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus, IdCardIcon 
+} from "lucide-react";
 
 interface NPCTrackerDisplayProps {
   trackedNPCs: NPCProfile[];
@@ -42,7 +45,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
             <div className="flex items-center">
                 <Users2Icon className="w-5 h-5 mr-3 text-primary shrink-0"/>
                 <span className="text-lg font-semibold">{npc.name}</span>
-                {npc.classOrRole && <Badge variant="outline" className="ml-2 text-xs">{npc.classOrRole}</Badge>}
+                {npc.classOrRole && <Badge variant="secondary" className="ml-2 text-xs flex items-center"><IdCardIcon className="w-3 h-3 mr-1"/>{npc.classOrRole}</Badge>}
             </div>
             <Badge variant={relationshipInfo.variant} className="text-xs">
                 <RelationshipIcon className="w-3 h-3 mr-1"/>
