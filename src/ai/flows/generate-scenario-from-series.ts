@@ -68,7 +68,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded.")
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
 }).describe("Rewards for completing the quest. This field should be omitted for initial quests as they are not yet completed.");
 
 const QuestSchemaInternal = z.object({
@@ -181,10 +181,13 @@ const StyleGuideInputSchema = z.object({
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().nullable() }, // Allow AI to output null if no guide is generated
-  prompt: `You are a literary analyst. For the series "{{seriesName}}", provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
-If the series is very obscure or a distinct style is hard to summarize concisely, you MUST output an empty string (\`""\`). DO NOT output null.
-Output ONLY the style guide string.`,
+  output: { schema: z.string().nullable() }, // Allows AI to output null for THIS sub-prompt
+  prompt: `You are a literary analyst. For the series "{{seriesName}}", your task is to provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
+
+- If you can generate a suitable, concise summary for "{{seriesName}}", please provide it as a string.
+- If you determine that you cannot provide a good, concise summary (for example, if the series is too complex to summarize in 2-3 sentences effectively, or if you lack sufficient specific information to do so confidently for any reason), you MUST output an empty string ("").
+
+Please output ONLY the summary string or an empty string. DO NOT output the word 'null' or the JavaScript null value.`,
 });
 
 // --- Main Exported Flow ---
