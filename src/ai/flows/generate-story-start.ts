@@ -25,9 +25,8 @@ const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
-  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, this field should be omitted."),
+  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field should be omitted entirely."),
 });
-// export type Item = z.infer<typeof ItemSchemaInternal>; // Not exported
 
 const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character.'),
@@ -65,12 +64,12 @@ const EquipmentSlotsSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If equippable, include equipSlot; otherwise, omit equipSlot.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions. Initialize as an empty array if no quest is generated.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
 });
-export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>; // Only type exported
+export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
 
 const GenerateStoryStartInputSchemaInternal = z.object({
@@ -113,8 +112,8 @@ Based on the theme and any user suggestions, generate the following:
 3.  An initial structured story state, including:
     -   The character profile you just created.
     -   A starting location relevant to the scene.
-    -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated (though usually empty), each item must include an 'id', 'name', 'description'. If equippable, an 'equipSlot' (e.g., 'weapon', 'head', 'body'); if not equippable, the 'equipSlot' field must be omitted entirely.
-    -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
+    -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
+    -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.**
     -   If appropriate, one simple starting quest in 'activeQuests' array. Otherwise, an empty array.
     -   One or two initial 'worldFacts'.
 
@@ -151,13 +150,13 @@ const generateStoryStartFlow = ai.defineFlow(
     if (output?.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
         output.storyState.inventory.forEach(item => {
-          if (item.equipSlot === null) {
+          if (item.equipSlot === null) { // Safeguard: remove equipSlot if AI provides it as null
             delete (item as Partial<ItemType>).equipSlot;
           }
         });
         output.storyState.activeQuests = output.storyState.activeQuests ?? [];
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
-        
+
         const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
             weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
         };
@@ -165,10 +164,13 @@ const generateStoryStartFlow = ai.defineFlow(
         const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
+             // Ensure equipped items also don't have null equipSlots
+            if (newEquippedItems[slotKey] && newEquippedItems[slotKey]!.equipSlot === null) {
+              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+            }
         }
-        output.storyState.equippedItems = newEquippedItems as any; // Cast as any due to dynamic AI output
+        output.storyState.equippedItems = newEquippedItems as any;
     }
     return output!;
   }
 );
-
