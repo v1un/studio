@@ -6,14 +6,26 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserCircleIcon, CoinsIcon } from "lucide-react";
+import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserCircleIcon, CoinsIcon, SparklesIcon, LanguagesIcon } from "lucide-react";
 
 interface MinimalCharacterStatusProps {
   character: CharacterProfile;
   storyState: StructuredStoryState;
+  isPremiumSession?: boolean;
 }
 
-export default function MinimalCharacterStatus({ character, storyState }: MinimalCharacterStatusProps) {
+function getShortLanguageProficiencyLabel(level?: number): string {
+    if (level === undefined || level === null) return "Lang: N/A";
+    if (level <= 0) return "Lang: None";
+    if (level <= 10) return `Lang: Rudimentary`;
+    if (level <= 40) return `Lang: Basic`;
+    if (level <= 70) return `Lang: Conversational`;
+    if (level <= 99) return `Lang: Good`;
+    return `Lang: Fluent`;
+}
+
+
+export default function MinimalCharacterStatus({ character, storyState, isPremiumSession }: MinimalCharacterStatusProps) {
   const healthPercentage = character.maxHealth > 0 ? (character.health / character.maxHealth) * 100 : 0;
   const manaPercentage = (character.maxMana ?? 0) > 0 ? ((character.mana ?? 0) / (character.maxMana ?? 1)) * 100 : 0;
   const xpPercentage = character.experienceToNextLevel > 0 ? (character.experiencePoints / character.experienceToNextLevel) * 100 : 0;
@@ -31,16 +43,32 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
             </p>
           </div>
           <div className="flex flex-col items-end space-y-1">
-            <Badge variant="outline" className="text-md">
-              <AwardIcon className="w-3.5 h-3.5 mr-1 text-yellow-500 shrink-0" />
-              Lvl {character.level}
-            </Badge>
-            {character.currency !== undefined && (
-                <Badge variant="secondary" className="text-xs">
-                    <CoinsIcon className="w-3 h-3 mr-1 text-yellow-600 shrink-0" />
-                    {character.currency}
+             <div className="flex items-center gap-2">
+                {isPremiumSession && (
+                    <Badge variant="outline" className="text-xs border-yellow-500/70 text-yellow-600 dark:text-yellow-400">
+                        <SparklesIcon className="w-3 h-3 mr-1 text-yellow-500 shrink-0" />
+                        Premium AI
+                    </Badge>
+                )}
+                <Badge variant="outline" className="text-md">
+                <AwardIcon className="w-3.5 h-3.5 mr-1 text-yellow-500 shrink-0" />
+                Lvl {character.level}
                 </Badge>
-            )}
+            </div>
+            <div className="flex items-center gap-2">
+                {character.languageUnderstanding !== undefined && (
+                    <Badge variant="secondary" className="text-xs">
+                        <LanguagesIcon className="w-3 h-3 mr-1 text-indigo-500 shrink-0" />
+                        {getShortLanguageProficiencyLabel(character.languageUnderstanding)}
+                    </Badge>
+                )}
+                {character.currency !== undefined && (
+                    <Badge variant="secondary" className="text-xs">
+                        <CoinsIcon className="w-3 h-3 mr-1 text-yellow-600 shrink-0" />
+                        {character.currency}
+                    </Badge>
+                )}
+            </div>
           </div>
         </div>
         

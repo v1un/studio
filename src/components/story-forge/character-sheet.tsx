@@ -14,7 +14,7 @@ import {
     PackageIcon, HeartIcon, ZapIcon, 
     DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon, 
     GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
-    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon
+    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon
 } from "lucide-react";
 
 interface CharacterSheetProps {
@@ -55,6 +55,15 @@ function getSlotDisplayName(slot: EquipmentSlot): string {
   return slot.charAt(0).toUpperCase() + slot.slice(1);
 }
 
+function getLanguageProficiencyLabel(level?: number): string {
+    if (level === undefined || level === null) return "Unknown";
+    if (level <= 0) return "None (0/100)";
+    if (level <= 10) return `Rudimentary (${level}/100)`;
+    if (level <= 40) return `Basic (${level}/100)`;
+    if (level <= 70) return `Conversational (${level}/100)`;
+    if (level <= 99) return `Good (${level}/100)`;
+    return `Fluent (${level}/100)`;
+}
 
 export default function CharacterSheet({ character, storyState }: CharacterSheetProps) {
   const healthPercentage = character.maxHealth > 0 ? (character.health / character.maxHealth) * 100 : 0;
@@ -122,7 +131,6 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
          <StatDisplay icon={CoinsIcon} label="Currency" value={character.currency ?? 0} colorClass="text-yellow-600" />
         <Separator />
 
-
         <div>
           <h4 className="font-semibold mb-2 text-md">Core Stats</h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
@@ -133,6 +141,11 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <StatDisplay icon={EyeIcon} label="Wisdom" value={character.wisdom} colorClass="text-sky-500" />
             <StatDisplay icon={CharismaIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
           </div>
+        </div>
+
+        <Separator />
+        <div>
+            <StatDisplay icon={LanguagesIcon} label="Language Understanding" value={getLanguageProficiencyLabel(character.languageUnderstanding)} colorClass="text-indigo-500" />
         </div>
         
         <Separator />

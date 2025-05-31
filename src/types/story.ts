@@ -39,6 +39,7 @@ export interface CharacterProfile {
   experienceToNextLevel: number;
   skillsAndAbilities: Skill[];
   currency?: number; // Player's currency
+  languageUnderstanding?: number; // Scale of 0 (none) to 100 (fluent) for understanding the primary local language.
 }
 
 export type EquipmentSlot =
@@ -185,7 +186,7 @@ export interface AIMessageSegment {
 }
 
 export interface GenerateNextSceneInput {
-  currentScene: string; // This might need to be re-evaluated if we move to structured messages from AI
+  currentScene: string;
   userInput: string;
   storyState: StructuredStoryState;
   seriesName: string;
@@ -195,7 +196,7 @@ export interface GenerateNextSceneInput {
 }
 
 export interface GenerateNextSceneOutput {
-  generatedMessages: AIMessageSegment[]; // An array of messages, each with a speaker ('GM' or NPC name) and content
+  generatedMessages: AIMessageSegment[];
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
