@@ -15,7 +15,7 @@ import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
-  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
+  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
@@ -77,9 +77,9 @@ const QuestSchemaInternal = z.object({
 
 const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
-    playerInput: z.string().optional(),
-    npcResponse: z.string(),
-    turnId: z.string(),
+    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable."),
+    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their response."),
+    turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC. If creating a new NPC profile, make this unique (e.g., npc_[name]_[unique_suffix]). If updating, use existing ID."),
@@ -503,20 +503,22 @@ const generateNextSceneFlow = ai.defineFlow(
                  let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
                  let newId = baseId;
                  let counter = 0;
-                 while(npcIdMap.has(newId) || existingNpcIds.has(newId)) { // Check against already processed new NPCs and existing ones
+                 // Check against already processed new NPCs in this run and existing ones from input state
+                 while(npcIdMap.has(newId) || existingNpcIds.has(newId)) { 
                      newId = `${baseId}_${counter++}`;
                  }
                  npc.id = newId;
             }
             
-            // Deduplication based on the now potentially new ID
-            if (npcIdMap.has(npc.id)) { // Should only happen if AI hallucinates duplicate IDs for new NPCs
-                console.warn(`Duplicate NPC ID ${npc.id} encountered during AI output processing. Attempting to make unique.`);
+            // Deduplication based on the now potentially new ID, for NPCs generated in this current AI pass
+            if (npcIdMap.has(npc.id)) { 
                  let baseId = npc.id;
                  let counter = 0;
-                 while(npcIdMap.has(npc.id)) {
-                     npc.id = `${baseId}_dup_${counter++}`;
+                 let tempNewId = npc.id; // Use a temporary variable for the loop condition
+                 while(npcIdMap.has(tempNewId)) {
+                     tempNewId = `${baseId}_dup_${counter++}`;
                  }
+                 npc.id = tempNewId; // Assign the truly unique ID
             }
             npcIdMap.set(npc.id, npc);
 
@@ -540,6 +542,7 @@ const generateNextSceneFlow = ai.defineFlow(
                  npc.firstEncounteredTurnId = originalNpc.firstEncounteredTurnId;
             }
             
+            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation || input.storyState.currentLocation;
             npc.lastSeenTurnId = npc.lastSeenTurnId || input.currentTurnId;
             npc.updatedAt = new Date().toISOString();
 

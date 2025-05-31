@@ -15,7 +15,7 @@ import {z} from 'genkit';
 import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, NPCDialogueEntry as NPCDialogueEntryType, NPCRelationshipStatus } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
-  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
+  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
@@ -78,9 +78,9 @@ const QuestSchemaInternal = z.object({
 
 const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
-    playerInput: z.string().optional(),
-    npcResponse: z.string(),
-    turnId: z.string(),
+    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable."),
+    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their response."),
+    turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC, e.g., npc_bartender_giles_001."),
@@ -269,15 +269,25 @@ const generateStoryStartFlow = ai.defineFlow(
 
         // NPC Tracker post-processing
         output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
-        const npcNameSet = new Set<string>();
+        const npcIdSet = new Set<string>();
         output.storyState.trackedNPCs.forEach((npc, index) => {
-            if (!npc.id) {
-                npc.id = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+            if (!npc.id) { // Generate ID if missing
+                let baseId = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+                let newId = baseId;
+                let counter = 0;
+                while(npcIdSet.has(newId)) {
+                    newId = `${baseId}_${counter++}`;
+                }
+                npc.id = newId;
             }
-            while(npcNameSet.has(npc.id)){ // ensure id is unique
-                 npc.id = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}`;
+            while(npcIdSet.has(npc.id)){ // Ensure ID is unique even if AI provided one
+                 let baseId = npc.id;
+                 let counter = 0;
+                 while(npcIdSet.has(npc.id)) {
+                    npc.id = `${baseId}_u${counter++}`;
+                 }
             }
-            npcNameSet.add(npc.id);
+            npcIdSet.add(npc.id);
 
             npc.name = npc.name || "Unnamed NPC";
             npc.description = npc.description || "No description provided.";
@@ -285,15 +295,18 @@ const generateStoryStartFlow = ai.defineFlow(
             npc.knownFacts = npc.knownFacts ?? [];
             npc.dialogueHistory = npc.dialogueHistory ?? [];
             
-            if (!npc.firstEncounteredTurnId) npc.firstEncounteredTurnId = "initial_turn_0";
-            if (!npc.updatedAt) npc.updatedAt = new Date().toISOString();
+            npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
+            npc.updatedAt = npc.updatedAt || new Date().toISOString();
+            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
+            npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
+
 
             if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
             if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
+            // Do not delete firstEncounteredTurnId
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
-            if (npc.lastSeenTurnId === null || (npc.lastSeenTurnId as unknown) === '') delete npc.lastSeenTurnId;
+            // Do not delete lastSeenTurnId
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
-
         });
     }
     return output!;

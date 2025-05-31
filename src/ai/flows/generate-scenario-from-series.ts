@@ -6,7 +6,7 @@
  * This includes the starting scene, character state (potentially based on user input for name/class),
  * initial inventory, quests (with objectives, categories, and pre-defined rewards), world facts,
  * a set of pre-populated lorebook entries relevant to the series, a brief series style guide,
- * and initial profiles for any NPCs introduced in the starting scene.
+ * and initial profiles for any NPCs introduced in the starting scene or known major characters from the series.
  * This flow uses a multi-step generation process.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
@@ -20,7 +20,7 @@ import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType,
 
 // --- Schemas for AI communication (Internal, consistent with types/story.ts) ---
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
-  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
+  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory/equipment/rewards."),
@@ -83,22 +83,22 @@ const QuestSchemaInternal = z.object({
 
 const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
-    playerInput: z.string().optional(),
-    npcResponse: z.string(),
-    turnId: z.string(),
+    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable."),
+    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their response."),
+    turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC, e.g., npc_series_charactername_001."),
     name: z.string().describe("NPC's name."),
     description: z.string().describe("Physical appearance, general demeanor, key characteristics, fitting the series."),
     classOrRole: z.string().optional().describe("e.g., 'Hokage', 'Soul Reaper Captain', 'Keyblade Master'."),
-    firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced."),
+    firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, or their typical location if pre-populated."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for scenario start)."),
     relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's initial relationship with the NPC (e.g., 'Neutral', 'Unknown', or specific to series context)."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player would know initially about this NPC based on the series, or empty if an OC."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Should be empty or omitted for initial scenario."),
-    lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup."),
-    lastSeenTurnId: z.string().optional().describe("Same as firstEncounteredTurnId for initial setup."),
+    lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup, or their current canonical location if different."),
+    lastSeenTurnId: z.string().optional().describe("Same as firstEncounteredTurnId for initial setup (use 'initial_turn_0')."),
     seriesContextNotes: z.string().optional().describe("Brief AI-internal note about their canon role/importance if an existing series character."),
     updatedAt: z.string().optional().describe("Timestamp of the last update (set to current time for new)."),
 });
@@ -110,7 +110,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion). These quests should be compelling and provide clear direction."),
   worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered or known at the start of the scenario. If the starting scene introduces NPCs, or if the player character would know certain NPCs from the series, create profiles for them. Ensure each profile has a unique 'id', 'name', 'description', 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0'), and 'knownFacts'.")
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts', and optionally 'seriesContextNotes'. Dialogue history should be empty.")
 });
 
 const RawLoreEntrySchemaInternal = z.object({
@@ -167,16 +167,20 @@ Your goal is to generate ONLY the following two things:
     *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore and character, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest", "Personal Goal") – if no category is clear or applicable, omit the 'category' field. For added depth, if a quest is complex, provide an array of 'objectives', each with a 'description' and 'isCompleted: false'.
         - **Quest Rewards**: For each initial quest, you MUST also define a 'rewards' object. This object specifies the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player *will* receive upon completing this quest. For 'items' in rewards, ensure each item has a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field entirely or provide an empty object {} for it.
     *   'worldFacts': An array of 3-5 key 'worldFacts' (strings) about the "{{seriesName}}" universe, particularly those relevant to the character's starting situation or the immediate environment.
-    *   'trackedNPCs': If the initial 'sceneDescription' introduces any significant NPCs (e.g., named characters who speak or are interacted with, or quest givers), create their initial profiles in this array. For each NPC:
-        - Generate a unique 'id' (e.g., npc_{{seriesName}}_npcname_001).
-        - Provide their 'name' and 'description' (consistent with the scene).
-        - Set initial 'relationshipStatus' (e.g., 'Neutral', 'Unknown', or a specific status if clear from series context like 'Friendly' for a known ally).
-        - Set 'firstEncounteredLocation' to the 'currentLocation'.
-        - Set 'firstEncounteredTurnId' to "initial_turn_0".
-        - Populate 'knownFacts' with 1-2 basic facts the player character would know about this NPC if they are an established character from the series, or leave empty for a new NPC.
-        - 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId', and 'seriesContextNotes' can typically be omitted or empty for this initial setup, unless very specific context applies.
+    *   'trackedNPCs': This array MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene.
+        - For each NPC (whether in scene 1 or pre-populated major character):
+            - Generate a unique 'id' (e.g., npc_{{seriesName}}_npcname_001).
+            - Provide their 'name' and 'description' (consistent with the scene for scene 1 NPCs; consistent with canon for major pre-populated NPCs).
+            - Set 'classOrRole' if applicable.
+            - Set 'firstEncounteredLocation': For scene 1 NPCs, this is 'storyState.currentLocation'. For pre-populated major NPCs, this could be their typical location or a note like "Known from series lore."
+            - Set 'firstEncounteredTurnId' to "initial_turn_0" for all NPCs known at game start.
+            - Set initial 'relationshipStatus' reflecting the character's likely starting relationship (e.g., 'Neutral', 'Unknown', 'Friendly' for an ally, 'Hostile' for a known antagonist).
+            - Populate 'knownFacts' with 1-2 basic facts the player character would know about this NPC.
+            - For pre-populated major NPCs, 'seriesContextNotes' can be useful to note their canon importance.
+            - 'dialogueHistory' should be empty. 'lastKnownLocation' and 'lastSeenTurnId' should generally mirror 'firstEncountered...' details for initial setup unless a more specific current canonical status is applicable.
+            - Ensure all fields adhere to the NPCProfile schema.
 
-**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties (id, name, description, and 'equipSlot' if it's equippable gear, otherwise 'equipSlot' omitted). If an NPC is described, their profile should be in 'trackedNPCs'.
+**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties (id, name, description, and 'equipSlot' if it's equippable gear, otherwise 'equipSlot' omitted). If an NPC is described in the scene, their profile should be in 'trackedNPCs'.
 
 DO NOT generate 'initialLoreEntries' or 'seriesStyleGuide' in THIS step.
 The entire response for this step must strictly follow the JSON schema for the 'sceneDescription' and 'storyState' output. Make sure all IDs for items, quests, and NPCs are unique.
@@ -354,28 +358,46 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
       // NPC Tracker post-processing
       finalOutput.storyState.trackedNPCs = finalOutput.storyState.trackedNPCs ?? [];
-      const npcNameSet = new Set<string>();
+      const npcIdSet = new Set<string>(); // Changed from npcNameSet to npcIdSet for accuracy
       finalOutput.storyState.trackedNPCs.forEach((npc, index) => {
-          if (!npc.id) {
-              npc.id = `npc_scenario_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+          if (!npc.id) { // Generate ID if missing
+              let baseId = `npc_scenario_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+              let newId = baseId;
+              let counter = 0;
+              while(npcIdSet.has(newId)) {
+                 newId = `${baseId}_${counter++}`;
+              }
+              npc.id = newId;
           }
-           while(npcNameSet.has(npc.id)){
-             npc.id = `npc_scenario_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}_${Math.random().toString(36).substring(7)}`;
+           while(npcIdSet.has(npc.id)){ // Ensure ID is unique even if AI provided one that clashes
+             let baseId = npc.id;
+             let counter = 0;
+             // Append _uX to make it unique if it's already in the set from a previous iteration in this loop
+             // This handles cases where AI might provide duplicate IDs.
+             while(npcIdSet.has(npc.id)) {
+                npc.id = `${baseId}_u${counter++}`;
+             }
           }
-          npcNameSet.add(npc.id);
+          npcIdSet.add(npc.id);
 
           npc.name = npc.name || "Unnamed NPC";
           npc.description = npc.description || "No description provided.";
           npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
           npc.knownFacts = npc.knownFacts ?? [];
-          npc.dialogueHistory = npc.dialogueHistory ?? [];
-          if (!npc.firstEncounteredTurnId) npc.firstEncounteredTurnId = "initial_turn_0";
-          if (!npc.updatedAt) npc.updatedAt = new Date().toISOString();
+          npc.dialogueHistory = npc.dialogueHistory ?? []; // Should be empty for initial
+          
+          npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
+          npc.updatedAt = npc.updatedAt || new Date().toISOString();
+          // Preserve firstEncounteredLocation if provided, otherwise it might be set by AI based on context
+          // lastKnownLocation and lastSeenTurnId will also default to firstEncountered... if not set by AI
+          npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
+          npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
           
           if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
           if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
+          // Do not delete firstEncounteredTurnId
           if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
-          if (npc.lastSeenTurnId === null || (npc.lastSeenTurnId as unknown) === '') delete npc.lastSeenTurnId;
+          // Do not delete lastSeenTurnId
           if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
       });
     }
