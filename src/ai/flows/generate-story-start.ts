@@ -2,9 +2,8 @@
 'use server';
 
 /**
- * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, and initial empty equipment.
+ * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, and initial quests (with optional objectives and categories).
  * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts.
- * It can be kept for a more generic, non-series specific start if desired, or removed.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
  * - GenerateStoryStartInput - The input type for the generateStoryStart function.
@@ -13,18 +12,16 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType } from '@/types/story';
-
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, QuestObjective as QuestObjectiveType } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
-
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
-  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field should be omitted entirely."),
+  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
 });
 
 const CharacterProfileSchemaInternal = z.object({
@@ -60,22 +57,28 @@ const EquipmentSlotsSchemaInternal = z.object({
 }).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. Initialize all 10 slots to null.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed']);
+const QuestObjectiveSchemaInternal = z.object({
+  description: z.string().describe("A clear description of this specific objective for the quest."),
+  isCompleted: z.boolean().describe("Whether this specific objective is completed (should usually be false for new quests).")
+});
+
 const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_generic_001'."),
-  description: z.string().describe("A clear description of the quest's objective."),
-  status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests.")
+  description: z.string().describe("A clear description of the quest's overall objective."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests."),
+  category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Tutorial'). Omit if not clearly classifiable."),
+  objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'.")
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted entirely.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe('A list of quests, each an object with id, description, and status. Initialize as an empty array if no quest is generated, or with one simple starting quest with status \'active\'.'),
+  quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category and objectives.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
-
 
 const GenerateStoryStartInputSchemaInternal = z.object({
   prompt: z.string().describe('A prompt to kickstart the story (e.g., \'A lone knight enters a dark forest\').'),
@@ -86,7 +89,7 @@ export type GenerateStoryStartInput = z.infer<typeof GenerateStoryStartInputSche
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, and any initial quests.'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, and any initial quests (with categories and objectives).'),
 });
 export type GenerateStoryStartOutput = z.infer<typeof GenerateStoryStartOutputSchemaInternal>;
 
@@ -119,14 +122,14 @@ Based on the theme and any user suggestions, generate the following:
     -   A starting location relevant to the scene.
     -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
     -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
-    -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. Otherwise, 'quests' should be an empty array.
+    -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. Otherwise, 'quests' should be an empty array.
     -   One or two initial 'worldFacts'.
 
 Your entire response must strictly follow the JSON schema defined for the output.
 The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', and 'worldFacts'.
 The 'character' object must have all fields required by its schema.
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
-The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'.
+The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category' and 'objectives'.
 For items in inventory or equipped, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 `,
 });
@@ -170,6 +173,18 @@ const generateStoryStartFlow = ai.defineFlow(
           if (!quest.status) {
             quest.status = 'active';
           }
+          if (quest.category === null || (quest.category as unknown) === '') {
+            delete (quest as Partial<QuestType>).category;
+          }
+          quest.objectives = quest.objectives ?? [];
+          quest.objectives.forEach(obj => {
+            if (typeof obj.isCompleted !== 'boolean') {
+              obj.isCompleted = false;
+            }
+             if (typeof obj.description !== 'string') {
+                obj.description = "Objective details missing";
+            }
+          });
         });
 
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
