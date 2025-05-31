@@ -5,11 +5,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookPlusIcon, UserIcon, ShieldQuestionIcon } from "lucide-react";
+import { BookPlusIcon, UserIcon, ShieldQuestionIcon, SparklesIcon } from "lucide-react";
 
 interface InitialPromptFormProps {
-  onSubmitSeries: (data: { seriesName: string; characterName?: string; characterClass?: string }) => void;
+  onSubmitSeries: (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => void;
   isLoading: boolean;
 }
 
@@ -17,6 +18,7 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
   const [seriesName, setSeriesName] = useState("");
   const [characterName, setCharacterName] = useState("");
   const [characterClass, setCharacterClass] = useState("");
+  const [usePremiumAI, setUsePremiumAI] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +27,7 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
         seriesName: seriesName.trim(),
         characterName: characterName.trim() || undefined,
         characterClass: characterClass.trim() || undefined,
+        usePremiumAI: usePremiumAI,
       });
     }
   };
@@ -87,6 +90,23 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
                 <p className="text-xs text-muted-foreground">Suggest a role or class for your character.</p>
             </div>
           </div>
+
+          <div className="flex items-center space-x-3 pt-2 border-t border-border/50">
+            <Switch
+                id="premium-ai-toggle"
+                checked={usePremiumAI}
+                onCheckedChange={setUsePremiumAI}
+                disabled={isLoading}
+                aria-label="Toggle Premium AI"
+            />
+            <Label htmlFor="premium-ai-toggle" className="flex items-center text-sm font-medium">
+                <SparklesIcon className="w-4 h-4 mr-1.5 text-yellow-500"/>
+                Use Premium AI & Prompts
+            </Label>
+          </div>
+           <p className="text-xs text-muted-foreground -mt-4 ml-12">Utilizes a more advanced AI model (may be slower or have different rate limits). Enhanced prompts are a work in progress.</p>
+
+
         </CardContent>
         <CardFooter>
           <Button type="submit" disabled={isLoading || !seriesName.trim()} className="w-full text-lg py-6">
@@ -97,5 +117,3 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
     </Card>
   );
 }
-
-    

@@ -3,16 +3,16 @@
 
 /**
  * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, initial quests (with optional objectives, categories, and pre-defined rewards), initial tracked NPCs, and starting skills/abilities.
- * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts.
+ * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts. Supports model selection.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
  * - GenerateStoryStartInput - The input type for the generateStoryStart function.
  * - GenerateStoryStartOutput - The return type for the generateStoryStart function.
  */
 
-import {ai} from '@/ai/genkit';
+import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z} from 'zod';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType } from '@/types/story'; // Use exported types
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
@@ -134,30 +134,38 @@ const StructuredStoryStateSchemaInternal = z.object({
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene. If an NPC is a merchant, set 'isMerchant' and populate 'merchantInventory' with priced items."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro."),
 });
-export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
 const GenerateStoryStartInputSchemaInternal = z.object({
   prompt: z.string().describe('A prompt to kickstart the story (e.g., \'A lone knight enters a dark forest\').'),
   characterNameInput: z.string().optional().describe('Optional user-suggested character name.'),
   characterClassInput: z.string().optional().describe('Optional user-suggested character class.'),
+  usePremiumAI: z.boolean().optional().describe("Whether to use the premium AI model."),
 });
-export type GenerateStoryStartInput = z.infer<typeof GenerateStoryStartInputSchemaInternal>;
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
   storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, currency, empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards including currency), starting skills/abilities, and profiles for any NPCs introduced (including merchant details if applicable).'),
 });
-export type GenerateStoryStartOutput = z.infer<typeof GenerateStoryStartOutputSchemaInternal>;
 
-export async function generateStoryStart(input: GenerateStoryStartInput): Promise<GenerateStoryStartOutput> {
+export async function generateStoryStart(input: GenerateStoryStartInputType): Promise<GenerateStoryStartOutputType> {
   return generateStoryStartFlow(input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'generateStoryStartPrompt',
-  input: {schema: GenerateStoryStartInputSchemaInternal},
-  output: {schema: GenerateStoryStartOutputSchemaInternal},
-  prompt: `You are a creative storyteller and game master.
+const generateStoryStartFlow = ai.defineFlow(
+  {
+    name: 'generateStoryStartFlow',
+    inputSchema: GenerateStoryStartInputSchemaInternal,
+    outputSchema: GenerateStoryStartOutputSchemaInternal,
+  },
+  async (input: GenerateStoryStartInputType) => {
+    const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+
+    const storyStartPrompt = ai.definePrompt({
+        name: 'generateStoryStartPrompt',
+        model: modelName,
+        input: {schema: GenerateStoryStartInputSchemaInternal},
+        output: {schema: GenerateStoryStartOutputSchemaInternal},
+        prompt: `You are a creative storyteller and game master.
 The user wants to start a new story with the following theme: "{{prompt}}".
 
 User's character suggestions:
@@ -192,16 +200,9 @@ The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inv
 Ensure all IDs (items, quests, NPCs, skills) are unique.
 Item \`basePrice\` should be set for all items. Merchant items for sale must have a \`price\`.
 `,
-});
+    });
 
-const generateStoryStartFlow = ai.defineFlow(
-  {
-    name: 'generateStoryStartFlow',
-    inputSchema: GenerateStoryStartInputSchemaInternal,
-    outputSchema: GenerateStoryStartOutputSchemaInternal,
-  },
-  async input => {
-    const {output} = await prompt(input);
+    const {output} = await storyStartPrompt(input);
     if (!output) throw new Error("Failed to generate story start output.");
 
     // Character post-processing
@@ -359,7 +360,7 @@ const generateStoryStartFlow = ai.defineFlow(
             npc.dialogueHistory = npc.dialogueHistory ?? [];
             
             npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-            npc.updatedAt = new Date().toISOString(); // Ensure correct timestamp at creation
+            npc.updatedAt = new Date().toISOString(); 
             npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
             npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
 
@@ -375,7 +376,7 @@ const generateStoryStartFlow = ai.defineFlow(
                 if (!item.id) item.id = `item_merchant_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
                 item.basePrice = item.basePrice ?? 0;
                 if (item.basePrice < 0) item.basePrice = 0;
-                (item as any).price = (item as any).price ?? item.basePrice; // Ensure merchant items have a sale price
+                (item as any).price = (item as any).price ?? item.basePrice; 
                 if ((item as any).price < 0) (item as any).price = 0;
                 if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
             });
@@ -387,4 +388,3 @@ const generateStoryStartFlow = ai.defineFlow(
     return output!;
   }
 );
-

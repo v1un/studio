@@ -47,21 +47,15 @@ export default function StoryForgePage() {
       if (sessionData) {
         try {
           const session: GameSession = JSON.parse(sessionData);
-          // Basic validation for the new message structure
-          if (session.storyHistory.every(turn => Array.isArray(turn.messages))) {
+          if (session.storyHistory && session.storyHistory.every(turn => Array.isArray(turn.messages))) {
             setStoryHistory(session.storyHistory);
             setCurrentSession(session);
           } else {
-            // Attempt to migrate old data or clear if migration is too complex
-            console.warn("Old session format detected. Clearing for new structure.");
+            console.warn("Old session format detected or missing story history. Clearing.");
             localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
             localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
             setCurrentSession(null);
             setStoryHistory([]);
-          }
-          
-          if (getLorebook().length === 0 && session.storyHistory.length > 0 && session.storyHistory[0].messages.length > 0) {
-            // This part would ideally load lore if it was tied to session start
           }
         } catch (e) {
           console.error("Failed to parse saved session:", e);
@@ -93,7 +87,6 @@ export default function StoryForgePage() {
         ...currentSession,
         storyHistory: storyHistory,
         lastPlayedAt: new Date().toISOString(),
-        characterName: currentSession.characterName, // Character name set at session creation
       };
     
     const sessionKey = `${SESSION_KEY_PREFIX}${currentSession.id}`;
@@ -105,7 +98,7 @@ export default function StoryForgePage() {
   const currentStoryState = useMemo(() => storyHistory.length > 0 ? storyHistory[storyHistory.length - 1].storyStateAfterScene : null, [storyHistory]);
   const character = useMemo(() => currentStoryState?.character, [currentStoryState]);
 
-  const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string }) => {
+  const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
     setLoadingMessage("AI is forging your initial world and character...");
     try {
@@ -113,6 +106,7 @@ export default function StoryForgePage() {
         seriesName: data.seriesName,
         characterNameInput: data.characterName,
         characterClassInput: data.characterClass,
+        usePremiumAI: data.usePremiumAI,
       };
       const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
       
@@ -142,12 +136,13 @@ export default function StoryForgePage() {
       const newSession: GameSession = {
         id: newSessionId,
         storyPrompt: `Adventure in the world of: ${data.seriesName}${data.characterName ? ` as ${data.characterName}` : ''}`,
-        characterName: result.storyState.character.name, // Set character name from AI result
+        characterName: result.storyState.character.name,
         storyHistory: [firstTurn],
         createdAt: new Date().toISOString(),
         lastPlayedAt: new Date().toISOString(),
         seriesName: data.seriesName,
         seriesStyleGuide: result.seriesStyleGuide,
+        isPremiumSession: data.usePremiumAI,
       };
 
       localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
@@ -158,7 +153,7 @@ export default function StoryForgePage() {
       setActiveTab("story");
       toast({
         title: `Adventure in ${data.seriesName} Begun!`,
-        description: `Playing as ${newSession.characterName}.`,
+        description: `Playing as ${newSession.characterName}. ${data.usePremiumAI ? "(Premium AI Active)" : ""}`,
       });
     } catch (error) {
       console.error("Failed to start story from series:", error);
@@ -219,6 +214,7 @@ export default function StoryForgePage() {
         seriesName: currentSession.seriesName,
         seriesStyleGuide: currentSession.seriesStyleGuide,
         currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
+        usePremiumAI: currentSession.isPremiumSession,
       });
 
       const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
@@ -410,4 +406,3 @@ export default function StoryForgePage() {
     </div>
   );
 }
-

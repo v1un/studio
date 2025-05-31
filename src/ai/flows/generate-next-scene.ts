@@ -2,15 +2,15 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, currency, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs (with merchant capabilities), skills/abilities, and series-specific context. It also allows the AI to propose new lore entries, updates a running story summary, and handles character leveling and trading.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, currency, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs (with merchant capabilities), skills/abilities, and series-specific context. It also allows the AI to propose new lore entries, updates a running story summary, and handles character leveling and trading. Supports model selection.
  *
  * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, potentially new lore, an updated story summary, and handles character progression and trading.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
  * - GenerateNextSceneOutput - The return type for the generateNextScene function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z}from 'genkit';
+import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
+import {z}from 'zod';
 import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
@@ -145,6 +145,7 @@ const GenerateNextSceneInputSchemaInternal = z.object({
   seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
   seriesStyleGuide: z.string().optional().describe('A brief style guide for the series to maintain tone and themes.'),
   currentTurnId: z.string().describe('The ID of the current story turn, for logging in NPC dialogue history etc.'),
+  usePremiumAI: z.boolean().optional().describe("Whether to use the premium AI model."),
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchemaInternal>;
 
@@ -175,7 +176,6 @@ const AIMessageSegmentSchemaInternal = z.object({
 
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
-  // nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("An array of message segments that constitute the AI's response. This should include all narration and NPC dialogue, broken down by speaker."),
   updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, currency, level changes (including potential stat/skill grant from level up), inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including merchant status, inventory changes, potential short-term goal changes), new skills, or stat increases. Rewards for completed quests (including currency) are applied automatically. Items should always include a basePrice.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
@@ -276,13 +276,22 @@ function formatSkills(skills: SkillType[] | undefined | null): string {
     }).join("\n");
 }
 
+const generateNextSceneFlow = ai.defineFlow(
+  {
+    name: 'generateNextSceneFlow',
+    inputSchema: GenerateNextSceneInputSchemaInternal,
+    outputSchema: GenerateNextSceneOutputSchemaInternal,
+  },
+  async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
+    const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
 
-const prompt = ai.definePrompt({
-  name: 'generateNextScenePrompt',
-  input: {schema: PromptInternalInputSchema},
-  output: {schema: GenerateNextSceneOutputSchemaInternal},
-  tools: [lookupLoreTool],
-  prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
+    const prompt = ai.definePrompt({
+        name: 'generateNextScenePrompt',
+        model: modelName,
+        input: {schema: PromptInternalInputSchema},
+        output: {schema: GenerateNextSceneOutputSchemaInternal},
+        tools: [lookupLoreTool],
+        prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
 This story is set in the universe of: {{seriesName}}.
 {{#if seriesStyleGuide}}
 Series Style Guide: {{seriesStyleGuide}}
@@ -370,6 +379,7 @@ You are provided with a storyState.storySummary of key past events. Use this sum
 While respecting player choices is paramount, ensure the story remains coherent within the established {{seriesName}} universe and its {{seriesStyleGuide}}.
 - If a player action severely contradicts core series lore, established character personalities (for canon characters), or the fundamental tone of the series in a way that would break immersion, gently guide the narrative. This could involve: narrating internal conflict for the character, introducing unexpected obstacles that make the out-of-character action difficult, or NPCs reacting with strong disbelief or opposition. The aim is collaborative storytelling.
 - If player actions lead to significant, logical consequences (e.g., alerting an entire city guard, angering a powerful entity), these consequences MUST be reflected in the generatedMessages, updatedStoryState (especially worldFacts, NPC statuses/goals, and quest states), and the updatedStorySummary.
+- If the player's actions or the evolving story naturally approach a known major plot point, character arc, or iconic scenario from the '{{seriesName}}' universe, consider weaving elements of it into the 'generatedMessages' or having NPCs react in ways that acknowledge this potential trajectory. This should serve to enrich the experience with series-specific depth *if opportunities arise organically*, rather than forcing the player onto a specific path against their will. The primary goal remains collaborative storytelling driven by player agency.
 
 **Special Abilities Awareness:** Be mindful of unique, potent character abilities listed in their profile, such as those involving fate, time, or death (e.g., 'Return by Death').
 
@@ -468,15 +478,9 @@ Crucially, you must also update the story state. This includes:
 The generated messages should logically follow. Ensure adherence to JSON schema.
 The \`updatedStorySummary\` field MUST be provided.
 `,
-});
+    });
 
-const generateNextSceneFlow = ai.defineFlow(
-  {
-    name: 'generateNextSceneFlow',
-    inputSchema: GenerateNextSceneInputSchemaInternal,
-    outputSchema: GenerateNextSceneOutputSchemaInternal,
-  },
-  async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
+
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
     const formattedQuestsString = formatQuests(input.storyState.quests);
     const formattedTrackedNPCsString = formatTrackedNPCs(input.storyState.trackedNPCs);
@@ -515,6 +519,8 @@ const generateNextSceneFlow = ai.defineFlow(
       for (const lore of output.newLoreEntries) {
         if (lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") {
           try {
+            // For lore tool, we'll assume standard model for generation if not specified.
+            // The tool itself could be enhanced to accept a model preference.
             saveNewLoreEntry({
               keyword: lore.keyword,
               content: lore.content,

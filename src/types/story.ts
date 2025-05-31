@@ -138,6 +138,7 @@ export interface GameSession {
   lastPlayedAt: string;
   seriesName: string;
   seriesStyleGuide?: string;
+  isPremiumSession?: boolean;
 }
 
 export interface LoreEntry {
@@ -161,6 +162,7 @@ export interface GenerateScenarioFromSeriesInput {
   seriesName: string;
   characterNameInput?: string;
   characterClassInput?: string;
+  usePremiumAI?: boolean;
 }
 
 export interface GenerateScenarioFromSeriesOutput {
@@ -189,13 +191,25 @@ export interface GenerateNextSceneInput {
   seriesName: string;
   seriesStyleGuide?: string;
   currentTurnId: string;
+  usePremiumAI?: boolean;
 }
 
 export interface GenerateNextSceneOutput {
-  // nextScene: string; // This will be the AI's response, potentially containing GM narration and NPC dialogue
   generatedMessages: AIMessageSegment[]; // An array of messages, each with a speaker ('GM' or NPC name) and content
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
   updatedStorySummary: string; // The new running summary of the story
+}
+
+export interface GenerateStoryStartInput {
+  prompt: string;
+  characterNameInput?: string;
+  characterClassInput?: string;
+  usePremiumAI?: boolean;
+}
+
+export interface GenerateStoryStartOutput {
+  sceneDescription: string;
+  storyState: StructuredStoryState;
 }
