@@ -11,7 +11,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, QuestObjective as QuestObjectiveType, QuestRewards as QuestRewardsType } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -64,7 +64,7 @@ const QuestObjectiveSchemaInternal = z.object({
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
   items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
-}).describe("Potential rewards to be given upon quest completion, defined when the quest is created. Omit if no specific material rewards.");
+}).describe("Rewards defined when the quest is created, to be given upon quest completion. Omit if no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_main_001' or 'quest_side_witch_forest_003'. Must be unique among all quests."),
@@ -72,7 +72,7 @@ const QuestSchemaInternal = z.object({
   status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed'."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Personal Goal', 'Exploration'). Omit if not clearly classifiable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. Use for more complex quests. If the quest is simple, this can be omitted."),
-  rewards: QuestRewardsSchemaInternal.optional() // Description moved to QuestRewardsSchemaInternal
+  rewards: QuestRewardsSchemaInternal.optional()
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
@@ -80,8 +80,8 @@ const StructuredStoryStateSchemaInternal = z.object({
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status'. Optionally include 'category', a list of 'objectives' (each with 'description' and 'isCompleted'), and 'rewards' (which specify what the player will get on completion)."),
-  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
+  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
+  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
 });
 
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
@@ -89,7 +89,7 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInte
 const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, etc.).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, worldFacts, etc.).'),
   seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
   seriesStyleGuide: z.string().optional().describe('A brief style guide for the series to maintain tone and themes.'),
 });
@@ -97,12 +97,19 @@ export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema
 
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
-  formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, and objectives."),
+  formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, objectives, and potential rewards."),
+});
+
+const ActiveNPCInfoSchemaInternal = z.object({
+    name: z.string().describe("The name of the NPC, if known or identifiable."),
+    description: z.string().optional().describe("A brief description of the NPC if newly introduced or particularly relevant."),
+    keyDialogueOrAction: z.string().optional().describe("A key line of dialogue spoken by the NPC or a significant action they took in this scene.")
 });
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
-  nextScene: z.string().describe('The generated text for the next scene.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, equipment changes, and quest updates. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object.'),
+  nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion), and world fact updates. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object.'),
+  activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active.")
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -213,8 +220,16 @@ Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, 
 
 If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore *within the "{{seriesName}}" universe*, use the 'lookupLoreTool' (providing the current 'seriesName' to it) to get more information about it. Integrate this information naturally into your response if relevant.
 
-Based on the current scene, player's input, and detailed story state, generate the next scene.
-Describe any quest-related developments (new quests, progress, completion) clearly in the \`nextScene\` text.
+Based on the current scene, player's input, and detailed story state, generate the 'nextScene' text.
+
+NPC Management:
+- If NPCs are present or introduced, clearly attribute their dialogue (e.g., Guard Captain: "Halt!") and actions.
+- Make NPCs react to the player's actions and dialogue in character.
+- Narrate when significant NPCs enter or leave the scene.
+- Consider giving NPCs distinct mannerisms or ways of speaking, fitting the "{{seriesName}}" context.
+- If distinct NPCs were active (spoke, performed notable actions) in the scene you generate, populate the 'activeNPCsInScene' array in the output. For each NPC, provide their 'name', an optional 'description' (especially if new or their appearance is relevant), and an optional 'keyDialogueOrAction'.
+
+Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
 When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
 
 Crucially, you must also update the story state. This includes:
@@ -253,10 +268,10 @@ Crucially, you must also update the story state. This includes:
   - Ensure quest IDs are unique.
   - If a quest's \`category\` is not applicable, omit the field. If objectives are not needed, omit the \`objectives\` array.
 - World Facts:
-  - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment within the "{{seriesName}}" context.
+  - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment within the "{{seriesName}}" context. Use world facts to track the presence and key status of significant NPCs in the scene.
   - **Adding Facts**: If the character makes a new, significant observation or learns a piece of information relevant to the immediate situation that isn't broad enough for the lorebook, add it as a string to \`worldFacts\`.
   - **Modifying Facts**: If an existing fact needs refinement based on new developments, you can suggest replacing the old fact with a new one (effectively removing the old and adding the new).
-  - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes), you can remove it from the \`worldFacts\` array.
+  - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes, an NPC leaves the scene), you can remove it from the \`worldFacts\` array.
   - **Narrate Changes**: If you add, modify, or remove a world fact in a way that the character would perceive or that's significant for the player to know, briefly mention this in the \`nextScene\` (e.g., "You now realize the guard captain is missing," or "The strange humming sound from the basement has stopped.").
 
 The next scene should logically follow the player's input and advance the narrative, respecting the style and lore of {{seriesName}}.
@@ -265,6 +280,7 @@ The 'updatedStoryState.character' must include all fields required by its schema
 The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
+The 'activeNPCsInScene' array (if provided) should contain objects with 'name', and optional 'description' and 'keyDialogueOrAction'.
 `,
 });
 
@@ -314,7 +330,7 @@ const generateNextSceneFlow = ai.defineFlow(
           if (!item.id) {
             item.id = `item_generated_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           }
-          if (item.equipSlot === null || (item.equipSlot as unknown) === '') { 
+          if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
             delete (item as Partial<ItemType>).equipSlot;
           }
         });
@@ -325,7 +341,7 @@ const generateNextSceneFlow = ai.defineFlow(
             quest.id = `quest_generated_${Date.now()}_${index}`;
           }
           if (!quest.status) {
-            quest.status = 'active'; 
+            quest.status = 'active';
           }
           if (quest.category === null || (quest.category as unknown) === '') {
             delete (quest as Partial<QuestType>).category;
@@ -339,7 +355,7 @@ const generateNextSceneFlow = ai.defineFlow(
                 obj.description = "Objective details missing";
             }
           });
-          
+
           // Apply rewards if quest status changes to completed and rewards exist
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
@@ -348,8 +364,8 @@ const generateNextSceneFlow = ai.defineFlow(
             }
             if (quest.rewards.items && Array.isArray(quest.rewards.items)) {
               quest.rewards.items.forEach(rewardItem => {
-                const cleanedRewardItem = { ...rewardItem }; // Clone to avoid mutating original rewards
-                 if (!cleanedRewardItem.id) { // Ensure rewarded items have IDs if AI forgets
+                const cleanedRewardItem = { ...rewardItem };
+                 if (!cleanedRewardItem.id) {
                     cleanedRewardItem.id = `item_reward_${Date.now()}_${Math.random().toString(36).substring(7)}`;
                 }
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
@@ -359,11 +375,10 @@ const generateNextSceneFlow = ai.defineFlow(
               });
             }
           }
-          
-          // Clean up quest.rewards object if it's empty or contains only empty/undefined fields
+
           if (quest.rewards) {
-            quest.rewards.items = quest.rewards.items ?? []; // Ensure items array exists for cleaning
-             quest.rewards.items.forEach(rewardItem => { // Clean reward items
+            quest.rewards.items = quest.rewards.items ?? [];
+             quest.rewards.items.forEach(rewardItem => {
                 if (!rewardItem.id) {
                     rewardItem.id = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
                 }
@@ -401,8 +416,20 @@ const generateNextSceneFlow = ai.defineFlow(
                 }
             }
         }
-        output.updatedStoryState.equippedItems = newEquippedItems as any; 
+        output.updatedStoryState.equippedItems = newEquippedItems as any;
     }
+
+    if (output && output.activeNPCsInScene) {
+      output.activeNPCsInScene = output.activeNPCsInScene.filter(npc => npc.name && npc.name.trim() !== '');
+      output.activeNPCsInScene.forEach(npc => {
+        if (npc.description === null || npc.description === '') delete npc.description;
+        if (npc.keyDialogueOrAction === null || npc.keyDialogueOrAction === '') delete npc.keyDialogueOrAction;
+      });
+      if (output.activeNPCsInScene.length === 0) {
+        delete output.activeNPCsInScene;
+      }
+    }
+
     return output!;
   }
 );

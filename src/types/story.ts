@@ -25,16 +25,16 @@ export interface CharacterProfile {
   experienceToNextLevel: number;
 }
 
-export type EquipmentSlot = 
-  | 'weapon' 
-  | 'shield' 
-  | 'head' 
-  | 'body' 
-  | 'legs' 
-  | 'feet' 
-  | 'hands' 
-  | 'neck' 
-  | 'ring1' 
+export type EquipmentSlot =
+  | 'weapon'
+  | 'shield'
+  | 'head'
+  | 'body'
+  | 'legs'
+  | 'feet'
+  | 'hands'
+  | 'neck'
+  | 'ring1'
   | 'ring2';
 
 export interface QuestObjective {
@@ -51,10 +51,10 @@ export interface Quest {
   id: string;
   description: string;
   status: 'active' | 'completed';
-  category?: string; 
+  category?: string;
   objectives?: QuestObjective[];
   rewards?: QuestRewards; // Potential rewards defined at quest creation
-  updatedAt?: string; // Added in a previous step, keeping it
+  updatedAt?: string;
 }
 
 export interface StructuredStoryState {
@@ -75,22 +75,22 @@ export interface StoryTurn {
 
 export interface GameSession {
   id:string;
-  storyPrompt: string; 
+  storyPrompt: string;
   characterName: string;
   storyHistory: StoryTurn[];
   createdAt: string;
   lastPlayedAt: string;
-  seriesName: string; 
+  seriesName: string;
   seriesStyleGuide?: string;
 }
 
 export interface LoreEntry {
-  id: string; 
-  keyword: string; 
-  content: string; 
-  category?: string; 
+  id: string;
+  keyword: string;
+  content: string;
+  category?: string;
   source: 'AI-Generated' | 'System' | 'User-Added' | 'AI-Generated-Scenario-Start';
-  createdAt: string; 
+  createdAt: string;
   updatedAt?: string;
 }
 
@@ -100,8 +100,7 @@ export interface RawLoreEntry {
   category?: string;
 }
 
-// Input/Output types for AI Flows (already defined in respective flow files, but good to have central reference if needed)
-// For GenerateScenarioFromSeries
+// Input/Output types for AI Flows
 export interface GenerateScenarioFromSeriesInput {
   seriesName: string;
   characterNameInput?: string;
@@ -115,7 +114,12 @@ export interface GenerateScenarioFromSeriesOutput {
   seriesStyleGuide?: string;
 }
 
-// For GenerateNextScene
+export interface ActiveNPCInfo {
+  name: string;
+  description?: string;
+  keyDialogueOrAction?: string;
+}
+
 export interface GenerateNextSceneInput {
   currentScene: string;
   userInput: string;
@@ -127,4 +131,5 @@ export interface GenerateNextSceneInput {
 export interface GenerateNextSceneOutput {
   nextScene: string;
   updatedStoryState: StructuredStoryState;
+  activeNPCsInScene?: ActiveNPCInfo[];
 }
