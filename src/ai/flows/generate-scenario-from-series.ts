@@ -181,9 +181,9 @@ const StyleGuideInputSchema = z.object({
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().optional() },
+  output: { schema: z.string().nullable() }, // Allow AI to output null if no guide is generated
   prompt: `You are a literary analyst. For the series "{{seriesName}}", provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
-If the series is very obscure or a distinct style is hard to summarize concisely, you MUST output an empty string (\`""\`).
+If the series is very obscure or a distinct style is hard to summarize concisely, you MUST output an empty string (\`""\`). DO NOT output null.
 Output ONLY the style guide string.`,
 });
 
@@ -217,14 +217,14 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     const { output: loreEntries } = await loreEntriesPrompt(loreInput);
 
     // Step 3: Generate series style guide
-    const { output: styleGuide } = await styleGuidePrompt({ seriesName: input.seriesName });
+    const { output: styleGuideRaw } = await styleGuidePrompt({ seriesName: input.seriesName }); // Can be string | null
 
     // Assemble the final output
     let finalOutput: GenerateScenarioFromSeriesOutput = {
       sceneDescription: coreOutput.sceneDescription,
       storyState: coreOutput.storyState,
       initialLoreEntries: loreEntries || [],
-      seriesStyleGuide: styleGuide, // Will be undefined if AI returns empty string and handled by post-processing
+      seriesStyleGuide: styleGuideRaw === null ? undefined : styleGuideRaw, // Convert null to undefined
     };
 
     // --- Post-processing ---
@@ -308,10 +308,12 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         });
     }
     
-    if (finalOutput.seriesStyleGuide === null || finalOutput.seriesStyleGuide === '') {
+    // Ensure seriesStyleGuide is omitted if it's an empty string or was originally null (now undefined)
+    if (finalOutput.seriesStyleGuide === '' || finalOutput.seriesStyleGuide === undefined) {
         delete finalOutput.seriesStyleGuide;
     }
 
     return finalOutput;
   }
 );
+
