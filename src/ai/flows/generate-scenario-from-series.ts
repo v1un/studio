@@ -232,7 +232,7 @@ Adhere strictly to the JSON schema. Output ONLY the object: { "skillsAndAbilitie
 // STEP 2a: Initial Inventory
 const MinimalContextForItemsFactsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterCoreProfileSchemaInternal.pick({ name: true, class: true, description: true }),
+    character: CharacterCoreProfileSchemaInternal.pick({ name: true, class: true, description: true, currency: true }),
     sceneDescription: z.string(),
     currentLocation: z.string(),
 });
@@ -244,7 +244,7 @@ const initialInventoryPrompt = ai.definePrompt({
   input: { schema: MinimalContextForItemsFactsInputSchema },
   output: { schema: InitialInventoryOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -267,7 +267,7 @@ const initialMainGearPrompt = ai.definePrompt({
   input: { schema: MinimalContextForItemsFactsInputSchema },
   output: { schema: InitialMainGearOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -289,7 +289,7 @@ const initialSecondaryGearPrompt = ai.definePrompt({
   input: { schema: MinimalContextForItemsFactsInputSchema },
   output: { schema: InitialSecondaryGearOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -309,7 +309,7 @@ const initialAccessoryGearPrompt = ai.definePrompt({
   input: { schema: MinimalContextForItemsFactsInputSchema },
   output: { schema: InitialAccessoryGearOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -328,7 +328,7 @@ const initialWorldFactsPrompt = ai.definePrompt({
   input: { schema: MinimalContextForItemsFactsInputSchema },
   output: { schema: InitialWorldFactsOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -481,7 +481,12 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: { name: fullCharacterProfile.name, class: fullCharacterProfile.class, description: fullCharacterProfile.description, currency: fullCharacterProfile.currency },
+        character: { 
+            name: fullCharacterProfile.name, 
+            class: fullCharacterProfile.class, 
+            description: fullCharacterProfile.description,
+            currency: fullCharacterProfile.currency 
+        },
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
     };
@@ -525,7 +530,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Step 3: Generate initial quests
     const questsInput: z.infer<typeof InitialQuestsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: fullCharacterProfile, // Pass full profile including skills and currency
+        character: fullCharacterProfile, 
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
     };
@@ -539,7 +544,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Step 4: Generate initial tracked NPCs
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: fullCharacterProfile, // Pass full profile
+        character: fullCharacterProfile, 
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
     };
