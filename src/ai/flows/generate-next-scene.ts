@@ -14,19 +14,19 @@ import {z} from 'genkit';
 import type { EquipmentSlot } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
-const EquipSlotEnum = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
+const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
 
-const ItemSchema = z.object({
+const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
-  equipSlot: EquipSlotEnum.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, omit this field."),
+  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, omit this field."),
 });
-export type Item = z.infer<typeof ItemSchema>;
+export type Item = z.infer<typeof ItemSchemaInternal>;
 
 
-const CharacterProfileSchema = z.object({
+const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character.'),
   class: z.string().describe('The class or archetype of the character.'),
   description: z.string().describe('A brief backstory or description of the character.'),
@@ -44,57 +44,55 @@ const CharacterProfileSchema = z.object({
   experiencePoints: z.number().describe('Current experience points of the character.'),
   experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level.'),
 });
-export type CharacterProfile = z.infer<typeof CharacterProfileSchema>;
+export type CharacterProfile = z.infer<typeof CharacterProfileSchemaInternal>;
 
-const EquipmentSlotsSchema = z.object({
-  weapon: ItemSchema.nullable().optional().describe("Weapon slot. Null if empty."),
-  shield: ItemSchema.nullable().optional().describe("Shield slot. Null if empty."),
-  head: ItemSchema.nullable().optional().describe("Head slot. Null if empty."),
-  body: ItemSchema.nullable().optional().describe("Body slot. Null if empty."),
-  legs: ItemSchema.nullable().optional().describe("Legs slot. Null if empty."),
-  feet: ItemSchema.nullable().optional().describe("Feet slot. Null if empty."),
-  hands: ItemSchema.nullable().optional().describe("Hands slot. Null if empty."),
-  neck: ItemSchema.nullable().optional().describe("Neck slot. Null if empty."),
-  ring1: ItemSchema.nullable().optional().describe("Ring 1 slot. Null if empty."),
-  ring2: ItemSchema.nullable().optional().describe("Ring 2 slot. Null if empty."),
+const EquipmentSlotsSchemaInternal = z.object({
+  weapon: ItemSchemaInternal.nullable().optional().describe("Weapon slot. Null if empty."),
+  shield: ItemSchemaInternal.nullable().optional().describe("Shield slot. Null if empty."),
+  head: ItemSchemaInternal.nullable().optional().describe("Head slot. Null if empty."),
+  body: ItemSchemaInternal.nullable().optional().describe("Body slot. Null if empty."),
+  legs: ItemSchemaInternal.nullable().optional().describe("Legs slot. Null if empty."),
+  feet: ItemSchemaInternal.nullable().optional().describe("Feet slot. Null if empty."),
+  hands: ItemSchemaInternal.nullable().optional().describe("Hands slot. Null if empty."),
+  neck: ItemSchemaInternal.nullable().optional().describe("Neck slot. Null if empty."),
+  ring1: ItemSchemaInternal.nullable().optional().describe("Ring 1 slot. Null if empty."),
+  ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
 }).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. All 10 slots must be present.");
 
 
-const StructuredStoryStateSchema = z.object({
-  character: CharacterProfileSchema.describe('The profile of the main character, including core stats, level, and XP.'),
+const StructuredStoryStateSchemaInternal = z.object({
+  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchema).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and optionally equipSlot.'),
-  equippedItems: EquipmentSlotsSchema,
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and optionally equipSlot.'),
+  equippedItems: EquipmentSlotsSchemaInternal,
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
 });
-export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchema>;
+export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
 
-const GenerateNextSceneInputSchema = z.object({
+const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchema.describe('The current structured state of the story (character, location, inventory, equipped items, XP, etc.).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, etc.).'),
 });
-export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema>;
+export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchemaInternal>;
 
-// Internal schema for the prompt, extending the main input schema with pre-formatted strings
-const PromptInternalInputSchema = GenerateNextSceneInputSchema.extend({
+const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
   formattedActiveQuestsString: z.string().describe("Pre-formatted string of active quests."),
 });
 
-const GenerateNextSceneOutputSchema = z.object({
+const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene.'),
-  updatedStoryState: StructuredStoryStateSchema.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, and equipment changes.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, and equipment changes.'),
 });
-export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchema>;
+export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
 export async function generateNextScene(input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> {
   return generateNextSceneFlow(input);
 }
 
-// Helper function to render equipped items for the prompt
 function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, Item | null>> | undefined | null): string {
   if (!equippedItems || typeof equippedItems !== 'object') {
     return "Equipment status: Not available or invalid data.";
@@ -110,8 +108,8 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, Item |
 
 const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
-  input: {schema: PromptInternalInputSchema}, // Use the internal schema
-  output: {schema: GenerateNextSceneOutputSchema},
+  input: {schema: PromptInternalInputSchema}, 
+  output: {schema: GenerateNextSceneOutputSchemaInternal},
   tools: [lookupLoreTool],
   prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
 
@@ -207,16 +205,15 @@ The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot name
 const generateNextSceneFlow = ai.defineFlow(
   {
     name: 'generateNextSceneFlow',
-    inputSchema: GenerateNextSceneInputSchema, // Flow's external input schema
-    outputSchema: GenerateNextSceneOutputSchema,
+    inputSchema: GenerateNextSceneInputSchemaInternal, 
+    outputSchema: GenerateNextSceneOutputSchemaInternal,
   },
-  async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => { // Type input according to flow's schema
+  async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => { 
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
     const formattedActiveQuestsString = input.storyState.activeQuests && input.storyState.activeQuests.length > 0 
                                         ? input.storyState.activeQuests.join(", ") 
                                         : "None";
     
-    // Create the payload for the prompt, matching PromptInternalInputSchema
     const promptPayload = {
       ...input,
       formattedEquippedItemsString: formattedEquippedItemsString,
@@ -254,7 +251,7 @@ const generateNextSceneFlow = ai.defineFlow(
         const defaultEquippedItems: Partial<Record<EquipmentSlot, Item | null>> = {
             weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
         };
-        // Ensure all slots are present, merging with AI output
+        
         const aiEquipped = output.updatedStoryState.equippedItems || {};
         const newEquippedItems: Partial<Record<EquipmentSlot, Item | null>> = {};
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
@@ -265,4 +262,3 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
-
