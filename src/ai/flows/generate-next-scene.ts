@@ -157,7 +157,7 @@ const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
   input: {schema: PromptInternalInputSchema},
   output: {schema: GenerateNextSceneOutputSchemaInternal},
-  tools: [lookupLoreTool], // lookupLoreTool is defined here for the prompt
+  tools: [lookupLoreTool],
   prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
 This story is set in the universe of: {{seriesName}}.
 {{#if seriesStyleGuide}}
@@ -243,6 +243,7 @@ Crucially, you must also update the story state. This includes:
     - If it has \`objectives\`, update the \`isCompleted\` status of relevant objectives to \`true\`.
     - You can update the main quest \`description\` if needed.
     - Narrate the progress in \`nextScene\`. The quest status remains \`'active'\` until fully completed (all essential objectives are done).
+  - **VERY IMPORTANT for quest completion**: When updating objectives: if ALL objectives for a given quest are marked as \`isCompleted: true\`, you MUST then update the parent quest's \`status\` to \`'completed'\`. If a quest is marked \`'completed'\`, you should then consider defining appropriate \`rewards\` for it (experience points and/or items).
   - If an existing quest from \`quests\` is completed: Find the quest object in the \`quests\` array. Update its \`status\` to \`'completed'\`. If it has \`objectives\`, ensure all relevant ones are marked \`isCompleted: true\`. Do NOT remove it from the array. Clearly state the completion in \`nextScene\`.
     - **Quest Rewards**: If the quest is completed, you can optionally specify \`rewards\` for it within the completed quest object in \`updatedStoryState.quests[...].rewards\`. This object can contain \`experiencePoints: number\` and/or an array of \`items: Item[]\`.
     - For rewarded items: Each item MUST be a NEW item object with a unique \`id\`, \`name\`, and \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot'. If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
@@ -281,10 +282,6 @@ const generateNextSceneFlow = ai.defineFlow(
       formattedQuestsString: formattedQuestsString,
     };
 
-    // The `lookupLoreTool` is already defined in the `tools` array of `generateNextScenePrompt`.
-    // The prompt instructs the AI to provide `seriesName` when calling the tool.
-    // The tool's schema (`LoreLookupInputSchema`) requires `seriesName`.
-    // Therefore, no special handling for tools is needed in the `prompt()` call itself here.
     const {output} = await prompt(promptPayload);
 
     if (output?.updatedStoryState.character && input.storyState.character) {
@@ -397,3 +394,5 @@ const generateNextSceneFlow = ai.defineFlow(
 );
 
     
+
+      
