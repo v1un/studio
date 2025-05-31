@@ -46,19 +46,18 @@ const CharacterProfileSchema = z.object({
 });
 export type CharacterProfile = z.infer<typeof CharacterProfileSchema>;
 
-const EquipmentSlotsSchema = z.record(z.nativeEnum(Object.values({ // Define enum for Zod validation
-  Weapon: 'weapon',
-  Shield: 'shield',
-  Head: 'head',
-  Body: 'body',
-  Legs: 'legs',
-  Feet: 'feet',
-  Hands: 'hands',
-  Neck: 'neck',
-  Ring1: 'ring1',
-  Ring2: 'ring2',
-} as const satisfies Record<string, EquipmentSlot>)), ItemSchema.nullable())
-  .describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty.");
+const EquipmentSlotsSchema = z.object({
+  weapon: ItemSchema.nullable().optional().describe("Weapon slot. Null if empty."),
+  shield: ItemSchema.nullable().optional().describe("Shield slot. Null if empty."),
+  head: ItemSchema.nullable().optional().describe("Head slot. Null if empty."),
+  body: ItemSchema.nullable().optional().describe("Body slot. Null if empty."),
+  legs: ItemSchema.nullable().optional().describe("Legs slot. Null if empty."),
+  feet: ItemSchema.nullable().optional().describe("Feet slot. Null if empty."),
+  hands: ItemSchema.nullable().optional().describe("Hands slot. Null if empty."),
+  neck: ItemSchema.nullable().optional().describe("Neck slot. Null if empty."),
+  ring1: ItemSchema.nullable().optional().describe("Ring 1 slot. Null if empty."),
+  ring2: ItemSchema.nullable().optional().describe("Ring 2 slot. Null if empty."),
+}).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. All 10 slots must be present.");
 
 
 const StructuredStoryStateSchema = z.object({
@@ -177,6 +176,7 @@ Crucially, you must also update the story state. This includes:
     3. Set \`equippedItems[slot]\` to null.
     4. Narrate the action (e.g., "You remove the Battered Shield and put it in your pack.").
   - Ensure an item is either in \`inventory\` OR \`equippedItems\`, never both.
+  - The 'updatedStoryState.equippedItems' object must include all 10 slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'), with 'null' for any empty slots.
 - Active Quests:
   - If a new quest is started based on the scene or player actions, add its description as a string to the \`activeQuests\` array. Narrate this new quest in the \`nextScene\` text.
   - If an existing quest in \`activeQuests\` is progressed, update its description in the array if needed, or simply narrate the progress in \`nextScene\`.
@@ -191,7 +191,7 @@ The next scene should logically follow the player's input and advance the narrat
 Ensure your entire response strictly adheres to the JSON schema for the output.
 The 'updatedStoryState.character' must include all fields.
 The 'updatedStoryState.inventory' must be an array of item objects.
-The 'updatedStoryState.equippedItems' must be an object mapping all slot names to either an item object or null.
+The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 `,
   helpers: { formatEquippedItems }
 });

@@ -48,10 +48,18 @@ const CharacterProfileSchema = z.object({
   experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100.'),
 });
 
-const EquipmentSlotsSchema = z.record(z.nativeEnum(Object.values({ 
-  Weapon: 'weapon', Shield: 'shield', Head: 'head', Body: 'body', Legs: 'legs', Feet: 'feet', Hands: 'hands', Neck: 'neck', Ring1: 'ring1', Ring2: 'ring2',
-} as const satisfies Record<string, EquipmentSlot>)), ItemSchema.nullable())
-  .describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. Initialize all slots to null.");
+const EquipmentSlotsSchema = z.object({
+  weapon: ItemSchema.nullable().optional().describe("Weapon slot. Null if empty."),
+  shield: ItemSchema.nullable().optional().describe("Shield slot. Null if empty."),
+  head: ItemSchema.nullable().optional().describe("Head slot. Null if empty."),
+  body: ItemSchema.nullable().optional().describe("Body slot. Null if empty."),
+  legs: ItemSchema.nullable().optional().describe("Legs slot. Null if empty."),
+  feet: ItemSchema.nullable().optional().describe("Feet slot. Null if empty."),
+  hands: ItemSchema.nullable().optional().describe("Hands slot. Null if empty."),
+  neck: ItemSchema.nullable().optional().describe("Neck slot. Null if empty."),
+  ring1: ItemSchema.nullable().optional().describe("Ring 1 slot. Null if empty."),
+  ring2: ItemSchema.nullable().optional().describe("Ring 2 slot. Null if empty."),
+}).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. Initialize all 10 slots to null.");
 
 
 const StructuredStoryStateSchema = z.object({
@@ -106,14 +114,14 @@ Based on the theme and any user suggestions, generate the following:
     -   The character profile you just created.
     -   A starting location relevant to the scene.
     -   An empty inventory (initialize as an empty array: []). Any starting items should include an 'id', 'name', 'description', and if equippable, an 'equipSlot' (e.g., 'weapon', 'head', 'body').
-    -   Initialize 'equippedItems' as an object with all equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
+    -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
     -   If appropriate, one simple starting quest in 'activeQuests' array. Otherwise, an empty array.
     -   One or two initial 'worldFacts'.
 
 Your entire response must strictly follow the JSON schema defined for the output.
 The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'activeQuests', and 'worldFacts'.
 The 'character' object must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'.
-The 'equippedItems' must be an object with all specified slots initially set to null.
+The 'equippedItems' must be an object with all 10 specified slots initially set to null.
 `,
 });
 

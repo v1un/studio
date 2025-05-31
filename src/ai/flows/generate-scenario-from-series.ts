@@ -46,10 +46,18 @@ const CharacterProfileSchema = z.object({
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100.'),
 });
 
-const EquipmentSlotsSchema = z.record(z.nativeEnum(Object.values({
-  Weapon: 'weapon', Shield: 'shield', Head: 'head', Body: 'body', Legs: 'legs', Feet: 'feet', Hands: 'hands', Neck: 'neck', Ring1: 'ring1', Ring2: 'ring2',
-} as const satisfies Record<string, EquipmentSlot>)), ItemSchema.nullable())
-  .describe("Character's equipped items. Initialize with null or series-appropriate starting gear.");
+const EquipmentSlotsSchema = z.object({
+  weapon: ItemSchema.nullable().optional().describe("Weapon slot. Null if empty."),
+  shield: ItemSchema.nullable().optional().describe("Shield slot. Null if empty."),
+  head: ItemSchema.nullable().optional().describe("Head slot. Null if empty."),
+  body: ItemSchema.nullable().optional().describe("Body slot. Null if empty."),
+  legs: ItemSchema.nullable().optional().describe("Legs slot. Null if empty."),
+  feet: ItemSchema.nullable().optional().describe("Feet slot. Null if empty."),
+  hands: ItemSchema.nullable().optional().describe("Hands slot. Null if empty."),
+  neck: ItemSchema.nullable().optional().describe("Neck slot. Null if empty."),
+  ring1: ItemSchema.nullable().optional().describe("Ring 1 slot. Null if empty."),
+  ring2: ItemSchema.nullable().optional().describe("Ring 2 slot. Null if empty."),
+}).describe("Character's equipped items. Initialize with null or series-appropriate starting gear. All 10 slots should be represented, with 'null' for empty ones.");
 
 const StructuredStoryStateSchema = z.object({
   character: CharacterProfileSchema,
@@ -102,7 +110,7 @@ Your goal is to generate:
         *   Initialize 'level' to 1, 'experiencePoints' to 0, and 'experienceToNextLevel' to 100.
     *   'currentLocation': A specific, recognizable starting location from "{{seriesName}}" that matches the 'sceneDescription'.
     *   'inventory': An array of 0-3 initial unequipped 'Item' objects (each with unique 'id', 'name', 'description', and optional 'equipSlot') that the character would realistically possess at the start of this scenario in "{{seriesName}}".
-    *   'equippedItems': An object mapping all equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') to either an 'Item' object (if they start with something equipped, consistent with the series) or null. Often, characters start with minimal or no equipment.
+    *   'equippedItems': An object explicitly mapping all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') to either an 'Item' object (if they start with something equipped, consistent with the series) or null if the slot is empty.
     *   'activeQuests': An array containing one or two initial quest descriptions (strings) that are compelling, fit the "{{seriesName}}" lore, and are relevant to the starting 'sceneDescription'.
     *   'worldFacts': An array of 2-4 key 'worldFacts' (strings) about the "{{seriesName}}" universe that are immediately relevant or provide crucial context for the player at the start.
 3.  A list of 5-7 'initialLoreEntries' to pre-populate the game's lorebook. Each entry should be an object with:
@@ -113,6 +121,7 @@ Your goal is to generate:
 Ensure all generated content is faithful to the tone, style, and established lore of "{{seriesName}}".
 The entire response must strictly follow the JSON schema for the output.
 Make sure all IDs for items are unique.
+The 'equippedItems' object in 'storyState' must include all 10 slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'), with 'null' for any empty slots.
 `,
 });
 
