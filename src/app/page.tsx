@@ -1,16 +1,20 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
 import { generateStoryStart } from "@/ai/flows/generate-story-start";
+import type { GenerateStoryStartInput } from "@/ai/flows/generate-story-start";
 import { generateNextScene } from "@/ai/flows/generate-next-scene";
-import type { StoryTurn } from "@/types/story";
+import type { StoryTurn, CharacterProfile, StructuredStoryState } from "@/types/story";
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
 import UserInputForm from "@/components/story-forge/user-input-form";
 import StoryControls from "@/components/story-forge/story-controls";
+import CharacterSheet from "@/components/story-forge/character-sheet"; // We'll create this
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button"; // Ensure Button is imported
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 
 export default function StoryForgePage() {
   const [storyHistory, setStoryHistory] = useState<StoryTurn[]>([]);
@@ -18,23 +22,32 @@ export default function StoryForgePage() {
   const { toast } = useToast();
 
   const currentTurn = storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null;
+  const character = currentTurn?.storyStateAfterScene.character;
 
-  const handleStartStory = async (prompt: string) => {
+  const handleStartStory = async (data: {
+    prompt: string;
+    characterName?: string;
+    characterClass?: string;
+  }) => {
     setIsLoading(true);
     try {
-      const result = await generateStoryStart({ prompt });
-      const initialStoryState = "The story has just begun. No specific items or character details are known yet.";
+      const input: GenerateStoryStartInput = {
+        prompt: data.prompt,
+        characterNameInput: data.characterName,
+        characterClassInput: data.characterClass,
+      };
+      const result = await generateStoryStart(input);
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
         sceneDescription: result.sceneDescription,
-        storyStateAfterScene: initialStoryState,
+        storyStateAfterScene: result.storyState,
       };
       setStoryHistory([firstTurn]);
     } catch (error) {
       console.error("Failed to start story:", error);
       toast({
-        title: "Error",
-        description: "Could not start the story. Please try again.",
+        title: "Error Starting Story",
+        description: "The AI encountered an issue generating the story. Please try a different prompt or check the console for details.",
         variant: "destructive",
       });
     }
@@ -60,8 +73,8 @@ export default function StoryForgePage() {
     } catch (error) {
       console.error("Failed to generate next scene:", error);
       toast({
-        title: "Error",
-        description: "Could not generate the next scene. Please try again.",
+        title: "Error Generating Scene",
+        description: "The AI encountered an issue generating the next scene. Please try again or check the console.",
         variant: "destructive",
       });
     }
@@ -72,7 +85,6 @@ export default function StoryForgePage() {
     if (storyHistory.length > 1) {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
     } else if (storyHistory.length === 1) {
-      // If only one turn (initial scene), undoing means restarting
       handleRestart();
     }
   };
@@ -101,12 +113,16 @@ export default function StoryForgePage() {
         {isLoading && (
           <div className="flex justify-center items-center p-4 rounded-md bg-card/50 backdrop-blur-sm shadow-md">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-3 text-lg text-foreground">AI is thinking...</p>
+            <p className="ml-3 text-lg text-foreground">AI is forging your tale...</p>
           </div>
         )}
 
         {!currentTurn && !isLoading && (
           <InitialPromptForm onSubmit={handleStartStory} isLoading={isLoading} />
+        )}
+
+        {character && !isLoading && (
+          <CharacterSheet character={character} storyState={currentTurn.storyStateAfterScene} />
         )}
 
         {currentTurn && (
