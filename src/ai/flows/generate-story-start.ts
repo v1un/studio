@@ -25,9 +25,9 @@ const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
-  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, omit this field."),
+  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, this field should be omitted."),
 });
-export type Item = z.infer<typeof ItemSchemaInternal>;
+// export type Item = z.infer<typeof ItemSchemaInternal>; // Not exported
 
 const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character.'),
@@ -35,14 +35,14 @@ const CharacterProfileSchemaInternal = z.object({
   description: z.string().describe('A brief backstory or description of the character.'),
   health: z.number().describe('Current health points of the character.'),
   maxHealth: z.number().describe('Maximum health points of the character.'),
-  mana: z.number().optional().describe('Current mana or magic points of the character. Assign 0 if not applicable to the class.'),
-  maxMana: z.number().optional().describe('Maximum mana or magic points. Assign 0 if not applicable.'),
-  strength: z.number().optional().describe('Character\'s physical power. Assign a value between 5 and 15.'),
-  dexterity: z.number().optional().describe('Character\'s agility and reflexes. Assign a value between 5 and 15.'),
-  constitution: z.number().optional().describe('Character\'s endurance and toughness. Affects health. Assign a value between 5 and 15.'),
-  intelligence: z.number().optional().describe('Character\'s reasoning and memory. Affects mana for magic users. Assign a value between 5 and 15.'),
-  wisdom: z.number().optional().describe('Character\'s perception and intuition. Affects mana regeneration or spell effectiveness. Assign a value between 5 and 15.'),
-  charisma: z.number().optional().describe('Character\'s social skills and influence. Assign a value between 5 and 15.'),
+  mana: z.number().optional().describe('Current mana or magic points of the character. Assign 0 if not applicable to the class, or omit.'),
+  maxMana: z.number().optional().describe('Maximum mana or magic points. Assign 0 if not applicable, or omit.'),
+  strength: z.number().optional().describe('Character\'s physical power. Assign a value between 5 and 15, or omit.'),
+  dexterity: z.number().optional().describe('Character\'s agility and reflexes. Assign a value between 5 and 15, or omit.'),
+  constitution: z.number().optional().describe('Character\'s endurance and toughness. Affects health. Assign a value between 5 and 15, or omit.'),
+  intelligence: z.number().optional().describe('Character\'s reasoning and memory. Affects mana for magic users. Assign a value between 5 and 15, or omit.'),
+  wisdom: z.number().optional().describe('Character\'s perception and intuition. Affects mana regeneration or spell effectiveness. Assign a value between 5 and 15, or omit.'),
+  charisma: z.number().optional().describe('Character\'s social skills and influence. Assign a value between 5 and 15, or omit.'),
   level: z.number().describe('The current level of the character. Initialize to 1.'),
   experiencePoints: z.number().describe('Current experience points. Initialize to 0.'),
   experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100.'),
@@ -65,12 +65,12 @@ const EquipmentSlotsSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description, and optionally equipSlot.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If equippable, include equipSlot; otherwise, omit equipSlot.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions. Initialize as an empty array if no quest is generated.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
 });
-export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
+export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>; // Only type exported
 
 
 const GenerateStoryStartInputSchemaInternal = z.object({
@@ -107,20 +107,20 @@ Based on the theme and any user suggestions, generate the following:
     -   Invent a suitable name and class if not provided by the user or if the suggestions are too vague.
     -   Provide a brief backstory or description for the character.
     -   Set initial health and maxHealth (e.g., 100 health, 100 maxHealth).
-    -   Set initial mana and maxMana. If the class is not a magic user, set both to 0 or a low symbolic value like 10.
-    -   Assign initial values (between 5 and 15, average 10) for the six core stats: Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma. These stats should generally align with the character's class.
+    -   Set initial mana and maxMana. These fields must be numbers. If the class is not a magic user, set both to 0. Do not use 'null'.
+    -   Assign initial values (between 5 and 15, average 10) for the six core stats: Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma. These stats should generally align with the character's class and must be numbers if provided.
     -   Initialize the character at \`level\` 1, with 0 \`experiencePoints\`, and set an initial \`experienceToNextLevel\` (e.g., 100).
 3.  An initial structured story state, including:
     -   The character profile you just created.
     -   A starting location relevant to the scene.
-    -   An empty inventory (initialize as an empty array: []). Any starting items should include an 'id', 'name', 'description', and if equippable, an 'equipSlot' (e.g., 'weapon', 'head', 'body').
+    -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated (though usually empty), each item must include an 'id', 'name', 'description'. If equippable, an 'equipSlot' (e.g., 'weapon', 'head', 'body'); if not equippable, the 'equipSlot' field must be omitted entirely.
     -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
     -   If appropriate, one simple starting quest in 'activeQuests' array. Otherwise, an empty array.
     -   One or two initial 'worldFacts'.
 
 Your entire response must strictly follow the JSON schema defined for the output.
 The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'activeQuests', and 'worldFacts'.
-The 'character' object must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'.
+The 'character' object must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'. For optional numeric fields like 'mana', 'maxMana', or stats, if they are provided, they must be numbers (e.g., 0 for mana if not applicable). Do not use 'null' for fields expecting numbers.
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
 `,
 });
@@ -150,6 +150,11 @@ const generateStoryStartFlow = ai.defineFlow(
     }
     if (output?.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
+        output.storyState.inventory.forEach(item => {
+          if (item.equipSlot === null) {
+            delete (item as Partial<ItemType>).equipSlot;
+          }
+        });
         output.storyState.activeQuests = output.storyState.activeQuests ?? [];
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
         
@@ -161,8 +166,9 @@ const generateStoryStartFlow = ai.defineFlow(
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
         }
-        output.storyState.equippedItems = newEquippedItems;
+        output.storyState.equippedItems = newEquippedItems as any; // Cast as any due to dynamic AI output
     }
     return output!;
   }
 );
+
