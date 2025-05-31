@@ -696,7 +696,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
       for (const slotKey of Object.keys(defaultEquippedSlots) as EquipmentSlot[]) {
           const itemInSlot = currentEquipped[slotKey];
-          if (itemInSlot && typeof itemInSlot === 'object' && itemInSlot.name) { // Check if it's a valid item object
+          if (itemInSlot && typeof itemInSlot === 'object' && itemInSlot.name) { 
             let baseEqId = itemInSlot.id || `item_generated_equip_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}_${slotKey}`;
             let newEqId = baseEqId;
             let eqCounter = 0;
@@ -706,13 +706,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
             itemInSlot.id = newEqId;
             equippedItemIdSet.add(newEqId);
 
-            // Ensure equipSlot property is present and correct, or omit if not applicable (though for equipped items, it should be there)
             if (!itemInSlot.equipSlot || (itemInSlot.equipSlot as unknown) === '') {
-                 // If AI puts an item in a slot but doesn't define its equipSlot property, try to infer or set it.
-                 // This is a fallback, ideally AI provides it.
                  if (slotKey === 'ring1' || slotKey === 'ring2') itemInSlot.equipSlot = 'ring';
                  else if (EquipSlotEnumInternal.safeParse(slotKey).success) itemInSlot.equipSlot = slotKey as typeof EquipSlotEnumInternal._type;
-                 else delete (itemInSlot as Partial<ItemType>).equipSlot; // If slotKey isn't a valid equipSlot type
+                 else delete (itemInSlot as Partial<ItemType>).equipSlot; 
             }
 
             delete (itemInSlot as Partial<ItemType>)!.isConsumable;
@@ -746,7 +743,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-          npc.updatedAt = npc.updatedAt || new Date().toISOString(); 
+          npc.updatedAt = new Date().toISOString(); // Always set to current time on creation
           npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; 
           npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; 
           
