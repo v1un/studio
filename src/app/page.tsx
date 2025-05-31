@@ -16,7 +16,7 @@ import JournalDisplay from "@/components/story-forge/journal-display";
 import LorebookDisplay from "@/components/story-forge/lorebook-display";
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library } from "lucide-react"; // Added icons for tabs
+import { Loader2, Sparkles, BookUser, StickyNote, Library } from "lucide-react"; 
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -127,7 +127,7 @@ export default function StoryForgePage() {
       
       setStoryHistory([firstTurn]);
       setCurrentSessionId(newSession.id);
-      setActiveTab("story"); // Default to story tab on new game
+      setActiveTab("story"); 
       toast({
         title: `Adventure in ${seriesName} Begun!`,
         description: `Playing as ${newSession.characterName}.`,
@@ -231,7 +231,7 @@ export default function StoryForgePage() {
           />
         )}
         
-        {currentSessionId && currentTurn && (
+        {currentSessionId && currentTurn && character && storyState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4 mb-4">
               <TabsTrigger value="story" className="text-xs sm:text-sm">
@@ -255,7 +255,7 @@ export default function StoryForgePage() {
                 canUndo={storyHistory.length > 0}
                 isLoading={isLoadingInteraction}
               />
-              {character && <MinimalCharacterStatus character={character} currentLocation={storyState?.currentLocation} />}
+              <MinimalCharacterStatus character={character} storyState={storyState} />
               <StoryDisplay
                 sceneDescription={currentTurn.sceneDescription}
                 keyProp={currentTurn.id}
@@ -264,18 +264,14 @@ export default function StoryForgePage() {
             </TabsContent>
 
             <TabsContent value="character">
-              {character && storyState && (
-                <CharacterSheet character={character} storyState={storyState} />
-              )}
+              <CharacterSheet character={character} storyState={storyState} />
             </TabsContent>
 
             <TabsContent value="journal">
-              {storyState && (
-                <JournalDisplay 
-                  activeQuests={storyState.activeQuests} 
-                  worldFacts={storyState.worldFacts} 
-                />
-              )}
+              <JournalDisplay 
+                activeQuests={storyState.activeQuests} 
+                worldFacts={storyState.worldFacts} 
+              />
             </TabsContent>
             
             <TabsContent value="lorebook">
