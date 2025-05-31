@@ -32,8 +32,8 @@ const CharacterProfileSchemaInternal = z.object({
   description: z.string().describe('A brief backstory or description of the character.'),
   health: z.number().describe('Current health points of the character.'),
   maxHealth: z.number().describe('Maximum health points of the character.'),
-  mana: z.number().optional().describe('Current mana or magic points of the character.'),
-  maxMana: z.number().optional().describe('Maximum mana or magic points.'),
+  mana: z.number().optional().describe('Current mana or magic points of the character. Must be a number; use 0 if not applicable.'),
+  maxMana: z.number().optional().describe('Maximum mana or magic points. Must be a number; use 0 if not applicable.'),
   strength: z.number().optional().describe('Character\'s physical power.'),
   dexterity: z.number().optional().describe('Character\'s agility and reflexes.'),
   constitution: z.number().optional().describe('Character\'s endurance and toughness.'),
@@ -58,6 +58,7 @@ const EquipmentSlotsSchemaInternal = z.object({
   ring1: ItemSchemaInternal.nullable().optional().describe("Ring 1 slot. Null if empty."),
   ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
 }).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. All 10 slots must be present.");
+export type StructuredStoryStateEquippedItems = z.infer<typeof EquipmentSlotsSchemaInternal>;
 
 
 const StructuredStoryStateSchemaInternal = z.object({
@@ -163,7 +164,9 @@ Based on the current scene, player's input, and detailed story state, generate t
 Describe any quest-related developments (new quests, progress, completion) clearly in the \`nextScene\` text.
 
 Crucially, you must also update the story state. This includes:
-- Character: Update health, mana, XP, and level as needed. If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs.
+- Character: Update all character fields as necessary: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'.
+  - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0).
+  - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs.
 - Location: Update if the character moved.
 - Inventory:
   - If new items are found: Add them as objects to the \`inventory\` array (unequipped items). Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`, and if equippable, an 'equipSlot'. Describe these new items clearly in the \`nextScene\` text.
@@ -196,7 +199,7 @@ Crucially, you must also update the story state. This includes:
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema for the output.
-The 'updatedStoryState.character' must include all fields.
+The 'updatedStoryState.character' must include all fields. The 'mana' and 'maxMana' fields MUST be numbers (e.g., 0 if not applicable).
 The 'updatedStoryState.inventory' must be an array of item objects.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 `,
@@ -211,7 +214,7 @@ const generateNextSceneFlow = ai.defineFlow(
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => { 
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
     const formattedActiveQuestsString = input.storyState.activeQuests && input.storyState.activeQuests.length > 0 
-                                        ? input.storyState.activeQuests.join(", ") 
+                                        ? input.storyState.activeQuests.map(q => `- ${q}`).join("\n") 
                                         : "None";
     
     const promptPayload = {
@@ -257,8 +260,11 @@ const generateNextSceneFlow = ai.defineFlow(
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
         }
-        output.updatedStoryState.equippedItems = newEquippedItems;
+        output.updatedStoryState.equippedItems = newEquippedItems as StructuredStoryStateEquippedItems;
     }
     return output!;
   }
 );
+
+
+      
