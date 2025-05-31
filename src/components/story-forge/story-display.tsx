@@ -1,34 +1,48 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useEffect, useRef } from "react";
+import type { StoryTurn, DisplayMessage } from "@/types/story";
+import ChatMessage from "./ChatMessage";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface StoryDisplayProps {
-  sceneDescription: string;
-  keyProp: string; // To trigger re-render and animation
+  storyHistory: StoryTurn[];
+  isLoadingInteraction: boolean; // To prevent scrolling while AI is thinking
 }
 
-export default function StoryDisplay({ sceneDescription, keyProp }: StoryDisplayProps) {
-  const [visible, setVisible] = useState(false);
+export default function StoryDisplay({ storyHistory, isLoadingInteraction }: StoryDisplayProps) {
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setVisible(false);
-    const timer = setTimeout(() => {
-      setVisible(true);
-    }, 50); // Short delay to ensure CSS transition triggers
-    return () => clearTimeout(timer);
-  }, [keyProp]); // Depend on keyProp to re-trigger animation
+    if (viewportRef.current && !isLoadingInteraction) {
+      viewportRef.current.scrollTo({
+        top: viewportRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [storyHistory, isLoadingInteraction]); // Scroll when storyHistory changes or loading finishes
+
+  const allMessages: DisplayMessage[] = storyHistory.reduce((acc, turn) => {
+    // Ensure turn.messages is an array and not undefined before spreading
+    if (Array.isArray(turn.messages)) {
+      acc.push(...turn.messages);
+    }
+    return acc;
+  }, [] as DisplayMessage[]);
 
   return (
-    <Card key={keyProp} className="w-full shadow-lg bg-card/80 backdrop-blur-sm">
-      <CardContent className="p-6">
-        <div
-          className={`text-lg leading-relaxed whitespace-pre-line transition-opacity duration-500 ease-in-out ${
-            visible ? "opacity-100" : "opacity-0"
-          }`}
-          dangerouslySetInnerHTML={{ __html: sceneDescription.replace(/\n/g, "<br />") }} // Basic HTML for line breaks
-        />
-      </CardContent>
-    </Card>
+    <ScrollArea 
+        ref={scrollAreaRef} 
+        className="w-full h-[calc(100vh-380px)] sm:h-[calc(100vh-350px)] pr-3" // Adjust height as needed
+        viewportRef={viewportRef}
+    >
+      <div className="flex flex-col gap-2 p-1">
+        {allMessages.map((msg) => (
+          <ChatMessage key={msg.id} message={msg} />
+        ))}
+      </div>
+    </ScrollArea>
   );
 }
