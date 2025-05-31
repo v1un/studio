@@ -32,6 +32,7 @@ export default function StoryForgePage() {
   const [currentSession, setCurrentSession] = useState<GameSession | null>(null);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
@@ -45,7 +46,6 @@ export default function StoryForgePage() {
           const session: GameSession = JSON.parse(sessionData);
           setStoryHistory(session.storyHistory);
           setCurrentSession(session);
-          // Lorebook is initialized when a new session starts. If loading, it relies on existing localStorage.
         } catch (e) {
           console.error("Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
@@ -53,7 +53,7 @@ export default function StoryForgePage() {
           setCurrentSession(null);
         }
       } else {
-        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); // Clean up if session data is missing
+        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); 
         setCurrentSession(null);
       }
     } else {
@@ -73,7 +73,6 @@ export default function StoryForgePage() {
       };
     
     const sessionKey = `${SESSION_KEY_PREFIX}${currentSession.id}`;
-    // Debounce or conditional save could be added here if performance becomes an issue
     localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
     
   }, [storyHistory, currentSession, isLoadingPage]);
@@ -85,6 +84,7 @@ export default function StoryForgePage() {
 
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string }) => {
     setIsLoadingInteraction(true);
+    setLoadingMessage("AI is forging your initial world and character...");
     try {
       const input: GenerateScenarioFromSeriesInput = {
         seriesName: data.seriesName,
@@ -135,11 +135,13 @@ export default function StoryForgePage() {
       });
     }
     setIsLoadingInteraction(false);
+    setLoadingMessage(null);
   };
 
   const handleUserAction = async (userInput: string) => {
     if (!currentTurn || !currentSession || !storyState) return;
     setIsLoadingInteraction(true);
+    setLoadingMessage("AI is crafting the next part of your tale...");
     try {
       const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
       const result = await generateNextScene({
@@ -148,7 +150,7 @@ export default function StoryForgePage() {
         storyState: storyState,
         seriesName: currentSession.seriesName,
         seriesStyleGuide: currentSession.seriesStyleGuide,
-        currentTurnId: currentTurn.id, // Pass current turn ID
+        currentTurnId: currentTurn.id, 
       });
       const nextTurnItem: StoryTurn = {
         id: crypto.randomUUID(),
@@ -166,6 +168,7 @@ export default function StoryForgePage() {
       });
     }
     setIsLoadingInteraction(false);
+    setLoadingMessage(null);
   };
 
   const handleUndo = () => {
@@ -173,7 +176,6 @@ export default function StoryForgePage() {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last action undone."});
     } else if (storyHistory.length === 1) {
-      // Undoing the first turn means restarting the session
       handleRestart();
     }
   };
@@ -186,7 +188,7 @@ export default function StoryForgePage() {
     clearLorebook(); 
     setStoryHistory([]);
     setCurrentSession(null);
-    setActiveTab("story"); // Reset to story tab
+    setActiveTab("story"); 
     toast({
       title: "Story Session Cleared",
       description: "Ready for a new adventure!",
@@ -218,7 +220,7 @@ export default function StoryForgePage() {
         {isLoadingInteraction && (
           <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-3 text-lg text-foreground">AI is forging your tale...</p>
+            <p className="ml-3 text-lg text-foreground">{loadingMessage || "AI is working..."}</p>
           </div>
         )}
 
@@ -231,14 +233,14 @@ export default function StoryForgePage() {
         
         {currentSession && currentTurn && character && storyState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-4"> {/* Updated to 5 columns */}
+            <TabsList className="grid w-full grid-cols-5 mb-4"> 
               <TabsTrigger value="story" className="text-xs sm:text-sm">
                 <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
               </TabsTrigger>
               <TabsTrigger value="character" className="text-xs sm:text-sm">
                 <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
               </TabsTrigger>
-               <TabsTrigger value="npcs" className="text-xs sm:text-sm"> {/* New NPCs Tab */}
+               <TabsTrigger value="npcs" className="text-xs sm:text-sm"> 
                 <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
               </TabsTrigger>
               <TabsTrigger value="journal" className="text-xs sm:text-sm">
@@ -268,7 +270,7 @@ export default function StoryForgePage() {
               <CharacterSheet character={character} storyState={storyState} />
             </TabsContent>
 
-            <TabsContent value="npcs"> {/* New NPCs Tab Content */}
+            <TabsContent value="npcs"> 
               <NPCTrackerDisplay trackedNPCs={storyState.trackedNPCs as NPCProfile[]} currentTurnId={currentTurn.id} />
             </TabsContent>
 
@@ -284,7 +286,7 @@ export default function StoryForgePage() {
             </TabsContent>
           </Tabs>
         )}
-         {currentSession && !currentTurn && !isLoadingInteraction && ( // Handles empty/corrupted session
+         {currentSession && !currentTurn && !isLoadingInteraction && ( 
             <div className="text-center p-6 bg-card rounded-lg shadow-md">
                 <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
                 <Button onClick={handleRestart}>Start a New Adventure</Button>
