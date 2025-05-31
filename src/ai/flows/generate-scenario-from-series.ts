@@ -41,7 +41,7 @@ const SkillSchemaInternal = z.object({
     type: z.string().describe("A category for the skill, e.g., 'Combat Ability', 'Utility Skill', 'Passive Trait', or a series-specific type like 'Ninjutsu Technique', 'Semblance'.")
 });
 
-const CharacterProfileSchemaInternal = z.object({
+const CharacterCoreProfileSchemaInternal = z.object({ // Skills removed from this core schema
   name: z.string().describe('The name of the main character, appropriate for the series. This might be an existing character or an original character fitting the series, based on user input if provided.'),
   class: z.string().describe('The class, role, or archetype of the character within the series (e.g., "Shinobi", "Alchemist", "Keyblade Wielder"), based on user input if provided.'),
   description: z.string().describe('A brief backstory or description of the character, consistent with the series lore and their starting situation. If it is an Original Character (OC), explain their place or origin within the series.'),
@@ -58,8 +58,12 @@ const CharacterProfileSchemaInternal = z.object({
   level: z.number().describe('Initialize to 1.'),
   experiencePoints: z.number().describe('Initialize to 0.'),
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100.'),
-  skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 2-3 starting skills, unique abilities, or passive traits appropriate for the character's class and the series. These should be thematically fitting and provide a starting flavor for the character's capabilities. Each skill requires an id, name, description, and type. For characters known for signature, fate-altering abilities (e.g., Subaru's 'Return by Death' in Re:Zero), ensure such an ability is included if appropriate for the specified character name/class and series."),
 });
+
+const CharacterProfileSchemaInternal = CharacterCoreProfileSchemaInternal.extend({
+    skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 2-3 starting skills, unique abilities, or passive traits appropriate for the character's class and the series. These should be thematically fitting and provide a starting flavor for the character's capabilities. Each skill requires an id, name, description, and type. For characters known for signature, fate-altering abilities (e.g., Subaru's 'Return by Death' in Re:Zero), ensure such an ability is included if appropriate for the specified character name/class and series."),
+});
+
 
 const EquipmentSlotsSchemaInternal = z.object({
   weapon: ItemSchemaInternal.nullable().optional().describe("Weapon slot. Null if empty."),
@@ -151,11 +155,11 @@ export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFr
 
 // --- Prompts for Multi-Step Generation ---
 
-// STEP 1: Character, Scene, Location
+// STEP 1: Character Core Profile, Scene, Location
 const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
 const CharacterAndSceneOutputSchema = z.object({
     sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
-    character: CharacterProfileSchemaInternal,
+    characterCore: CharacterCoreProfileSchemaInternal.describe("The character's core profile, EXCLUDING skills and abilities, which will be generated in a subsequent step."),
     currentLocation: StructuredStoryStateSchemaInternal.shape.currentLocation,
 });
 const characterAndScenePrompt = ai.definePrompt({
@@ -167,37 +171,57 @@ User's character preferences:
 - Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}
 - Class/Role: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}
 
-You MUST generate an object with the following three top-level properties: 'sceneDescription', 'character', and 'currentLocation'.
+You MUST generate an object with the following three top-level properties: 'sceneDescription', 'characterCore', and 'currentLocation'.
 
 1.  'sceneDescription': A vivid and engaging initial scene description that sets the stage for the adventure in "{{seriesName}}".
-2.  'character': A complete CharacterProfile object.
-    - If 'characterNameInput' is a known character from "{{seriesName}}", create their profile authentically, reflecting their known traits and abilities.
+2.  'characterCore': A CharacterCoreProfile object. This object contains all standard character profile information EXCEPT for 'skillsAndAbilities'. Skills will be generated in a separate step.
+    - If 'characterNameInput' is a known character from "{{seriesName}}", create their profile authentically, reflecting their known traits.
     - If 'characterNameInput' suggests an Original Character (OC), or if only 'characterClassInput' is provided, create a new character fitting the "{{seriesName}}" universe. Explain their place or origin within the series in their description.
     - If no character input is provided, create a compelling protagonist suitable for an adventure in "{{seriesName}}".
-    - The character profile MUST include:
+    - The 'characterCore' profile MUST include:
         - 'name', 'class', 'description'.
         - 'health' and 'maxHealth' (e.g., 100).
         - 'mana' and 'maxMana' (use 0 for both if not applicable to the character/class, otherwise provide appropriate starting values).
         - Core stats ('strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma') with values between 5 and 15. Omit a stat if it's truly not applicable.
         - 'level' initialized to 1, 'experiencePoints' to 0, and 'experienceToNextLevel' to a starting value (e.g., 100).
-        - 'skillsAndAbilities': An array of 2-3 starting skills, unique abilities, or passive traits. Each skill object in this array MUST have a unique 'id' (e.g., "skill_teleport_001"), 'name', 'description' (detailing its effect/narrative impact), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Series-Specific Power").
-        - **Crucially for "Return by Death" or similar abilities**: If the character being generated is known for a signature, fate-altering ability (e.g., for "Re:Zero" and Subaru, this would be "Return by Death"; for other series, it might be a unique power), ensure this ability is included in 'skillsAndAbilities' with a fitting name, detailed description of its effects and narrative implications, and an appropriate type like "Unique Ability" or "Cursed Power".
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}" that is relevant to the character and the initial 'sceneDescription'.
 
-Your entire response MUST be a single JSON object adhering strictly to the CharacterAndSceneOutputSchema, containing 'sceneDescription', 'character', and 'currentLocation'. Ensure all skill IDs within character.skillsAndAbilities are unique.`,
+Your entire response MUST be a single JSON object adhering strictly to the CharacterAndSceneOutputSchema, containing 'sceneDescription', 'characterCore', and 'currentLocation'. Do NOT include 'skillsAndAbilities' in the 'characterCore' object.`,
+});
+
+// STEP 1b: Initial Character Skills
+const InitialCharacterSkillsInputSchema = z.object({
+    seriesName: z.string(),
+    characterName: z.string(),
+    characterClass: z.string(),
+    characterDescription: z.string(),
+});
+const InitialCharacterSkillsOutputSchema = z.object({
+    skillsAndAbilities: z.array(SkillSchemaInternal).optional(),
+});
+const initialCharacterSkillsPrompt = ai.definePrompt({
+    name: 'initialCharacterSkillsPrompt',
+    input: { schema: InitialCharacterSkillsInputSchema },
+    output: { schema: InitialCharacterSkillsOutputSchema },
+    prompt: `For a character in the series "{{seriesName}}":
+Name: {{characterName}}
+Class/Role: {{characterClass}}
+Description: {{characterDescription}}
+
+Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills, unique abilities, or passive traits.
+- Each skill object in this array MUST have a unique 'id' (e.g., "skill_teleport_001"), 'name', 'description' (detailing its effect/narrative impact), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Series-Specific Power").
+- **Crucially for "Return by Death" or similar abilities**: If the character is known for a signature, fate-altering ability (e.g., for "Re:Zero" and Subaru, this would be "Return by Death"; for other series, it might be a unique power), ensure this ability is included.
+Adhere strictly to the JSON schema. Output ONLY the object: { "skillsAndAbilities": [...] }. If no specific skills are appropriate, output { "skillsAndAbilities": [] }.`,
 });
 
 
-// STEP 2: Sub-steps for Items, Equipment, and World Facts
-
+// STEP 2a: Initial Inventory
 const MinimalContextForItemsFactsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterProfileSchemaInternal.pick({ name: true, class: true, description: true }), // Only relevant parts for context
+    character: CharacterCoreProfileSchemaInternal.pick({ name: true, class: true, description: true }), // Only relevant parts for context
     sceneDescription: z.string(),
     currentLocation: z.string(),
 });
-
-// STEP 2a: Initial Inventory
 const InitialInventoryOutputSchema = z.object({
     inventory: StructuredStoryStateSchemaInternal.shape.inventory,
 });
@@ -272,6 +296,7 @@ const initialQuestsPrompt = ai.definePrompt({
   output: { schema: InitialQuestsOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Skills: {{#each character.skillsAndAbilities}} - {{this.name}}: {{this.description}} {{/each}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -297,7 +322,7 @@ const initialTrackedNPCsPrompt = ai.definePrompt({
   input: { schema: InitialTrackedNPCsInputSchema },
   output: { schema: InitialTrackedNPCsOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Player Character: {{character.name}} ({{character.class}})
+Player Character: {{character.name}} ({{character.class}}) - Skills: {{#each character.skillsAndAbilities}} - {{this.name}}: {{this.description}} {{/each}}
 Initial Scene: {{sceneDescription}}
 Player's Starting Location: {{currentLocation}}
 
@@ -310,7 +335,7 @@ Generate ONLY:
         - 'lastKnownLocation' MUST be '{{currentLocation}}'.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): You MAY also include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe who are NOT in the 'Initial Scene'.
         - 'firstEncounteredLocation': Set this to their canonical or widely-known location from series lore (e.g., "Hogwarts Castle", "The Jedi Temple", "Their shop in the Market District"). DO NOT use '{{currentLocation}}' for these NPCs.
-        - 'relationshipStatus' (numerical score): Typically 0 (Neutral) towards the player character, unless a strong canonical reason dictates otherwise (e.g., a known villain to a hero might be -50).
+        - 'relationshipStatus' (numerical score): Typically 0 (Neutral) or a value representing common perception of this character towards a protagonist in '{{seriesName}}'.
         - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
         - 'lastKnownLocation': Set this to their canonical or widely-known location, similar to their 'firstEncounteredLocation'.
     - For ALL NPCs (both in-scene and pre-populated):
@@ -375,24 +400,46 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal,
   },
   async (mainInput: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
-    // Step 1: Generate character, scene, and location
+    // Step 1: Generate character core, scene, and location
     const { output: charSceneOutput } = await characterAndScenePrompt(mainInput);
-    if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.character || !charSceneOutput.currentLocation) {
+    if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.characterCore || !charSceneOutput.currentLocation) {
       console.error("Character/Scene generation failed or returned unexpected structure:", charSceneOutput);
-      throw new Error('Failed to generate character, scene, or location.');
+      throw new Error('Failed to generate character core, scene, or location.');
     }
-    const characterForContext = {
-        name: charSceneOutput.character.name,
-        class: charSceneOutput.character.class,
-        description: charSceneOutput.character.description,
+    const { characterCore, sceneDescription, currentLocation } = charSceneOutput;
+
+    // Step 1b: Generate initial character skills
+    const skillsInput: z.infer<typeof InitialCharacterSkillsInputSchema> = {
+        seriesName: mainInput.seriesName,
+        characterName: characterCore.name,
+        characterClass: characterCore.class,
+        characterDescription: characterCore.description,
     };
+    const { output: skillsOutput } = await initialCharacterSkillsPrompt(skillsInput);
+    if (!skillsOutput) { // skillsAndAbilities is optional, so empty array is fine
+        console.warn("Initial skills generation returned undefined, defaulting to empty array.");
+    }
+    const characterSkills = skillsOutput?.skillsAndAbilities || [];
+
+    // Assemble the full character profile
+    const fullCharacterProfile: z.infer<typeof CharacterProfileSchemaInternal> = {
+        ...characterCore,
+        skillsAndAbilities: characterSkills,
+    };
+
+    const characterForContext = { // Used for some subsequent prompts that only need basic character info
+        name: fullCharacterProfile.name,
+        class: fullCharacterProfile.class,
+        description: fullCharacterProfile.description,
+    };
+
 
     // Step 2a: Generate initial inventory
     const inventoryInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: characterForContext,
-        sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation,
+        sceneDescription: sceneDescription,
+        currentLocation: currentLocation,
     };
     const { output: inventoryOutput } = await initialInventoryPrompt(inventoryInput);
     if (!inventoryOutput || !inventoryOutput.inventory) {
@@ -404,8 +451,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     const equippedItemsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: characterForContext,
-        sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation,
+        sceneDescription: sceneDescription,
+        currentLocation: currentLocation,
     };
     const { output: equippedItemsOutput } = await initialEquippedItemsPrompt(equippedItemsInput);
      if (!equippedItemsOutput || !equippedItemsOutput.equippedItems) {
@@ -417,8 +464,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     const worldFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: characterForContext,
-        sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation,
+        sceneDescription: sceneDescription,
+        currentLocation: currentLocation,
     };
     const { output: worldFactsOutput } = await initialWorldFactsPrompt(worldFactsInput);
     if (!worldFactsOutput || !worldFactsOutput.worldFacts) {
@@ -430,9 +477,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Step 3: Generate initial quests
     const questsInput: z.infer<typeof InitialQuestsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: charSceneOutput.character, // Pass full character for quest context
-        sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation,
+        character: fullCharacterProfile, // Pass full character (with skills) for quest context
+        sceneDescription: sceneDescription,
+        currentLocation: currentLocation,
     };
     const { output: questsOutput } = await initialQuestsPrompt(questsInput);
     if (!questsOutput || !questsOutput.quests) {
@@ -443,9 +490,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Step 4: Generate initial tracked NPCs
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: charSceneOutput.character, // Pass full character for NPC context
-        sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation,
+        character: fullCharacterProfile, // Pass full character (with skills) for NPC context
+        sceneDescription: sceneDescription,
+        currentLocation: currentLocation,
     };
     const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
     if (!npcsOutput || !npcsOutput.trackedNPCs) {
@@ -455,8 +502,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
     // Assemble storyState
     const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
-        character: charSceneOutput.character,
-        currentLocation: charSceneOutput.currentLocation,
+        character: fullCharacterProfile,
+        currentLocation: currentLocation,
         inventory: inventoryOutput.inventory || [],
         equippedItems: equippedItemsOutput.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null },
         quests: questsOutput.quests || [],
@@ -469,7 +516,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       seriesName: mainInput.seriesName,
       characterName: storyState.character.name,
       characterClass: storyState.character.class,
-      sceneDescription: charSceneOutput.sceneDescription,
+      sceneDescription: sceneDescription,
       characterDescription: storyState.character.description,
     };
     const { output: loreEntries } = await loreEntriesPrompt(loreInput);
@@ -479,7 +526,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
     // Assemble the final output
     let finalOutput: GenerateScenarioFromSeriesOutput = {
-      sceneDescription: charSceneOutput.sceneDescription,
+      sceneDescription: sceneDescription,
       storyState: storyState,
       initialLoreEntries: loreEntries || [],
       seriesStyleGuide: styleGuideRaw === null ? undefined : styleGuideRaw,
@@ -494,7 +541,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       char.dexterity = char.dexterity ?? 10;
       char.constitution = char.constitution ?? 10;
       char.intelligence = char.intelligence ?? 10;
-      char.wisdom = typeof char.wisdom === 'number' ? Math.round(char.wisdom) : 10;
+      char.wisdom = typeof char.wisdom === 'number' ? Math.round(char.wisdom) : 10; // Round wisdom
       char.charisma = char.charisma ?? 10;
       char.level = char.level ?? 1;
       char.experiencePoints = char.experiencePoints ?? 0;
@@ -681,3 +728,4 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
+
