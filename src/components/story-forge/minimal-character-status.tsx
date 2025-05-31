@@ -10,7 +10,7 @@ import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserC
 
 interface MinimalCharacterStatusProps {
   character: CharacterProfile;
-  storyState: StructuredStoryState; // Changed from currentLocation to full storyState
+  storyState: StructuredStoryState;
 }
 
 export default function MinimalCharacterStatus({ character, storyState }: MinimalCharacterStatusProps) {
@@ -27,11 +27,11 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
           <div>
             <h3 className="text-xl font-headline font-semibold text-primary">{character.name}</h3>
             <p className="text-sm text-muted-foreground -mt-0.5 flex items-center">
-              <UserCircleIcon className="w-3.5 h-3.5 mr-1 text-purple-400"/> {character.class}
+              <UserCircleIcon className="w-3.5 h-3.5 mr-1 text-purple-400 shrink-0"/> {character.class}
             </p>
           </div>
           <Badge variant="outline" className="text-md">
-            <AwardIcon className="w-3.5 h-3.5 mr-1 text-yellow-500" />
+            <AwardIcon className="w-3.5 h-3.5 mr-1 text-yellow-500 shrink-0" />
             Lvl {character.level}
           </Badge>
         </div>
@@ -39,7 +39,7 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
         <div>
           <div className="flex justify-between items-center mb-0.5">
             <Label className="text-xs font-medium flex items-center">
-              <HeartIcon className="w-3.5 h-3.5 mr-1 text-red-500" />
+              <HeartIcon className="w-3.5 h-3.5 mr-1 text-red-500 shrink-0" />
               Health
             </Label>
             <span className="text-xs text-muted-foreground">{character.health} / {character.maxHealth}</span>
@@ -51,7 +51,7 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
           <div>
             <div className="flex justify-between items-center mb-0.5">
               <Label className="text-xs font-medium flex items-center">
-                <ZapIcon className="w-3.5 h-3.5 mr-1 text-blue-500" />
+                <ZapIcon className="w-3.5 h-3.5 mr-1 text-blue-500 shrink-0" />
                 Mana
               </Label>
               <span className="text-xs text-muted-foreground">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
@@ -63,7 +63,7 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
         <div>
           <div className="flex justify-between items-center mb-0.5">
             <Label className="text-xs font-medium flex items-center">
-              <GaugeIcon className="w-3.5 h-3.5 mr-1 text-green-500" />
+              <GaugeIcon className="w-3 h-3 mr-1 text-green-500 shrink-0" /> {/* Changed w-3.5 h-3.5 to w-3 h-3 */}
               XP
             </Label>
             <span className="text-xs text-muted-foreground">{character.experiencePoints} / {character.experienceToNextLevel}</span>
@@ -74,7 +74,7 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
         {currentLocation && (
           <div className="pt-1">
             <Label className="text-xs font-medium flex items-center">
-              <MapPinIcon className="w-3.5 h-3.5 mr-1 text-purple-500" />
+              <MapPinIcon className="w-3.5 h-3.5 mr-1 text-purple-500 shrink-0" />
               Location
             </Label>
             <p className="text-sm text-foreground truncate" title={currentLocation}>{currentLocation}</p>
@@ -83,7 +83,7 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
 
         <div className="pt-1">
           <Label className="text-xs font-medium flex items-center">
-            <SwordsIcon className="w-3.5 h-3.5 mr-1 text-gray-400" />
+            <SwordsIcon className="w-3.5 h-3.5 mr-1 text-gray-400 shrink-0" />
             Weapon
           </Label>
           <p className="text-sm text-foreground truncate" title={equippedWeaponName}>{equippedWeaponName}</p>
