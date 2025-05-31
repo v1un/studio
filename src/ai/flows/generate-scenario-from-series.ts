@@ -7,7 +7,7 @@
  * initial inventory, quests (with objectives, categories, and pre-defined rewards), world facts,
  * a set of pre-populated lorebook entries relevant to the series, a brief series style guide,
  * and initial profiles for any NPCs introduced in the starting scene or known major characters from the series.
- * This flow uses a multi-step generation process.
+ * This flow uses a multi-step generation process to manage complexity.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
  * - GenerateScenarioFromSeriesInput - Input type (series name, optional character name/class).
@@ -138,57 +138,116 @@ export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFr
 
 // --- Prompts for Multi-Step Generation ---
 
-// STEP 1: Generate Core Scenario (scene, story state excluding lore/style guide)
-const coreScenarioPrompt = ai.definePrompt({
-  name: 'generateCoreScenarioPrompt',
-  input: { schema: GenerateScenarioFromSeriesInputSchema },
-  output: {
-    schema: z.object({
-      sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
-      storyState: StructuredStoryStateSchemaInternal,
-    }),
-  },
-  prompt: `You are a master storyteller and game designer, tasked with creating an immersive and detailed starting scenario for an interactive text adventure based on the series: "{{seriesName}}".
+// STEP 1: Character, Scene, Location
+const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
+const CharacterAndSceneOutputSchema = z.object({
+    sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
+    character: CharacterProfileSchemaInternal,
+    currentLocation: StructuredStoryStateSchemaInternal.shape.currentLocation,
+});
+const characterAndScenePrompt = ai.definePrompt({
+  name: 'characterAndScenePrompt',
+  input: { schema: CharacterAndSceneInputSchema },
+  output: { schema: CharacterAndSceneOutputSchema },
+  prompt: `You are a master storyteller setting up an interactive text adventure in the series: "{{seriesName}}".
 User's character preferences:
-- Preferred Character Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}
-- Preferred Character Class/Role: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}
+- Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}
+- Class/Role: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}
 
-Your goal is to generate ONLY the following two things:
-1.  An engaging, vivid, and detailed initial 'sceneDescription' that drops the player right into the world of "{{seriesName}}". This scene should be tailored to the character being generated.
-2.  A complete 'storyState' object, meticulously tailored to the "{{seriesName}}" universe and the character. This 'storyState' object MUST contain:
-    *   'character':
-        - If 'characterNameInput' is provided and you recognize it as an existing character from "{{seriesName}}", generate the profile for *that specific character*. Their class, description, stats, and starting items should be authentic to them at a plausible starting point in their story.
-        - If 'characterNameInput' suggests an Original Character (OC), or if only 'characterClassInput' is provided, create a new character fitting that name/class. Their 'description' must explain their place or origin within the "{{seriesName}}" universe and how they fit into the initial scene.
-        - If no character preferences are given, create a compelling character (existing or new) suitable for "{{seriesName}}".
-        - Ensure all character stats are set (strength, dexterity, constitution, intelligence, wisdom, charisma, typically 5-15), mana fields are numbers (0 if not applicable), level is 1, XP is 0, and experienceToNextLevel is a reasonable starting value (e.g., 100).
-    *   'currentLocation': A specific, recognizable, and richly described starting location from "{{seriesName}}" relevant to the character and scene.
-    *   'inventory': An array of 0-3 initial unequipped 'Item' objects. Each item must have a unique 'id', 'name', and 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its 'equipSlot'. If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Items should be logical for the character.
-    *   'equippedItems': An object explicitly mapping all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') to an 'Item' object or null. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.** This should be consistent with the scene description (e.g., if the character is described holding a weapon, it should be equipped).
-    *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore and character, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest", "Personal Goal") – if no category is clear or applicable, omit the 'category' field. For added depth, if a quest is complex, provide an array of 'objectives', each with a 'description' and 'isCompleted: false'.
-        - **Quest Rewards**: For each initial quest, you MUST also define a 'rewards' object. This object specifies the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player *will* receive upon completing this quest. For 'items' in rewards, ensure each item has a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field entirely or provide an empty object {} for it.
-    *   'worldFacts': An array of 3-5 key 'worldFacts' (strings) about the "{{seriesName}}" universe, particularly those relevant to the character's starting situation or the immediate environment.
-    *   'trackedNPCs': This array MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene.
-        - For each NPC (whether in scene 1 or pre-populated major character):
-            - Generate a unique 'id' (e.g., npc_{{seriesName}}_npcname_001).
-            - Provide their 'name' and 'description' (consistent with the scene for scene 1 NPCs; consistent with canon for major pre-populated NPCs).
-            - Set 'classOrRole' if applicable.
-            - Set 'firstEncounteredLocation': For scene 1 NPCs, this is 'storyState.currentLocation'. For pre-populated major NPCs, this could be their typical location or a note like "Known from series lore."
-            - Set 'firstEncounteredTurnId' to "initial_turn_0" for all NPCs known at game start.
-            - Set initial 'relationshipStatus' reflecting the character's likely starting relationship (e.g., 'Neutral', 'Unknown', 'Friendly' for an ally, 'Hostile' for a known antagonist).
-            - Populate 'knownFacts' with 1-2 basic facts the player character would know about this NPC.
-            - For pre-populated major NPCs, 'seriesContextNotes' can be useful to note their canon importance.
-            - 'dialogueHistory' should be empty. 'lastKnownLocation' and 'lastSeenTurnId' should generally mirror 'firstEncountered...' details for initial setup unless a more specific current canonical status is applicable.
-            - Ensure all fields adhere to the NPCProfile schema.
-
-**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties (id, name, description, and 'equipSlot' if it's equippable gear, otherwise 'equipSlot' omitted). If an NPC is described in the scene, their profile should be in 'trackedNPCs'.
-
-DO NOT generate 'initialLoreEntries' or 'seriesStyleGuide' in THIS step.
-The entire response for this step must strictly follow the JSON schema for the 'sceneDescription' and 'storyState' output. Make sure all IDs for items, quests, and NPCs are unique.
-Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable). For optional string fields like 'Item.equipSlot', 'Quest.category', or NPC profile fields, omit the field if not applicable.
-`,
+Generate ONLY:
+1.  'sceneDescription': A vivid initial scene.
+2.  'character': A full character profile.
+    - If 'characterNameInput' is a known character, create them authentically.
+    - If it's an OC, or only 'characterClassInput' is given, create a fitting new character. Explain their place in the series.
+    - If no input, create a compelling character for "{{seriesName}}".
+    - Ensure stats (5-15), mana (0 if not applicable), level 1, 0 XP, XPToNextLevel (e.g., 100).
+3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}" relevant to the character and scene.
+Adhere strictly to the JSON schema.`,
 });
 
-// STEP 2: Generate Lore Entries
+// STEP 2: Initial Inventory, Equipment, World Facts
+const InitialItemsAndFactsInputSchema = z.object({
+    seriesName: z.string(),
+    character: CharacterProfileSchemaInternal,
+    sceneDescription: z.string(),
+    currentLocation: z.string(),
+});
+const InitialItemsAndFactsOutputSchema = z.object({
+    inventory: StructuredStoryStateSchemaInternal.shape.inventory,
+    equippedItems: StructuredStoryStateSchemaInternal.shape.equippedItems,
+    worldFacts: StructuredStoryStateSchemaInternal.shape.worldFacts,
+});
+const initialItemsAndFactsPrompt = ai.definePrompt({
+  name: 'initialItemsAndFactsPrompt',
+  input: { schema: InitialItemsAndFactsInputSchema },
+  output: { schema: InitialItemsAndFactsOutputSchema },
+  prompt: `For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY:
+1.  'inventory': 0-3 unequipped starting items (unique id, name, description. 'equipSlot' if equippable gear, otherwise omit 'equipSlot').
+2.  'equippedItems': All 10 slots ('weapon', 'shield', etc.) mapped to an item object or null. Item must have 'equipSlot' if equippable. Ensure consistency with scene.
+3.  'worldFacts': 3-5 key world facts relevant to the start.
+Adhere strictly to the JSON schema. Ensure all item IDs are unique.`,
+});
+
+// STEP 3: Initial Quests
+const InitialQuestsInputSchema = z.object({
+    seriesName: z.string(),
+    character: CharacterProfileSchemaInternal,
+    sceneDescription: z.string(),
+    currentLocation: z.string(),
+});
+const InitialQuestsOutputSchema = z.object({
+    quests: StructuredStoryStateSchemaInternal.shape.quests,
+});
+const initialQuestsPrompt = ai.definePrompt({
+  name: 'initialQuestsPrompt',
+  input: { schema: InitialQuestsInputSchema },
+  output: { schema: InitialQuestsOutputSchema },
+  prompt: `For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY:
+1.  'quests': 1-2 initial quests (unique id, description, status 'active').
+    - Optionally include 'category', 'objectives' (with 'isCompleted: false').
+    - MUST include 'rewards' (experiencePoints and/or items with unique id, name, description, optional 'equipSlot'). If no material rewards, omit 'rewards' or use {}.
+Adhere strictly to the JSON schema. Ensure quest and item IDs are unique.`,
+});
+
+// STEP 4: Initial Tracked NPCs
+const InitialTrackedNPCsInputSchema = z.object({
+    seriesName: z.string(),
+    character: CharacterProfileSchemaInternal,
+    sceneDescription: z.string(),
+    currentLocation: z.string(),
+});
+const InitialTrackedNPCsOutputSchema = z.object({
+    trackedNPCs: StructuredStoryStateSchemaInternal.shape.trackedNPCs,
+});
+const initialTrackedNPCsPrompt = ai.definePrompt({
+  name: 'initialTrackedNPCsPrompt',
+  input: { schema: InitialTrackedNPCsInputSchema },
+  output: { schema: InitialTrackedNPCsOutputSchema },
+  prompt: `For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}})
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY:
+1. 'trackedNPCs':
+    - MUST include profiles for NPCs in 'sceneDescription'.
+    - MAY include 2-4 other major, known characters from "{{seriesName}}".
+    - Each NPC profile: unique 'id', 'name', 'description', 'classOrRole' (optional), 'firstEncounteredLocation' (current for scene NPCs, typical for major), 'firstEncounteredTurnId' ("initial_turn_0"), 'relationshipStatus', 'knownFacts' (initial player knowledge), 'seriesContextNotes' (optional for major), empty 'dialogueHistory'.
+Adhere strictly to the JSON schema. Ensure NPC IDs are unique.`,
+});
+
+
+// STEP 5: Generate Lore Entries
 const LoreGenerationInputSchema = z.object({
   seriesName: z.string(),
   characterName: z.string(),
@@ -211,14 +270,14 @@ Output ONLY the JSON array of lore entries, strictly adhering to the schema.
 Example: [{"keyword": "Magic Wand", "content": "A basic tool for beginner mages.", "category": "Item"}]`,
 });
 
-// STEP 3: Generate Series Style Guide
+// STEP 6: Generate Series Style Guide
 const StyleGuideInputSchema = z.object({
   seriesName: z.string(),
 });
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().nullable() }, // AI can return null, JS will convert to undefined for final output
+  output: { schema: z.string().nullable() },
   prompt: `You are a literary analyst. For the series "{{seriesName}}", your task is to provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
 
 - If you can generate a suitable, concise summary for "{{seriesName}}", please provide it as a string.
@@ -238,36 +297,82 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     inputSchema: GenerateScenarioFromSeriesInputSchema,
     outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal,
   },
-  async (input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
-    // Step 1: Generate core scenario and character
-    const { output: coreOutput } = await coreScenarioPrompt(input);
-    if (!coreOutput || !coreOutput.sceneDescription || !coreOutput.storyState) {
-      console.error("Core scenario generation failed or returned unexpected structure:", coreOutput);
-      throw new Error('Failed to generate core scenario data.');
+  async (mainInput: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
+    // Step 1: Generate character, scene, and location
+    const { output: charSceneOutput } = await characterAndScenePrompt(mainInput);
+    if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.character || !charSceneOutput.currentLocation) {
+      throw new Error('Failed to generate character, scene, or location.');
     }
 
-    // Step 2: Generate lore entries
+    // Step 2: Generate initial items and facts
+    const itemsFactsInput: z.infer<typeof InitialItemsAndFactsInputSchema> = {
+        seriesName: mainInput.seriesName,
+        character: charSceneOutput.character,
+        sceneDescription: charSceneOutput.sceneDescription,
+        currentLocation: charSceneOutput.currentLocation,
+    };
+    const { output: itemsFactsOutput } = await initialItemsAndFactsPrompt(itemsFactsInput);
+    if (!itemsFactsOutput) {
+        throw new Error('Failed to generate initial items and facts.');
+    }
+
+    // Step 3: Generate initial quests
+    const questsInput: z.infer<typeof InitialQuestsInputSchema> = {
+        seriesName: mainInput.seriesName,
+        character: charSceneOutput.character,
+        sceneDescription: charSceneOutput.sceneDescription,
+        currentLocation: charSceneOutput.currentLocation,
+    };
+    const { output: questsOutput } = await initialQuestsPrompt(questsInput);
+    if (!questsOutput) {
+        throw new Error('Failed to generate initial quests.');
+    }
+
+    // Step 4: Generate initial tracked NPCs
+    const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
+        seriesName: mainInput.seriesName,
+        character: charSceneOutput.character,
+        sceneDescription: charSceneOutput.sceneDescription,
+        currentLocation: charSceneOutput.currentLocation,
+    };
+    const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
+    if (!npcsOutput) {
+        throw new Error('Failed to generate initial tracked NPCs.');
+    }
+
+    // Assemble storyState
+    const storyState: StructuredStoryState = {
+        character: charSceneOutput.character,
+        currentLocation: charSceneOutput.currentLocation,
+        inventory: itemsFactsOutput.inventory || [],
+        equippedItems: itemsFactsOutput.equippedItems || {},
+        quests: questsOutput.quests || [],
+        worldFacts: itemsFactsOutput.worldFacts || [],
+        trackedNPCs: npcsOutput.trackedNPCs || [],
+    };
+
+    // Step 5: Generate lore entries
     const loreInput: z.infer<typeof LoreGenerationInputSchema> = {
-      seriesName: input.seriesName,
-      characterName: coreOutput.storyState.character.name,
-      characterClass: coreOutput.storyState.character.class,
-      sceneDescription: coreOutput.sceneDescription,
-      characterDescription: coreOutput.storyState.character.description,
+      seriesName: mainInput.seriesName,
+      characterName: storyState.character.name,
+      characterClass: storyState.character.class,
+      sceneDescription: charSceneOutput.sceneDescription,
+      characterDescription: storyState.character.description,
     };
     const { output: loreEntries } = await loreEntriesPrompt(loreInput);
 
-    // Step 3: Generate series style guide
-    const { output: styleGuideRaw } = await styleGuidePrompt({ seriesName: input.seriesName }); 
+    // Step 6: Generate series style guide
+    const { output: styleGuideRaw } = await styleGuidePrompt({ seriesName: mainInput.seriesName });
 
     // Assemble the final output
     let finalOutput: GenerateScenarioFromSeriesOutput = {
-      sceneDescription: coreOutput.sceneDescription,
-      storyState: coreOutput.storyState,
+      sceneDescription: charSceneOutput.sceneDescription,
+      storyState: storyState, // Assembled storyState
       initialLoreEntries: loreEntries || [],
       seriesStyleGuide: styleGuideRaw === null ? undefined : styleGuideRaw,
     };
 
-    // --- Post-processing ---
+    // --- Post-processing (applied to the fully assembled finalOutput.storyState) ---
     if (finalOutput.storyState.character) {
       const char = finalOutput.storyState.character;
       char.mana = char.mana ?? 0;
@@ -356,11 +461,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       }
       finalOutput.storyState.equippedItems = newEquippedItems as any;
 
-      // NPC Tracker post-processing
       finalOutput.storyState.trackedNPCs = finalOutput.storyState.trackedNPCs ?? [];
-      const npcIdSet = new Set<string>(); // Changed from npcNameSet to npcIdSet for accuracy
+      const npcIdSet = new Set<string>();
       finalOutput.storyState.trackedNPCs.forEach((npc, index) => {
-          if (!npc.id) { // Generate ID if missing
+          if (!npc.id) {
               let baseId = `npc_scenario_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
               let newId = baseId;
               let counter = 0;
@@ -369,11 +473,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
               }
               npc.id = newId;
           }
-           while(npcIdSet.has(npc.id)){ // Ensure ID is unique even if AI provided one that clashes
+           while(npcIdSet.has(npc.id)){
              let baseId = npc.id;
              let counter = 0;
-             // Append _uX to make it unique if it's already in the set from a previous iteration in this loop
-             // This handles cases where AI might provide duplicate IDs.
              while(npcIdSet.has(npc.id)) {
                 npc.id = `${baseId}_u${counter++}`;
              }
@@ -384,20 +486,16 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.description = npc.description || "No description provided.";
           npc.relationshipStatus = npc.relationshipStatus || 'Unknown';
           npc.knownFacts = npc.knownFacts ?? [];
-          npc.dialogueHistory = npc.dialogueHistory ?? []; // Should be empty for initial
+          npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
           npc.updatedAt = npc.updatedAt || new Date().toISOString();
-          // Preserve firstEncounteredLocation if provided, otherwise it might be set by AI based on context
-          // lastKnownLocation and lastSeenTurnId will also default to firstEncountered... if not set by AI
           npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
           npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
           
           if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
           if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
-          // Do not delete firstEncounteredTurnId
           if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
-          // Do not delete lastSeenTurnId
           if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
       });
     }
