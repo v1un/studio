@@ -89,7 +89,10 @@ export async function generateNextScene(input: GenerateNextSceneInput): Promise<
 }
 
 // Helper function to render equipped items for the prompt
-function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, Item | null>>): string {
+function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, Item | null>> | undefined | null): string {
+  if (!equippedItems || typeof equippedItems !== 'object') {
+    return "Equipment status: Not available or invalid data.";
+  }
   let output = "";
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
