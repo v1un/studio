@@ -89,6 +89,7 @@ export interface LoreEntry {
   category?: string; 
   source: 'AI-Generated' | 'System' | 'User-Added' | 'AI-Generated-Scenario-Start';
   createdAt: string; 
+  updatedAt?: string; // Added for edit tracking
 }
 
 export interface RawLoreEntry {

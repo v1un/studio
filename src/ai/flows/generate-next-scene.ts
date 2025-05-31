@@ -23,7 +23,6 @@ const ItemSchemaInternal = z.object({
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
 });
-
 const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character.'),
   class: z.string().describe('The class or archetype of the character.'),
@@ -79,11 +78,12 @@ const QuestSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status'. Optionally include 'category', a list of 'objectives' (each with 'description' and 'isCompleted'), and 'rewards' (with 'experiencePoints' and/or 'items') if the quest status is 'completed'."),
-  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
+  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
 });
+
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
 const GenerateNextSceneInputSchemaInternal = z.object({
@@ -96,6 +96,7 @@ export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
   formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, and objectives."),
+  // formattedActiveQuestsString: z.string().describe("Pre-formatted string of active quest descriptions."), // Removed as quests are now more structured
 });
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
@@ -219,7 +220,7 @@ Crucially, you must also update the story state. This includes:
 - Equipped Items:
   - If the player tries to equip an item:
     1. Find the item in \`inventory\`.
-    2. Check if it's equippable and has an \`equipSlot\`. If not, state it (e.g., "You cannot equip the diary.").
+    2. Check if it's equippable and has an \`equipSlot\`. If not, state it (e.g., "You cannot equip the diary."). Only items that are actual gear (weapons, armor, equippable accessories) should have an \`equipSlot\`. Items like books or potions are not equippable and should not have an \`equipSlot\` field.
     3. If the target slot is occupied, move the existing item from \`equippedItems[slot]\` to \`inventory\`.
     4. Move the new item from \`inventory\` to \`equippedItems[slot]\`.
     5. Narrate the action.
@@ -244,7 +245,11 @@ Crucially, you must also update the story state. This includes:
   - Ensure quest IDs are unique.
   - If a quest's \`category\` is not applicable, omit the field. If objectives are not needed, omit the \`objectives\` array. If a completed quest has no specific rewards, omit the \`rewards\` field.
 - World Facts:
-  - Add, modify, or remove strings in \`worldFacts\` as the world state changes. Narrate these if observable.
+  - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment.
+  - **Adding Facts**: If the character makes a new, significant observation or learns a piece of information relevant to the immediate situation that isn't broad enough for the lorebook, add it as a string to \`worldFacts\`.
+  - **Modifying Facts**: If an existing fact needs refinement based on new developments, you can suggest replacing the old fact with a new one (effectively removing the old and adding the new).
+  - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes), you can remove it from the \`worldFacts\` array.
+  - **Narrate Changes**: If you add, modify, or remove a world fact in a way that the character would perceive or that's significant for the player to know, briefly mention this in the \`nextScene\` (e.g., "You now realize the guard captain is missing," or "The strange humming sound from the basement has stopped.").
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema for the output.
@@ -263,7 +268,7 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
-    const formattedQuestsString = formatQuests(input.storyState.quests); // This will now also format rewards for display if present
+    const formattedQuestsString = formatQuests(input.storyState.quests);
 
     const promptPayload: z.infer<typeof PromptInternalInputSchema> = {
       ...input,
@@ -298,6 +303,9 @@ const generateNextSceneFlow = ai.defineFlow(
      if (output?.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
         output.updatedStoryState.inventory.forEach(item => {
+          if (!item.id) {
+            item.id = `item_generated_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          }
           if (item.equipSlot === null || (item.equipSlot as unknown) === '') { 
             delete (item as Partial<ItemType>).equipSlot;
           }
@@ -319,7 +327,7 @@ const generateNextSceneFlow = ai.defineFlow(
             if (typeof obj.isCompleted !== 'boolean') {
               obj.isCompleted = false;
             }
-            if (typeof obj.description !== 'string') {
+            if (typeof obj.description !== 'string' || obj.description.trim() === '') {
                 obj.description = "Objective details missing";
             }
           });
@@ -327,34 +335,35 @@ const generateNextSceneFlow = ai.defineFlow(
           // Process rewards
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
-            if (quest.rewards.experiencePoints) {
+            if (typeof quest.rewards.experiencePoints === 'number') {
               output.updatedStoryState.character.experiencePoints += quest.rewards.experiencePoints;
             }
-            if (quest.rewards.items) {
+            if (quest.rewards.items && Array.isArray(quest.rewards.items)) {
               quest.rewards.items.forEach(rewardItem => {
-                // Ensure the rewarded item is correctly formatted (e.g., equipSlot omitted if not applicable)
                 const cleanedRewardItem = { ...rewardItem };
+                 if (!cleanedRewardItem.id) {
+                    cleanedRewardItem.id = `item_reward_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                }
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
                   delete (cleanedRewardItem as Partial<ItemType>).equipSlot;
                 }
-                // Add to inventory (could add a check for existing ID if needed, but prompt asks for new unique IDs)
                 output.updatedStoryState.inventory.push(cleanedRewardItem);
               });
             }
           }
-          // Ensure rewards field is omitted if quest is not completed or no rewards
+          
           if (quest.status !== 'completed' || !quest.rewards || (Object.keys(quest.rewards).length === 0) || (quest.rewards.experiencePoints === undefined && (!quest.rewards.items || quest.rewards.items.length === 0)) ) {
             delete (quest as Partial<QuestType>).rewards;
-          } else if (quest.rewards) { // Further cleanup of rewards structure
+          } else if (quest.rewards) { 
               if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
               if (quest.rewards.items === undefined || quest.rewards.items.length === 0) delete quest.rewards.items;
               if (Object.keys(quest.rewards).length === 0) delete (quest as Partial<QuestType>).rewards;
           }
-
-
         });
 
         output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts ?? [];
+        output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
+
 
         const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
             weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
@@ -364,8 +373,13 @@ const generateNextSceneFlow = ai.defineFlow(
         const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
-            if (newEquippedItems[slotKey] && (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+            if (newEquippedItems[slotKey]) {
+                if (!newEquippedItems[slotKey]!.id) {
+                     newEquippedItems[slotKey]!.id = `item_equipped_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                }
+                if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
+                  delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+                }
             }
         }
         output.updatedStoryState.equippedItems = newEquippedItems as any; 
