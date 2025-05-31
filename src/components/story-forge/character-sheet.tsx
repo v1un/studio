@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
-    PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, 
+    PackageIcon, HeartIcon, ZapIcon, 
     DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon, AwardIcon, 
     GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
     FootprintsIcon, HandIcon, CircleEllipsisIcon
@@ -39,14 +39,14 @@ const equipmentSlotDisplayOrder: EquipmentSlot[] = [
 const equipmentSlotIcons: Record<EquipmentSlot, React.ElementType> = {
   weapon: SwordsIcon,
   shield: ShieldIcon,
-  head: UserSquareIcon, // Using UserSquareIcon as a placeholder for headwear
+  head: UserSquareIcon, 
   body: ShirtIcon,
-  legs: CircleEllipsisIcon, // Placeholder
+  legs: CircleEllipsisIcon, 
   feet: FootprintsIcon,
   hands: HandIcon,
-  neck: GemIcon, // Placeholder for amulet/necklace
-  ring1: CircleEllipsisIcon, // Placeholder
-  ring2: CircleEllipsisIcon, // Placeholder
+  neck: GemIcon, 
+  ring1: CircleEllipsisIcon, 
+  ring2: CircleEllipsisIcon, 
 };
 
 function getSlotDisplayName(slot: EquipmentSlot): string {
@@ -136,7 +136,7 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
 
         <div>
           <h4 className="font-semibold mb-2 text-md">Equipment</h4>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
             {equipmentSlotDisplayOrder.map(slot => {
               const equippedItem = storyState.equippedItems?.[slot];
               const SlotIcon = equipmentSlotIcons[slot] || CircleEllipsisIcon;
@@ -166,15 +166,11 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
 
         <Separator />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm pt-1">
-          <div>
-            <h4 className="font-semibold mb-1 flex items-center"><MapPinIcon className="w-4 h-4 mr-1.5 text-primary" />Location</h4>
-            <p className="text-muted-foreground">{storyState.currentLocation}</p>
-          </div>
+        <div className="grid grid-cols-1 gap-4 text-sm pt-1">
           <div>
             <h4 className="font-semibold mb-1 flex items-center"><PackageIcon className="w-4 h-4 mr-1.5 text-primary" />Inventory (Unequipped)</h4>
             {storyState.inventory.length > 0 ? (
-              <ScrollArea className="h-20 rounded-md border p-2">
+              <ScrollArea className="h-28 rounded-md border p-2">
                 <ul className="list-disc list-inside pl-2 space-y-1">
                   {storyState.inventory.map((item: Item) => (
                     <li key={item.id} className="text-muted-foreground">
@@ -199,34 +195,7 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
               <p className="text-muted-foreground italic">Empty</p>
             )}
           </div>
-          <div>
-            <h4 className="font-semibold mb-1 flex items-center"><ScrollTextIcon className="w-4 h-4 mr-1.5 text-primary" />Active Quests</h4>
-            {storyState.activeQuests.length > 0 ? (
-               <ScrollArea className="h-20 rounded-md border p-2">
-                <ul className="list-disc list-inside pl-2">
-                  {storyState.activeQuests.map((quest, index) => (
-                    <li key={index} className="text-muted-foreground">{quest}</li>
-                  ))}
-                </ul>
-              </ScrollArea>
-            ) : (
-              <p className="text-muted-foreground italic">None</p>
-            )}
-          </div>
-          <div>
-            <h4 className="font-semibold mb-1 flex items-center"><BookOpenIcon className="w-4 h-4 mr-1.5 text-primary" />World Facts</h4>
-             {storyState.worldFacts.length > 0 ? (
-               <ScrollArea className="h-20 rounded-md border p-2">
-                <ul className="list-disc list-inside pl-2">
-                  {storyState.worldFacts.map((fact, index) => (
-                    <li key={index} className="text-muted-foreground">{fact}</li>
-                  ))}
-                </ul>
-              </ScrollArea>
-            ) : (
-              <p className="text-muted-foreground italic">None known</p>
-            )}
-          </div>
+          {/* Location, Active Quests, and World Facts have been moved to other components/tabs */}
         </div>
       </CardContent>
     </Card>
