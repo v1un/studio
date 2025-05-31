@@ -15,6 +15,10 @@ export interface Item {
   name: string;
   description: string;
   equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
+  isConsumable?: boolean;
+  effectDescription?: string; // E.g., "Restores 20 HP", "Grants temporary invisibility"
+  isQuestItem?: boolean;
+  relevantQuestId?: string;
 }
 
 export interface CharacterProfile {

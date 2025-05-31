@@ -22,6 +22,10 @@ const ItemSchemaInternal = z.object({
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If it is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
+  isConsumable: z.boolean().optional().describe("True if the item is consumed on use (e.g., potion, scroll)."),
+  effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect."),
+  isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
+  relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -86,8 +90,8 @@ const QuestSchemaInternal = z.object({
 
 const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
-    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable."),
-    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their response."),
+    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
+    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their significant verbal response."),
     turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
 const NPCProfileSchemaInternal = z.object({
@@ -96,12 +100,12 @@ const NPCProfileSchemaInternal = z.object({
     description: z.string().describe("Physical appearance, general demeanor, key characteristics."),
     classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain'."),
     firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met."),
-    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met."),
-    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's relationship with the NPC."),
-    knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC."),
-    dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments."),
-    lastKnownLocation: z.string().optional().describe("Last known location of the NPC."),
-    lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with."),
+    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
+    relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's initial relationship with the NPC (e.g., 'Neutral', 'Unknown')."),
+    knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Should be empty or reflect general world knowledge if pre-populated and not yet met."),
+    dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Should be empty or omitted for initial scenario."),
+    lastKnownLocation: z.string().optional().describe("Last known location of the NPC. If pre-populated and not met, this could be their canonical location."),
+    lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with (use 'initial_turn_0' for all NPCs known at game start)."),
     seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player). Not typically applicable in generic story starts."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile."),
 });
@@ -110,7 +114,7 @@ const NPCProfileSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, and starting skills/abilities.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an \'equipSlot\' (e.g. \'weapon\', \'head\', \'body\'). If it\'s not an equippable type of item (e.g., a potion, a key, a generic diary/book), the \'equipSlot\' field MUST BE OMITTED ENTIRELY.**'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an \'equipSlot\' (e.g. \'weapon\', \'head\', \'body\'). If it\'s not an equippable type of item (e.g., a potion, a key, a generic diary/book), the \'equipSlot\' field MUST BE OMITTED ENTIRELY.** Consider adding `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if appropriate.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion).'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
@@ -155,14 +159,14 @@ Based on the theme and any user suggestions, generate the following:
     -   Set initial mana and maxMana. These fields must be numbers. If the class is not a magic user, set both to 0. Do not use 'null'.
     -   Assign initial values (between 5 and 15, average 10) for the six core stats: Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma. These stats should generally align with the character's class and must be numbers if provided.
     -   Initialize the character at \`level\` 1, with 0 \`experiencePoints\`, and set an initial \`experienceToNextLevel\` (e.g., 100).
-    -   Include 'skillsAndAbilities': an array of 1-2 starting skills or abilities appropriate for the character's class and the story theme. Each skill needs an 'id' (unique, e.g., "skill_generic_001"), 'name', 'description' (what it does), and 'type' (e.g., "Combat Maneuver", "Passive Perk", "Utility Spell").
+    -   Include 'skillsAndAbilities': an array of 1-2 starting skills or abilities appropriate for the character's class and the story theme. Each skill requires an 'id' (unique, e.g., "skill_generic_001"), 'name', 'description' (what it does), and 'type' (e.g., "Combat Maneuver", "Passive Perk", "Utility Spell").
 3.  An initial structured story state, including:
     -   The character profile you just created.
     -   A starting location relevant to the scene.
-    -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
+    -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** If items are consumable (like potions), set \`isConsumable: true\` and provide an \`effectDescription\`. If an item is a quest item, set \`isQuestItem: true\` and optionally \`relevantQuestId\`.
     -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
     -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'.
-    -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
+    -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable to reward items. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
     -   One or two initial 'worldFacts'.
     -   'trackedNPCs': If any significant NPCs (e.g., named characters, quest givers) are introduced in the initial scene, create profiles for them in this array. Each NPC profile needs a unique 'id', 'name', 'description', initial 'relationshipStatus' (e.g., 'Neutral' or 'Unknown'), 'firstEncounteredLocation' (current location), 'firstEncounteredTurnId' (use "initial_turn_0"), and 'knownFacts' (initially an empty array or one or two basic facts if revealed). 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId' can be omitted or empty for initial NPCs. 'seriesContextNotes' is usually not applicable here.
 
@@ -223,6 +227,10 @@ const generateStoryStartFlow = ai.defineFlow(
           if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
             delete (item as Partial<ItemType>).equipSlot;
           }
+          if (item.isConsumable === undefined) delete item.isConsumable;
+          if (item.effectDescription === undefined || item.effectDescription === '') delete item.effectDescription;
+          if (item.isQuestItem === undefined) delete item.isQuestItem;
+          if (item.relevantQuestId === undefined || item.relevantQuestId === '') delete item.relevantQuestId;
         });
         
         output.storyState.quests = output.storyState.quests ?? [];
@@ -255,6 +263,10 @@ const generateStoryStartFlow = ai.defineFlow(
               if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
                 delete (rewardItem as Partial<ItemType>).equipSlot;
               }
+              if (rewardItem.isConsumable === undefined) delete rewardItem.isConsumable;
+              if (rewardItem.effectDescription === undefined || rewardItem.effectDescription === '') delete rewardItem.effectDescription;
+              if (rewardItem.isQuestItem === undefined) delete rewardItem.isQuestItem;
+              if (rewardItem.relevantQuestId === undefined || rewardItem.relevantQuestId === '') delete rewardItem.relevantQuestId;
             });
             if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0) {
               delete quest.rewards;
@@ -282,6 +294,11 @@ const generateStoryStartFlow = ai.defineFlow(
               if ((newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
                 delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
               }
+              // Ensure new item properties are not present or undefined for equipped items, as they are less likely to be consumable/quest items while equipped.
+              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
+              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
+              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
+              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.relevantQuestId;
             }
         }
         output.storyState.equippedItems = newEquippedItems as any;

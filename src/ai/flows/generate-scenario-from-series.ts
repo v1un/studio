@@ -28,6 +28,10 @@ const ItemSchemaInternal = z.object({
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
+  isConsumable: z.boolean().optional().describe("True if the item is consumed on use (e.g., potion, scroll)."),
+  effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect."),
+  isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
+  relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -78,7 +82,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable to reward items.")
 }).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
@@ -92,8 +96,8 @@ const QuestSchemaInternal = z.object({
 
 const NPCRelationshipStatusEnumInternal = z.enum(['Friendly', 'Neutral', 'Hostile', 'Allied', 'Cautious', 'Unknown']);
 const NPCDialogueEntrySchemaInternal = z.object({
-    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable."),
-    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their response."),
+    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
+    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their significant verbal response."),
     turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
 const NPCProfileSchemaInternal = z.object({
@@ -102,9 +106,9 @@ const NPCProfileSchemaInternal = z.object({
     description: z.string().describe("Physical appearance, general demeanor, key characteristics, fitting the series."),
     classOrRole: z.string().optional().describe("e.g., 'Hokage', 'Soul Reaper Captain', 'Keyblade Master'."),
     firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, their typical location if pre-populated, or a general description like 'Known from series lore' if not a specific place."),
-    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for scenario start)."),
+    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
     relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's initial relationship with the NPC (e.g., 'Neutral', 'Unknown', or specific to series context)."),
-    knownFacts: z.array(z.string()).describe("Specific pieces of information player would know initially about this NPC based on the series, or empty if an OC."),
+    knownFacts: z.array(z.string()).describe("Specific pieces of information player would know initially about this NPC based on the series, or empty if an OC. If this NPC is pre-populated and not directly in the scene, these facts should reflect general world knowledge/rumors, NOT direct player character knowledge from interaction."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Should be empty or omitted for initial scenario."),
     lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup if not directly in scene, or their current canonical location if different. If in scene, this is the current location."),
     lastSeenTurnId: z.string().optional().describe("Same as firstEncounteredTurnId for initial setup (use 'initial_turn_0')."),
@@ -115,11 +119,11 @@ const NPCProfileSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal,
   currentLocation: z.string().describe('A specific starting location from the series relevant to the initial scene.'),
-  inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED. Can be empty.'),
+  inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED. Can be empty. For consumable items, set `isConsumable: true` and provide `effectDescription`. For quest items, set `isQuestItem: true` and `relevantQuestId`.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion). These quests should be compelling and provide clear direction."),
+  quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion, including item details like `isConsumable`). These quests should be compelling and provide clear direction."),
   worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts', and optionally 'seriesContextNotes'. Dialogue history should be empty.")
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', 'relationshipStatus', 'firstEncounteredLocation' (their canonical location if not in scene), 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts' (general world knowledge if not in scene), and optionally 'seriesContextNotes'. Dialogue history should be empty.")
 });
 
 const RawLoreEntrySchemaInternal = z.object({
@@ -198,7 +202,7 @@ Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY:
-1.  'inventory': 0-3 unequipped starting items (unique id, name, description. 'equipSlot' if equippable gear, otherwise omit 'equipSlot').
+1.  'inventory': 0-3 unequipped starting items (unique id, name, description. 'equipSlot' if equippable gear, otherwise omit 'equipSlot'). For consumable items (like potions), set \`isConsumable: true\` and provide an \`effectDescription\`. If an item is a quest item, set \`isQuestItem: true\` and optionally \`relevantQuestId\`.
 2.  'equippedItems': All 10 slots ('weapon', 'shield', etc.) mapped to an item object or null. Item must have 'equipSlot' if equippable. Ensure consistency with scene.
 3.  'worldFacts': 3-5 key world facts relevant to the start.
 Adhere strictly to the JSON schema. Ensure all item IDs are unique.`,
@@ -226,7 +230,7 @@ Location: {{currentLocation}}
 Generate ONLY:
 1.  'quests': 1-2 initial quests (unique id, description, status 'active').
     - Optionally include 'category', 'objectives' (with 'isCompleted: false').
-    - MUST include 'rewards' (experiencePoints and/or items with unique id, name, description, optional 'equipSlot'). If no material rewards, omit 'rewards' or use {}.
+    - MUST include 'rewards' (experiencePoints and/or items with unique id, name, description, optional 'equipSlot'). For items in rewards, also define \`isConsumable\`, \`effectDescription\`, \`isQuestItem\`, \`relevantQuestId\` if applicable. If no material rewards, omit 'rewards' or use {}.
 Adhere strictly to the JSON schema. Ensure quest and item IDs are unique.`,
 });
 
@@ -437,6 +441,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
           delete (item as Partial<ItemType>).equipSlot;
         }
+        if (item.isConsumable === undefined) delete item.isConsumable;
+        if (item.effectDescription === undefined || item.effectDescription === '') delete item.effectDescription;
+        if (item.isQuestItem === undefined) delete item.isQuestItem;
+        if (item.relevantQuestId === undefined || item.relevantQuestId === '') delete item.relevantQuestId;
       });
 
       finalOutput.storyState.quests = finalOutput.storyState.quests ?? [];
@@ -469,6 +477,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
               if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
                 delete (rewardItem as Partial<ItemType>).equipSlot;
               }
+              if (rewardItem.isConsumable === undefined) delete rewardItem.isConsumable;
+              if (rewardItem.effectDescription === undefined || rewardItem.effectDescription === '') delete rewardItem.effectDescription;
+              if (rewardItem.isQuestItem === undefined) delete rewardItem.isQuestItem;
+              if (rewardItem.relevantQuestId === undefined || rewardItem.relevantQuestId === '') delete rewardItem.relevantQuestId;
             });
             if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0) {
               delete quest.rewards;
@@ -496,6 +508,11 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
             if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
             }
+             // Ensure new item properties are not present or undefined for equipped items
+            delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
+            delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
+            delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
+            delete (newEquippedItems[slotKey] as Partial<ItemType>)!.relevantQuestId;
           }
       }
       finalOutput.storyState.equippedItems = newEquippedItems as any;
@@ -556,4 +573,3 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
-

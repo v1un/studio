@@ -22,6 +22,10 @@ const ItemSchemaInternal = z.object({
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
+  isConsumable: z.boolean().optional().describe("True if the item is consumed on use (e.g., potion, scroll)."),
+  effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect."),
+  isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
+  relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -72,7 +76,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear).")
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable for reward items.")
 }).describe("Rewards defined when the quest is created, to be given upon quest completion. Omit if no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
@@ -109,7 +113,7 @@ const NPCProfileSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, and skills/abilities.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
@@ -143,7 +147,7 @@ const ActiveNPCInfoSchemaInternal = z.object({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion), world fact updates, and NPC profile updates/additions in trackedNPCs. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs, new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active.")
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
@@ -260,10 +264,10 @@ Equipped Items:
 
 Current Location: {{storyState.currentLocation}}
 
-Current Inventory (Unequipped Items):
+Current Inventory (Unequipped Items - includes potential consumables or quest items):
 {{#if storyState.inventory.length}}
 {{#each storyState.inventory}}
-- {{this.name}} (ID: {{this.id}}): {{this.description}} {{#if this.equipSlot}}(Equippable Gear: {{this.equipSlot}}){{/if}}
+- {{this.name}} (ID: {{this.id}}): {{this.description}} {{#if this.equipSlot}}(Equippable Gear: {{this.equipSlot}}){{/if}}{{#if this.isConsumable}} (Consumable: {{this.effectDescription}}){{/if}}{{#if this.isQuestItem}} (Quest Item{{#if this.relevantQuestId}} for {{this.relevantQuestId}}){{/if}}){{/if}}
 {{/each}}
 {{else}}
 Empty
@@ -272,7 +276,7 @@ Empty
 Quests (Rewards are pre-defined; they are granted by the system upon completion):
 {{{formattedQuestsString}}}
 
-Known World Facts (Reflect immediate environment & character's current understanding):
+Known World Facts (Reflect immediate environment & character's current understanding, including presence/status of key NPCs):
 {{#each storyState.worldFacts}}
 - {{{this}}}
 {{else}}
@@ -300,7 +304,14 @@ Based on the current scene, player's input, and detailed story state, generate t
 - Subtly reflect any emotional toll or consequences of such a return in the character's state or your descriptive text (e.g., 'Subaru awoke with a gasp, the phantom pain still fresh, the events of the last hour seared into his mind. He was back at the market stall, moments before...').
 - The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \`worldFacts\`; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
 
-NPC Management & Tracking:
+**Skill Usage & Effects:**
+- If the player's input indicates they are using one of their listed \`skillsAndAbilities\`:
+  - Consult the skill's \`name\` and \`description\` from their profile.
+  - Narrate the skill's activation and its immediate consequences clearly.
+  - **Purely Narrative Success/Failure:** Based on the skill's nature and the character's relevant stats (e.g., Intelligence for a spell, Dexterity for an agile maneuver, Strength for a powerful blow), you can narrate varying degrees of success or minor complications. For example: "Your Fireball, fueled by your high Intelligence, erupts with great force." or "You attempt to leap across the chasm using your Acrobatics skill; with your impressive Dexterity, you land gracefully. If it were a more difficult jump, you might have stumbled." Do not implement dice rolls; this is for narrative flavor.
+  - Update the \`storyState\` accordingly (e.g., if a skill heals, update \`character.health\`; if it damages an NPC, reflect this in the NPC's state or \`worldFacts\`; if it consumes character mana, update \`character.mana\`).
+
+**NPC Management & Tracking:**
 - If new, significant NPCs are introduced (named, have dialogue, clear role):
   - Create a new profile in 'updatedStoryState.trackedNPCs'.
   - Assign a unique 'id' (e.g., "npc_[name in lowercase with underscores]_[timestamp/random suffix]").
@@ -314,7 +325,8 @@ NPC Management & Tracking:
 - If interacting with an existing NPC from 'storyState.trackedNPCs' (match by name):
   - Update their profile in 'updatedStoryState.trackedNPCs' with their existing ID.
   - If new details about their appearance or demeanor are revealed, update 'description'.
-  - Based on the interaction, update 'relationshipStatus' (e.g., from 'Neutral' to 'Friendly' if helped).
+  - **Relationship Dynamics:** Based on the interaction, update 'relationshipStatus' more dynamically. Significant positive actions (e.g., helping an NPC, completing a quest for them) should improve it (e.g., Neutral to Friendly). Hostile actions or betrayals should worsen it (e.g., Neutral to Hostile). Narrate these shifts subtly if appropriate.
+  - **NPC Memory & Consistency:** NPCs should demonstrate memory. Refer to their \`knownFacts\` about the player/world and their \`dialogueHistory\` (if available and relevant) to inform their current dialogue and reactions. An NPC who was previously helped should be more welcoming.
   - If the player learns new, distinct information directly about the NPC, add it to 'knownFacts' (avoid duplicates).
   - If there's key dialogue, consider adding an entry to 'dialogueHistory': { playerInput: "{{userInput}}", npcResponse: "Relevant NPC quote", turnId: "{{currentTurnId}}" }.
   - If their location changes, update 'lastKnownLocation'.
@@ -326,17 +338,37 @@ NPC Management & Tracking:
   - Consider giving NPCs distinct mannerisms or ways of speaking, fitting the "{{seriesName}}" context.
 - If distinct NPCs were active in the scene you generate, populate 'activeNPCsInScene' array in the output.
 
-Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
-When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
+**Item Interaction & Utility:**
+- **Using Consumable Items:** If the player's input indicates they are using an item from their \`inventory\` and that item has \`isConsumable: true\`:
+  - Narrate the item being consumed.
+  - Remove one instance of the item from the \`updatedStoryState.inventory\`. Ensure the item's ID is correctly targeted for removal.
+  - Apply its effects based on its \`effectDescription\`. This might involve updating \`character.health\`, \`character.mana\`, adding a temporary \`worldFact\` (e.g., "Character is invisible for a short while"), or other described outcomes.
+- **Using Key/Quest Items:** If the player uses an item from \`inventory\` that has \`isQuestItem: true\` (and potentially a \`relevantQuestId\`):
+  - Evaluate if the context of usage is appropriate for the item's purpose (e.g., using a specific key on the correct door mentioned in a quest).
+  - If the usage is correct and relevant to a quest: Narrate the outcome, update the relevant quest \`objectives\` (e.g., mark as completed), and/or add/modify \`worldFacts\`.
+  - If the usage is incorrect or out of context, narrate that nothing happens or describe a minor consequence.
+
+**Quests & World State:**
+- Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
+- When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
+- **Branching Quest Objectives:** When a player completes an objective or takes a significant action related to a quest:
+  - You may modify the \`description\` of subsequent objectives in that quest to reflect the new situation.
+  - You may add new, logical objectives to the quest if the player's actions open up a new path or complication.
+  - If a player's actions make a current objective impossible or failed, update its status or description and potentially offer an alternative objective or path for the quest.
+- **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences. If a significant \`worldFact\` is added or changed (e.g., 'The ancient artifact is recovered,' 'The bandit leader is defeated'), describe how this impacts the \`currentLocation\`, NPC behaviors, or available dialogue and actions. The world should feel responsive.
+
+**Character Progression:**
+- **Learning New Skills:** As a reward for completing significant quests, achieving major story milestones, or through specific interactions (e.g., finding a rare tome, being taught by a master NPC), you can award the character a new skill. Add this new skill object (with a unique \`id\`, \`name\`, \`description\`, and series-appropriate \`type\`) to \`updatedStoryState.character.skillsAndAbilities\`. Narrate how the character learned or acquired this new skill.
+- **Stat Increases (Rare):** For exceptionally impactful achievements or the use of powerful, unique artifacts, you may grant a small, permanent increase (e.g., +1) to one of the character's core stats (Strength, Dexterity, etc.). This should be rare. Clearly state the stat and the increase in your narration and update it in \`updatedStoryState.character\`.
 
 Crucially, you must also update the story state. This includes:
 - Character: Update all character fields as necessary.
   - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats.
   - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs. Note: The system applies XP from quest rewards automatically, but you can narrate other XP gains.
-  - **Skills & Abilities**: The character's \`skillsAndAbilities\` array should be updated if they learn a new skill or an existing one changes. New skills should have a unique \`id\`, \`name\`, \`description\`, and \`type\`. (Skill usage effects are narrated, direct state changes from skills are more advanced for now).
+  - **Skills & Abilities**: The character's \`skillsAndAbilities\` array should be updated if they learn a new skill or an existing one changes. New skills should have a unique \`id\`, \`name\`, \`description\`, and \`type\`.
 - Location: Update if the character moved.
 - Inventory:
-  - If new items are found (excluding pre-defined quest rewards, which are handled by the system): Add them as objects to the \`inventory\` array. Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Describe these new items clearly in the \`nextScene\` text.
+  - If new items are found (excluding pre-defined quest rewards, which are handled by the system): Add them as objects to the \`inventory\` array. Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Also include \`isConsumable\`, \`effectDescription\`, \`isQuestItem\`, \`relevantQuestId\` if applicable. Describe these new items clearly in the \`nextScene\` text.
   - If items are used, consumed, or lost: Remove them from \`inventory\` or \`equippedItems\` as appropriate.
 - Equipped Items:
   - If the player tries to equip an item:
@@ -355,7 +387,7 @@ Crucially, you must also update the story state. This includes:
 - Quests:
   - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects. Each quest object must include \`id: string\`, \`description: string\`, and \`status: 'active' | 'completed'\`. It will also include its pre-defined \`rewards\` if any.
   - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`.
-    - **Pre-defined Quest Rewards**: When creating a new quest, you MUST also define a 'rewards' object for it. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear). If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object {} for it.
+    - **Pre-defined Quest Rewards**: When creating a new quest, you MUST also define a 'rewards' object for it. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear), and other item properties like \`isConsumable\`, \`effectDescription\` if applicable. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object {} for it.
   - If an existing quest in \`quests\` is progressed:
     - If it has \`objectives\`, update the \`isCompleted\` status of relevant objectives to \`true\`.
     - You can update the main quest \`description\` if needed.
@@ -417,12 +449,15 @@ const generateNextSceneFlow = ai.defineFlow(
       const originalChar = input.storyState.character;
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
+
+      // Apply stat increases proposed by AI, defaulting to original if not changed
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
       updatedChar.dexterity = updatedChar.dexterity ?? originalChar.dexterity ?? 10;
       updatedChar.constitution = updatedChar.constitution ?? originalChar.constitution ?? 10;
       updatedChar.intelligence = updatedChar.intelligence ?? originalChar.intelligence ?? 10;
       updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
       updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
+      
       updatedChar.level = updatedChar.level ?? originalChar.level ?? 1;
       updatedChar.experiencePoints = updatedChar.experiencePoints ?? originalChar.experiencePoints ?? 0;
       updatedChar.experienceToNextLevel = updatedChar.experienceToNextLevel ?? originalChar.experienceToNextLevel ?? 100;
@@ -433,10 +468,18 @@ const generateNextSceneFlow = ai.defineFlow(
          }
       }
       updatedChar.skillsAndAbilities = updatedChar.skillsAndAbilities ?? originalChar.skillsAndAbilities ?? [];
+      const skillIdSet = new Set<string>();
       updatedChar.skillsAndAbilities.forEach((skill, index) => {
-        if (!skill.id) {
-            skill.id = `skill_generated_next_${Date.now()}_${index}`;
+        if (!skill.id || skillIdSet.has(skill.id)) { // Ensure unique ID
+            let baseId = `skill_generated_next_${skill.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+            let newId = baseId;
+            let counter = 0;
+            while(skillIdSet.has(newId)){
+                newId = `${baseId}_u${counter++}`;
+            }
+            skill.id = newId;
         }
+        skillIdSet.add(skill.id);
         skill.name = skill.name || "Unnamed Skill";
         skill.description = skill.description || "No description provided.";
         skill.type = skill.type || "Generic";
@@ -446,6 +489,9 @@ const generateNextSceneFlow = ai.defineFlow(
     // General storyState post-processing
      if (output.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
+        // Ensure removed consumable items are actually gone.
+        // This might be tricky if AI doesn't perfectly match item IDs.
+        // For now, trust AI's inventory output but clean item properties.
         output.updatedStoryState.inventory.forEach(item => {
           if (!item.id) {
             item.id = `item_generated_inv_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -453,6 +499,10 @@ const generateNextSceneFlow = ai.defineFlow(
           if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
             delete (item as Partial<ItemType>).equipSlot;
           }
+          if (item.isConsumable === undefined) delete item.isConsumable;
+          if (item.effectDescription === undefined || item.effectDescription === '') delete item.effectDescription;
+          if (item.isQuestItem === undefined) delete item.isQuestItem;
+          if (item.relevantQuestId === undefined || item.relevantQuestId === '') delete item.relevantQuestId;
         });
 
         output.updatedStoryState.quests = output.updatedStoryState.quests ?? [];
@@ -490,6 +540,12 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
                   delete (cleanedRewardItem as Partial<ItemType>).equipSlot;
                 }
+                // Add item properties
+                if (cleanedRewardItem.isConsumable === undefined) delete cleanedRewardItem.isConsumable;
+                if (cleanedRewardItem.effectDescription === undefined || cleanedRewardItem.effectDescription === '') delete cleanedRewardItem.effectDescription;
+                if (cleanedRewardItem.isQuestItem === undefined) delete cleanedRewardItem.isQuestItem;
+                if (cleanedRewardItem.relevantQuestId === undefined || cleanedRewardItem.relevantQuestId === '') delete cleanedRewardItem.relevantQuestId;
+
                 output.updatedStoryState.inventory.push(cleanedRewardItem);
               });
             }
@@ -504,6 +560,10 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
                     delete (rewardItem as Partial<ItemType>).equipSlot;
                 }
+                if (rewardItem.isConsumable === undefined) delete rewardItem.isConsumable;
+                if (rewardItem.effectDescription === undefined || rewardItem.effectDescription === '') delete rewardItem.effectDescription;
+                if (rewardItem.isQuestItem === undefined) delete rewardItem.isQuestItem;
+                if (rewardItem.relevantQuestId === undefined || rewardItem.relevantQuestId === '') delete rewardItem.relevantQuestId;
             });
             if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0) {
               delete quest.rewards;
@@ -533,6 +593,11 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
                   delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
                 }
+                 // Ensure new item properties are not present or undefined for equipped items
+                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
+                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
+                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
+                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.relevantQuestId;
             }
         }
         output.updatedStoryState.equippedItems = newEquippedItems as any;
