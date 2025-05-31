@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -92,12 +91,12 @@ const NPCProfileSchemaInternal = z.object({
     name: z.string().describe("NPC's name."),
     description: z.string().describe("Physical appearance, general demeanor, key characteristics, fitting the series."),
     classOrRole: z.string().optional().describe("e.g., 'Hokage', 'Soul Reaper Captain', 'Keyblade Master'."),
-    firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, or their typical location if pre-populated."),
+    firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, their typical location if pre-populated, or a general description like 'Known from series lore' if not a specific place."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for scenario start)."),
     relationshipStatus: NPCRelationshipStatusEnumInternal.describe("Player's initial relationship with the NPC (e.g., 'Neutral', 'Unknown', or specific to series context)."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player would know initially about this NPC based on the series, or empty if an OC."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Should be empty or omitted for initial scenario."),
-    lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup, or their current canonical location if different."),
+    lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup if not directly in scene, or their current canonical location if different. If in scene, this is the current location."),
     lastSeenTurnId: z.string().optional().describe("Same as firstEncounteredTurnId for initial setup (use 'initial_turn_0')."),
     seriesContextNotes: z.string().optional().describe("Brief AI-internal note about their canon role/importance if an existing series character."),
     updatedAt: z.string().optional().describe("Timestamp of the last update (set to current time for new)."),
@@ -224,7 +223,7 @@ const InitialTrackedNPCsInputSchema = z.object({
     seriesName: z.string(),
     character: CharacterProfileSchemaInternal,
     sceneDescription: z.string(),
-    currentLocation: z.string(),
+    currentLocation: z.string(), // Player character's starting location
 });
 const InitialTrackedNPCsOutputSchema = z.object({
     trackedNPCs: StructuredStoryStateSchemaInternal.shape.trackedNPCs,
@@ -234,29 +233,30 @@ const initialTrackedNPCsPrompt = ai.definePrompt({
   input: { schema: InitialTrackedNPCsInputSchema },
   output: { schema: InitialTrackedNPCsOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}})
-Scene: {{sceneDescription}}
-Location: {{currentLocation}}
+Player Character: {{character.name}} ({{character.class}})
+Initial Scene: {{sceneDescription}}
+Player's Starting Location: {{currentLocation}}
 
 Generate ONLY:
-1. 'trackedNPCs':
-    - MUST include profiles for NPCs in 'sceneDescription'. For these NPCs:
-        - 'firstEncounteredLocation' should be '{{currentLocation}}'.
-        - 'firstEncounteredTurnId' should be "initial_turn_0".
-        - 'knownFacts' can include details observed or learned in the 'sceneDescription', or be empty.
-        - 'relationshipStatus' should be based on the initial interaction in the scene (e.g., 'Neutral', 'Cautious', 'Friendly' if applicable).
-    - MAY include profiles for 2-4 other major, well-known characters from "{{seriesName}}" who are NOT in the 'sceneDescription'. For these pre-populated major characters:
-        - 'firstEncounteredLocation' could be their typical location in the series or a note like "Known from series lore".
-        - 'firstEncounteredTurnId' should be "initial_turn_0" (as they are known from the start of the game's context).
-        - 'knownFacts' should be 1-2 pieces of common knowledge or widely known rumors about this character within the '{{seriesName}}' universe. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
-        - 'relationshipStatus' should typically be 'Unknown' or 'Neutral', unless a strong canonical reason dictates otherwise for any protagonist.
-    - For ALL NPCs:
-        - Ensure each profile has a unique 'id', 'name', 'description', 'classOrRole' (optional).
-        - 'seriesContextNotes' (optional, for major characters, about their canon role).
+1. 'trackedNPCs': A list of NPC profiles.
+    - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
+        - 'firstEncounteredLocation' MUST be '{{currentLocation}}' (the Player's Starting Location).
+        - 'relationshipStatus' should be based on their initial interaction in the scene (e.g., 'Neutral', 'Hostile if attacking').
+        - 'knownFacts' can include details observed by the player character in the 'Initial Scene'.
+        - 'lastKnownLocation' MUST be '{{currentLocation}}'.
+    - PRE-POPULATED MAJOR NPCs (NOT in scene): You MAY also include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe who are NOT in the 'Initial Scene'.
+        - 'firstEncounteredLocation': Set this to their canonical or widely-known location from series lore (e.g., "Hogwarts Castle", "The Jedi Temple", "Their shop in the Market District"). DO NOT use '{{currentLocation}}' for these NPCs.
+        - 'relationshipStatus': Typically 'Unknown' or 'Neutral' towards the player character, unless a strong canonical reason dictates otherwise (e.g. a known villain to a hero).
+        - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT information the player character has learned through direct interaction yet.
+        - 'lastKnownLocation': Set this to their canonical or widely-known location, similar to their 'firstEncounteredLocation'.
+    - For ALL NPCs (both in-scene and pre-populated):
+        - Ensure each profile has a unique 'id', 'name', and 'description' (fitting the series).
+        - 'classOrRole' (optional, e.g., 'Hokage', 'Soul Reaper Captain').
+        - 'firstEncounteredTurnId' MUST be "initial_turn_0".
+        - 'lastSeenTurnId' MUST be "initial_turn_0".
         - 'dialogueHistory' should be empty or omitted.
-        - 'lastKnownLocation' should generally match 'firstEncounteredLocation' for these initial profiles.
-        - 'lastSeenTurnId' should be "initial_turn_0".
-Adhere strictly to the JSON schema. Ensure NPC IDs are unique.`,
+        - 'seriesContextNotes' (optional, for major characters, about their canon role).
+Adhere strictly to the JSON schema. Ensure NPC IDs are unique. Ensure all required fields for NPCProfile are present.`,
 });
 
 
@@ -290,7 +290,7 @@ const StyleGuideInputSchema = z.object({
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().nullable() }, // Allows AI to return null for style guide
+  output: { schema: z.string().nullable() },
   prompt: `You are a literary analyst. For the series "{{seriesName}}", your task is to provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
 
 - If you can generate a suitable, concise summary for "{{seriesName}}", please provide it as a string.
@@ -346,7 +346,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         seriesName: mainInput.seriesName,
         character: charSceneOutput.character,
         sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation,
+        currentLocation: charSceneOutput.currentLocation, // Pass player's starting location for context
     };
     const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
     if (!npcsOutput) {
@@ -380,7 +380,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Assemble the final output
     let finalOutput: GenerateScenarioFromSeriesOutput = {
       sceneDescription: charSceneOutput.sceneDescription,
-      storyState: storyState, // Assembled storyState
+      storyState: storyState,
       initialLoreEntries: loreEntries || [],
       seriesStyleGuide: styleGuideRaw === null ? undefined : styleGuideRaw,
     };
@@ -489,7 +489,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
            while(npcIdSet.has(npc.id)){
              let baseId = npc.id;
              let counter = 0;
-             while(npcIdSet.has(npc.id)) { // Check original and newly generated ones
+             while(npcIdSet.has(npc.id)) {
                 npc.id = `${baseId}_u${counter++}`;
              }
           }
@@ -502,9 +502,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-          npc.updatedAt = npc.updatedAt || new Date().toISOString(); // Set if not present
-          npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; // Default last known to first encountered
-          npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; // Default last seen to first encountered
+          npc.updatedAt = npc.updatedAt || new Date().toISOString(); 
+          npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; 
+          npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; 
           
           if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
           if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
@@ -528,5 +528,4 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
-
 
