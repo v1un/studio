@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -5,7 +6,8 @@
  * This includes the starting scene, character state (potentially based on user input for name/class),
  * initial inventory, quests (with objectives, categories, and pre-defined rewards), world facts,
  * a set of pre-populated lorebook entries relevant to the series, a brief series style guide,
- * and initial profiles for any NPCs introduced in the starting scene or known major characters from the series.
+ * initial profiles for any NPCs introduced in the starting scene or known major characters from the series,
+ * and starting skills/abilities for the character.
  * This flow uses a multi-step generation process to manage complexity.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
@@ -15,7 +17,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, NPCDialogueEntry as NPCDialogueEntryType, NPCRelationshipStatus } from '@/types/story';
+import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType } from '@/types/story';
 
 // --- Schemas for AI communication (Internal, consistent with types/story.ts) ---
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -26,6 +28,13 @@ const ItemSchemaInternal = z.object({
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
+});
+
+const SkillSchemaInternal = z.object({
+    id: z.string().describe("A unique identifier for the skill, e.g., 'skill_fireball_001'."),
+    name: z.string().describe("The name of the skill or ability."),
+    description: z.string().describe("A clear description of what the skill does, its narrative impact, or basic effect."),
+    type: z.string().describe("A category for the skill, e.g., 'Combat Ability', 'Utility Skill', 'Passive Trait', or a series-specific type like 'Ninjutsu Technique', 'Semblance'.")
 });
 
 const CharacterProfileSchemaInternal = z.object({
@@ -45,6 +54,7 @@ const CharacterProfileSchemaInternal = z.object({
   level: z.number().describe('Initialize to 1.'),
   experiencePoints: z.number().describe('Initialize to 0.'),
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100.'),
+  skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 2-3 starting skills, unique abilities, or passive traits appropriate for the character's class and the series. These should be thematically fitting and provide a starting flavor for the character's capabilities. Each skill requires an id, name, description, and type."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -128,7 +138,7 @@ export type GenerateScenarioFromSeriesInput = z.infer<typeof GenerateScenarioFro
 
 const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs.'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs and starting skills/abilities for the character.'),
   initialLoreEntries: z.array(RawLoreEntrySchemaInternal).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
   seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
 });
@@ -137,7 +147,7 @@ export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFr
 
 // --- Prompts for Multi-Step Generation ---
 
-// STEP 1: Character, Scene, Location
+// STEP 1: Character, Scene, Location, Skills
 const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
 const CharacterAndSceneOutputSchema = z.object({
     sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
@@ -160,8 +170,9 @@ Generate ONLY:
     - If it's an OC, or only 'characterClassInput' is given, create a fitting new character. Explain their place in the series.
     - If no input, create a compelling character for "{{seriesName}}".
     - Ensure stats (5-15), mana (0 if not applicable), level 1, 0 XP, XPToNextLevel (e.g., 100).
+    - Include 'skillsAndAbilities': an array of 2-3 starting skills, unique abilities, or passive traits. Each skill needs an 'id' (unique, e.g., "skill_[name]_001"), 'name', 'description' (what it does narratively/mechanically), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Passive Trait", or a series-specific type like "Ninjutsu Technique" or "Semblance") appropriate for the character's class and "{{seriesName}}".
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}" relevant to the character and scene.
-Adhere strictly to the JSON schema.`,
+Adhere strictly to the JSON schema. Ensure skill IDs are unique.`,
 });
 
 // STEP 2: Initial Inventory, Equipment, World Facts
@@ -242,12 +253,12 @@ Generate ONLY:
     - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
         - 'firstEncounteredLocation' MUST be '{{currentLocation}}' (the Player's Starting Location).
         - 'relationshipStatus' should be based on their initial interaction in the scene (e.g., 'Neutral', 'Hostile if attacking').
-        - 'knownFacts' can include details observed by the player character in the 'Initial Scene'.
+        - 'knownFacts' can include details observed by the player character in the 'Initial Scene', or be empty if no specific facts are revealed directly.
         - 'lastKnownLocation' MUST be '{{currentLocation}}'.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): You MAY also include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe who are NOT in the 'Initial Scene'.
         - 'firstEncounteredLocation': Set this to their canonical or widely-known location from series lore (e.g., "Hogwarts Castle", "The Jedi Temple", "Their shop in the Market District"). DO NOT use '{{currentLocation}}' for these NPCs.
         - 'relationshipStatus': Typically 'Unknown' or 'Neutral' towards the player character, unless a strong canonical reason dictates otherwise (e.g. a known villain to a hero).
-        - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT information the player character has learned through direct interaction yet.
+        - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
         - 'lastKnownLocation': Set this to their canonical or widely-known location, similar to their 'firstEncounteredLocation'.
     - For ALL NPCs (both in-scene and pre-populated):
         - Ensure each profile has a unique 'id', 'name', and 'description' (fitting the series).
@@ -290,7 +301,7 @@ const StyleGuideInputSchema = z.object({
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().nullable() },
+  output: { schema: z.string().nullable() }, // AI might return null, JS handles it
   prompt: `You are a literary analyst. For the series "{{seriesName}}", your task is to provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
 
 - If you can generate a suitable, concise summary for "{{seriesName}}", please provide it as a string.
@@ -314,6 +325,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Step 1: Generate character, scene, and location
     const { output: charSceneOutput } = await characterAndScenePrompt(mainInput);
     if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.character || !charSceneOutput.currentLocation) {
+      console.error("Character/Scene generation failed or returned unexpected structure:", charSceneOutput);
       throw new Error('Failed to generate character, scene, or location.');
     }
 
@@ -326,6 +338,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     };
     const { output: itemsFactsOutput } = await initialItemsAndFactsPrompt(itemsFactsInput);
     if (!itemsFactsOutput) {
+        console.error("Initial items/facts generation failed:", itemsFactsOutput);
         throw new Error('Failed to generate initial items and facts.');
     }
 
@@ -338,6 +351,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     };
     const { output: questsOutput } = await initialQuestsPrompt(questsInput);
     if (!questsOutput) {
+        console.error("Initial quests generation failed:", questsOutput);
         throw new Error('Failed to generate initial quests.');
     }
 
@@ -346,19 +360,20 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         seriesName: mainInput.seriesName,
         character: charSceneOutput.character,
         sceneDescription: charSceneOutput.sceneDescription,
-        currentLocation: charSceneOutput.currentLocation, // Pass player's starting location for context
+        currentLocation: charSceneOutput.currentLocation,
     };
     const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
     if (!npcsOutput) {
+        console.error("Initial tracked NPCs generation failed:", npcsOutput);
         throw new Error('Failed to generate initial tracked NPCs.');
     }
 
     // Assemble storyState
-    const storyState: StructuredStoryState = {
+    const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
         character: charSceneOutput.character,
         currentLocation: charSceneOutput.currentLocation,
         inventory: itemsFactsOutput.inventory || [],
-        equippedItems: itemsFactsOutput.equippedItems || {},
+        equippedItems: itemsFactsOutput.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null },
         quests: questsOutput.quests || [],
         worldFacts: itemsFactsOutput.worldFacts || [],
         trackedNPCs: npcsOutput.trackedNPCs || [],
@@ -400,13 +415,23 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       char.experiencePoints = char.experiencePoints ?? 0;
       char.experienceToNextLevel = char.experienceToNextLevel ?? 100;
       if (char.experienceToNextLevel <= 0) char.experienceToNextLevel = 100;
+      
+      char.skillsAndAbilities = char.skillsAndAbilities ?? [];
+      char.skillsAndAbilities.forEach((skill, index) => {
+        if (!skill.id) {
+            skill.id = `skill_generated_scenario_${Date.now()}_${index}`;
+        }
+        skill.name = skill.name || "Unnamed Skill";
+        skill.description = skill.description || "No description provided.";
+        skill.type = skill.type || "Generic";
+      });
     }
 
     if (finalOutput.storyState) {
       finalOutput.storyState.inventory = finalOutput.storyState.inventory ?? [];
       finalOutput.storyState.inventory.forEach(item => {
         if (!item.id) {
-            item.id = `item_generated_inv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+            item.id = `item_generated_inv_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         }
         if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
           delete (item as Partial<ItemType>).equipSlot;
@@ -416,7 +441,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       finalOutput.storyState.quests = finalOutput.storyState.quests ?? [];
       finalOutput.storyState.quests.forEach((quest, index) => {
         if (!quest.id) {
-          quest.id = `quest_series_generated_${Date.now()}_${index}`;
+          quest.id = `quest_series_generated_scenario_${Date.now()}_${index}`;
         }
         if (!quest.status) {
           quest.status = 'active';
@@ -465,7 +490,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
           if (newEquippedItems[slotKey]) {
              if (!newEquippedItems[slotKey]!.id) {
-                newEquippedItems[slotKey]!.id = `item_generated_equip_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                newEquippedItems[slotKey]!.id = `item_generated_equip_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}`;
             }
             if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
@@ -482,16 +507,18 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
               let newId = baseId;
               let counter = 0;
               while(npcIdSet.has(newId)) {
-                 newId = `${baseId}_${counter++}`;
+                 newId = `${baseId}_u${counter++}`;
               }
               npc.id = newId;
           }
            while(npcIdSet.has(npc.id)){
              let baseId = npc.id;
              let counter = 0;
-             while(npcIdSet.has(npc.id)) {
-                npc.id = `${baseId}_u${counter++}`;
+             let tempNewId = npc.id;
+             while(npcIdSet.has(tempNewId)) { // Check against already processed in this loop
+                tempNewId = `${baseId}_u${counter++}`;
              }
+             npc.id = tempNewId;
           }
           npcIdSet.add(npc.id);
 
@@ -528,4 +555,3 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
-

@@ -1,4 +1,15 @@
 
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  type: string; // E.g., "Combat", "Utility", "Passive", "Series-Specific Trait"
+  // Future considerations:
+  // manaCost?: number;
+  // cooldownTurns?: number;
+  // usageRequirements?: string[];
+}
+
 export interface Item {
   id: string;
   name: string;
@@ -23,6 +34,7 @@ export interface CharacterProfile {
   level: number;
   experiencePoints: number;
   experienceToNextLevel: number;
+  skillsAndAbilities: Skill[];
 }
 
 export type EquipmentSlot =
@@ -151,6 +163,7 @@ export interface GenerateNextSceneInput {
   storyState: StructuredStoryState;
   seriesName: string;
   seriesStyleGuide?: string;
+  currentTurnId: string;
 }
 
 export interface GenerateNextSceneOutput {

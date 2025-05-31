@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { CharacterProfile, StructuredStoryState, Item, EquipmentSlot } from "@/types/story";
+import type { CharacterProfile, StructuredStoryState, Item, EquipmentSlot, Skill } from "@/types/story";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -12,10 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
     PackageIcon, HeartIcon, ZapIcon, 
-    DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon, AwardIcon, 
+    DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon, 
     GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
-    FootprintsIcon, HandIcon, CircleEllipsisIcon
-} from "lucide-react";
+    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon
+} from "lucide-react"; // Renamed SparklesIcon to CharismaIcon for clarity
 
 interface CharacterSheetProps {
   character: CharacterProfile;
@@ -128,10 +128,47 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <StatDisplay icon={HeartIcon} label="Constitution" value={character.constitution} colorClass="text-red-600" />
             <StatDisplay icon={BrainIcon} label="Intelligence" value={character.intelligence} colorClass="text-purple-500" />
             <StatDisplay icon={EyeIcon} label="Wisdom" value={character.wisdom} colorClass="text-sky-500" />
-            <StatDisplay icon={SparklesIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
+            <StatDisplay icon={CharismaIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
           </div>
         </div>
         
+        <Separator />
+        
+        <div>
+          <h4 className="font-semibold mb-2 text-md flex items-center">
+            <StarIcon className="w-4 h-4 mr-1.5 text-yellow-400" /> Skills &amp; Abilities
+          </h4>
+          {character.skillsAndAbilities && character.skillsAndAbilities.length > 0 ? (
+            <ScrollArea className="h-32 rounded-md border p-2 bg-background/50">
+              <ul className="space-y-2">
+                {character.skillsAndAbilities.map((skill: Skill) => (
+                  <li key={skill.id} className="text-sm">
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="cursor-help">
+                            <div className="flex items-center justify-between">
+                                <span className="font-medium text-foreground">{skill.name}</span>
+                                <Badge variant="outline" className="text-xs">{skill.type}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="start" className="max-w-xs w-auto">
+                          <p className="font-medium text-sm">{skill.name} <Badge variant="secondary" className="ml-1 text-xs">{skill.type}</Badge></p>
+                          <p className="text-xs whitespace-pre-line">{skill.description}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          ) : (
+            <p className="text-muted-foreground italic text-sm p-2 border rounded-md bg-background/50">No special skills or abilities known.</p>
+          )}
+        </div>
+
         <Separator />
 
         <div>
@@ -195,7 +232,6 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
               <p className="text-muted-foreground italic">Empty</p>
             )}
           </div>
-          {/* Location, Active Quests, and World Facts have been moved to other components/tabs */}
         </div>
       </CardContent>
     </Card>
