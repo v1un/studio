@@ -107,6 +107,7 @@ const NPCProfileSchemaInternal = z.object({
     lastKnownLocation: z.string().optional().describe("Last known location of the NPC. If pre-populated and not met, this could be their canonical location."),
     lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with (use 'initial_turn_0' for all NPCs known at game start)."),
     seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player). Not typically applicable in generic story starts."),
+    shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing. Can be set or updated by the AI based on events."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile."),
 });
 
@@ -118,7 +119,8 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion).'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene.")
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene."),
+  storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro."),
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
@@ -168,15 +170,16 @@ Based on the theme and any user suggestions, generate the following:
     -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. You can optionally assign a 'category' (e.g., "Tutorial", "Introduction") - if no category is clear, omit the 'category' field. If the quest is complex enough, provide a list of 'objectives', each with a 'description' and 'isCompleted: false'.
     -   **Quest Rewards**: For any generated quest, you MUST also define a 'rewards' object. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', and an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear), and other relevant item properties like \`isConsumable\`, \`effectDescription\`. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object for it.
     -   One or two initial 'worldFacts'.
-    -   'trackedNPCs': If any significant NPCs (e.g., named characters, quest givers) are introduced in the initial scene, create profiles for them in this array. Each NPC profile needs a unique 'id', 'name', 'description', initial numerical 'relationshipStatus' (e.g., 0 for Neutral), 'firstEncounteredLocation' (current location), 'firstEncounteredTurnId' (use "initial_turn_0"), and 'knownFacts' (initially an empty array or one or two basic facts if revealed). 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId' can be omitted or empty for initial NPCs. 'seriesContextNotes' is usually not applicable here.
+    -   'trackedNPCs': If any significant NPCs (e.g., named characters, quest givers) are introduced in the initial scene, create profiles for them in this array. Each NPC profile needs a unique 'id', 'name', 'description', initial numerical 'relationshipStatus' (e.g., 0 for Neutral), 'firstEncounteredLocation' (current location), 'firstEncounteredTurnId' (use "initial_turn_0"), and 'knownFacts' (initially an empty array or one or two basic facts if revealed). 'dialogueHistory', 'lastKnownLocation', 'lastSeenTurnId' can be omitted or empty for initial NPCs. Optionally include a 'shortTermGoal' for these NPCs if relevant. 'seriesContextNotes' is usually not applicable here.
+    -   A 'storySummary' field, initialized as an empty string or a very brief introduction based on the "{{prompt}}".
 
 Your entire response must strictly follow the JSON schema defined for the output.
-The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', 'worldFacts', and 'trackedNPCs'.
+The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', 'worldFacts', 'trackedNPCs', and 'storySummary'.
 The 'character' object must have all fields required by its schema, including 'skillsAndAbilities'.
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
 The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category', 'objectives', and 'rewards'.
 For items in inventory, equipped, or as rewards, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
-The 'trackedNPCs' array should contain NPCProfile objects, with 'relationshipStatus' as a number.
+The 'trackedNPCs' array should contain NPCProfile objects, with 'relationshipStatus' as a number and an optional 'shortTermGoal'.
 `,
 });
 
@@ -340,7 +343,9 @@ const generateStoryStartFlow = ai.defineFlow(
             if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
+            if (npc.shortTermGoal === null || (npc.shortTermGoal as unknown) === '') delete npc.shortTermGoal;
         });
+        output.storyState.storySummary = output.storyState.storySummary ?? "";
     }
     return output!;
   }

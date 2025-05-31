@@ -2,9 +2,9 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context. It also allows the AI to propose new lore entries.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context. It also allows the AI to propose new lore entries and updates a running story summary.
  *
- * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, and potentially new lore.
+ * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, potentially new lore, and an updated story summary.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
  * - GenerateNextSceneOutput - The return type for the generateNextScene function.
  */
@@ -109,6 +109,7 @@ const NPCProfileSchemaInternal = z.object({
     lastKnownLocation: z.string().optional().describe("Last known location of the NPC. Update if they move or are seen elsewhere."),
     lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with. Update with current turn ID."),
     seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player). Set once if applicable."),
+    shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing, influencing their actions or comments. Can be set or updated by the AI based on events."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile. Update with current time."),
 });
 
@@ -120,6 +121,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with."),
+  storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments so far. This summary will be updated each turn."),
 });
 
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
@@ -127,7 +129,7 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInte
 const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, worldFacts, trackedNPCs, skills/abilities etc.).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, worldFacts, trackedNPCs, skills/abilities, storySummary etc.).'),
   seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
   seriesStyleGuide: z.string().optional().describe('A brief style guide for the series to maintain tone and themes.'),
   currentTurnId: z.string().describe('The ID of the current story turn, for logging in NPC dialogue history etc.'),
@@ -137,7 +139,7 @@ export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
   formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, objectives, and potential rewards."),
-  formattedTrackedNPCsString: z.string().describe("Pre-formatted string summarizing tracked NPCs."),
+  formattedTrackedNPCsString: z.string().describe("Pre-formatted string summarizing tracked NPCs, including their short-term goals if any."),
   formattedSkillsString: z.string().describe("Pre-formatted string of character's skills and abilities."),
 });
 
@@ -147,7 +149,6 @@ const ActiveNPCInfoSchemaInternal = z.object({
     keyDialogueOrAction: z.string().optional().describe("A key line of dialogue spoken by the NPC or a significant action they took in this scene.")
 });
 
-// Schema for RawLoreEntry, consistent with types/story.ts and generate-scenario-from-series.ts
 const RawLoreEntrySchemaInternal = z.object({
   keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
   content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
@@ -156,9 +157,10 @@ const RawLoreEntrySchemaInternal = z.object({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs, new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including potential short-term goal changes), new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
-  newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'.")
+  newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'."),
+  updatedStorySummary: z.string().describe("The new running summary of the story, concisely incorporating key events, decisions, and consequences from this scene, building upon the previous summary."),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -225,6 +227,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         let npcStr = `- ${npc.name} (ID: ${npc.id}, Relationship: ${relationshipLabel} [${npc.relationshipStatus}])`;
         if (npc.classOrRole) npcStr += ` [${npc.classOrRole}]`;
         if (npc.lastKnownLocation) npcStr += ` (Last seen: ${npc.lastKnownLocation})`;
+        if (npc.shortTermGoal) npcStr += `\n  Current Goal: ${npc.shortTermGoal}`;
         npcStr += `\n  Description: ${npc.description}`;
         if (npc.knownFacts && npc.knownFacts.length > 0) {
             npcStr += "\n  Known Facts:\n";
@@ -253,6 +256,13 @@ const prompt = ai.definePrompt({
 This story is set in the universe of: {{seriesName}}.
 {{#if seriesStyleGuide}}
 Series Style Guide: {{seriesStyleGuide}}
+{{/if}}
+
+Story Summary So Far:
+{{#if storyState.storySummary}}
+{{{storyState.storySummary}}}
+{{else}}
+The story has just begun.
 {{/if}}
 
 Current Scene Narrative:
@@ -300,7 +310,7 @@ Known World Facts (Reflect immediate environment & character's current understan
 - None known.
 {{/each}}
 
-Tracked NPCs (Summary - full details in storyState.trackedNPCs):
+Tracked NPCs (Summary - full details in storyState.trackedNPCs, including their shortTermGoal if any):
 {{{formattedTrackedNPCsString}}}
 
 
@@ -308,7 +318,15 @@ Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, 
 
 If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore *within the "{{seriesName}}" universe*, use the 'lookupLoreTool' (providing the current 'seriesName' to it) to get more information about it. Integrate this information naturally into your response if relevant.
 
-Based on the current scene, player's input, and detailed story state, generate the 'nextScene' text.
+Based on the current scene, player's input, detailed story state, and the story summary so far, generate the 'nextScene' text.
+
+**Story Summary & Context:**
+You are provided with a \`storyState.storySummary\` of key past events. Use this summary to maintain long-term coherence. After generating the \`nextScene\`, you MUST provide an \`updatedStorySummary\` in the output. This new summary should concisely incorporate the most important developments, decisions, and consequences from the \`nextScene\` you just generated, appending to or refining the previous summary. Keep it brief (1-2 new sentences ideally) but informative.
+
+**Narrative Integrity & Player Impact:**
+While respecting player choices is paramount, ensure the story remains coherent within the established \`{{seriesName}}\` universe and its \`{{seriesStyleGuide}}\`.
+- If a player action severely contradicts core series lore, established character personalities (for canon characters), or the fundamental tone of the series in a way that would break immersion, gently guide the narrative. This could involve: narrating internal conflict for the character, introducing unexpected obstacles that make the out-of-character action difficult, or NPCs reacting with strong disbelief or opposition. The aim is collaborative storytelling.
+- If player actions lead to significant, logical consequences (e.g., alerting an entire city guard, angering a powerful entity), these consequences MUST be reflected in the \`nextScene\`, \`updatedStoryState\` (especially \`worldFacts\`, NPC statuses/goals, and quest states), and the \`updatedStorySummary\`.
 
 **Special Abilities Awareness:** Be mindful of unique, potent character abilities listed in their profile, such as those involving fate, time, or death (e.g., 'Return by Death').
 
@@ -337,13 +355,15 @@ Based on the current scene, player's input, and detailed story state, generate t
   - Set initial 'relationshipStatus' (numerical score, e.g., 0 for Neutral, or a specific starting value like -10 if they are initially wary).
   - 'knownFacts' can start empty or with 1-2 initial series-based facts.
   - 'seriesContextNotes' can be a brief note on their canon role if applicable.
+  - Optionally set a 'shortTermGoal' if their initial appearance or dialogue implies one.
   - Set 'lastKnownLocation' to 'storyState.currentLocation' and 'lastSeenTurnId' to '{{currentTurnId}}'.
   - Set 'updatedAt' to the current time (system will handle actual timestamp).
 - If interacting with an existing NPC from 'storyState.trackedNPCs' (match by name):
   - Update their profile in 'updatedStoryState.trackedNPCs' with their existing ID.
   - If new details about their appearance or demeanor are revealed, update 'description'.
-  - **Relationship Dynamics:** NPC \`relationshipStatus\` is a numerical score (e.g., -100 Hostile, 0 Neutral, 100 Allied). Based on the player's interactions, you should propose an update to this numerical score in \`updatedStoryState.trackedNPCs\`. For example, completing a quest for an NPC might increase it by +20 or +30. Betraying them might decrease it by -40. Narrate significant shifts in perceived relationship if the score crosses a major threshold (e.g., from Neutral to Friendly).
+  - **Relationship Dynamics:** NPC \\\`relationshipStatus\\\` is a numerical score (e.g., -100 Hostile, 0 Neutral, 100 Allied). Based on the player's interactions, you should propose an update to this numerical score in \`updatedStoryState.trackedNPCs\`. For example, completing a quest for an NPC might increase it by +20 or +30. Betraying them might decrease it by -40. Narrate significant shifts in perceived relationship if the score crosses a major threshold (e.g., from Neutral to Friendly).
   - **NPC Memory & Consistency:** NPCs should demonstrate memory. Refer to their \`knownFacts\` about the player/world and their \`dialogueHistory\` (if available and relevant) to inform their current dialogue and reactions. An NPC who was previously helped should be more welcoming. NPCs should not contradict previously established information about themselves or the world, as recorded in their \`knownFacts\` or past \`dialogueHistory\`.
+  - **NPC Proactivity & Goals:** Consider each NPC's 'shortTermGoal' from their profile. If the current scene provides an opportunity, an NPC might take a minor action or make a comment that aligns with their goal. Their goals can also influence their reactions to player actions or ongoing events. If events in the \`nextScene\` logically suggest a new 'shortTermGoal' for an NPC, or an update to an existing one, reflect this in their profile within \`updatedStoryState.trackedNPCs\`. If a significant \`worldFact\` changes that an NPC (especially one present or nearby) would be aware of, their behavior, dialogue, or even their 'shortTermGoal' in the \`updatedStoryState.trackedNPCs\` should reflect this awareness, even if the player hasn't directly informed them.
   - If the player learns new, distinct information directly about the NPC, add it to 'knownFacts' (avoid duplicates).
   - If there's key dialogue, consider adding an entry to 'dialogueHistory': { playerInput: "{{userInput}}", npcResponse: "Relevant NPC quote", turnId: "{{currentTurnId}}" }.
   - If their location changes, update 'lastKnownLocation'.
@@ -409,7 +429,7 @@ Crucially, you must also update the story state. This includes:
   - The 'updatedStoryState.equippedItems' object must include all 10 slots, with 'null' for empty ones.
 - Quests:
   - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects. Each quest object must include \`id: string\`, \`description: string\`, and \`status: 'active' | 'completed'\`. It will also include its pre-defined \`rewards\` if any.
-  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`.
+  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex enough, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`.
     - **Pre-defined Quest Rewards**: When creating a new quest, you MUST also define a 'rewards' object for it. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear), and other item properties like \`isConsumable\`, \`effectDescription\` if applicable. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object {} for it.
   - If an existing quest in \`quests\` is progressed:
     - If it has \`objectives\`, update the \`isCompleted\` status of relevant objectives to \`true\`.
@@ -427,7 +447,7 @@ Crucially, you must also update the story state. This includes:
   - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes, an NPC leaves the scene), you can remove it from the \`worldFacts\` array.
   - **Narrate Changes**: If you add, modify, or remove a world fact in a way that the character would perceive or that's significant for the player to know, briefly mention this in the \`nextScene\` (e.g., "You now realize the guard captain is missing," or "The strange humming sound from the basement has stopped.").
 - Tracked NPCs:
-  - Ensure 'updatedStoryState.trackedNPCs' contains all previously tracked NPCs, plus any new ones, with their profiles updated as described above.
+  - Ensure 'updatedStoryState.trackedNPCs' contains all previously tracked NPCs, plus any new ones, with their profiles updated as described above (including 'relationshipStatus' and potentially 'shortTermGoal').
   - All fields in each NPCProfile must adhere to their schema definitions. 'id' must be unique for new NPCs.
   - For existing NPCs, ensure their 'id' is preserved from the input 'storyState.trackedNPCs'.
   - **Ensure \\\`relationshipStatus\\\` is a number reflecting the cumulative interactions.**
@@ -438,9 +458,10 @@ The 'updatedStoryState.character' must include all fields required by its schema
 The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
-The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects, with 'relationshipStatus' as a number.
+The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects, with 'relationshipStatus' as a number and an optional 'shortTermGoal'.
 The 'activeNPCsInScene' array (if provided) should contain objects with 'name', and optional 'description' and 'keyDialogueOrAction'.
 The \`newLoreEntries\` array should contain newly discovered lore for the lorebook.
+The \`updatedStorySummary\` field MUST be provided and should be a concise summary of the key events of the generated scene, appended to or refining the previous summary.
 `,
 });
 
@@ -481,14 +502,10 @@ const generateNextSceneFlow = ai.defineFlow(
             });
           } catch (e) {
             console.error("Error saving AI discovered lore:", e);
-            // Optionally, decide if this error should propagate or be logged only
           }
         }
       }
-       // Clean up the newLoreEntries from the output after processing, if not needed by client
-       // For now, we'll keep it in case the client wants to show a notification
     }
-
 
     // Character post-processing
     if (output.updatedStoryState.character && input.storyState.character) {
@@ -648,12 +665,10 @@ const generateNextSceneFlow = ai.defineFlow(
 
         output.updatedStoryState.trackedNPCs.forEach((npc) => {
             let currentNpcId = npc.id;
-            // Ensure ID uniqueness for newly generated NPCs or if AI reuses an ID from another new NPC.
             if (!currentNpcId || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
                  let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
                  let newId = baseId;
                  let counter = 0;
-                 // Ensure the new ID is unique against both already processed new NPCs and existing input NPCs
                  while(npcIdMap.has(newId) || existingNpcIdsFromInput.has(newId)) { 
                      newId = `${baseId}_u${counter++}`;
                  }
@@ -702,8 +717,10 @@ const generateNextSceneFlow = ai.defineFlow(
             if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
+            if (npc.shortTermGoal === null || (npc.shortTermGoal as unknown) === '') delete npc.shortTermGoal;
         });
          output.updatedStoryState.trackedNPCs = Array.from(npcIdMap.values());
+         output.updatedStoryState.storySummary = output.updatedStorySummary || input.storyState.storySummary || "";
     }
 
     if (output && output.activeNPCsInScene) {
@@ -717,7 +734,6 @@ const generateNextSceneFlow = ai.defineFlow(
       }
     }
     
-    // Ensure newLoreEntries is an array or undefined in the final output
     output.newLoreEntries = output.newLoreEntries && Array.isArray(output.newLoreEntries) ? output.newLoreEntries : undefined;
     if (output.newLoreEntries) {
         output.newLoreEntries.forEach(lore => {

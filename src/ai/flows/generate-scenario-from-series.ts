@@ -116,6 +116,7 @@ const NPCProfileSchemaInternal = z.object({
     lastKnownLocation: z.string().optional().describe("Same as firstEncounteredLocation for initial setup if not directly in scene, or their current canonical location if different. If in scene, this is the current location."),
     lastSeenTurnId: z.string().optional().describe("Same as firstEncounteredTurnId for initial setup (use 'initial_turn_0')."),
     seriesContextNotes: z.string().optional().describe("Brief AI-internal note about their canon role/importance if an existing series character."),
+    shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing. Can be set or updated by the AI based on events. Initialize as empty or a contextually relevant goal for series characters."),
     updatedAt: z.string().optional().describe("Timestamp of the last update (set to current time for new)."),
 });
 
@@ -126,7 +127,8 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion, including item details like `isConsumable`). These quests should be compelling and provide clear direction."),
   worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation' (their canonical location if not in scene), 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts' (general world knowledge if not in scene), and optionally 'seriesContextNotes'. Dialogue history should be empty.")
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, you MAY include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe that the player character might know about or who are highly relevant to the series context, even if not in the immediate first scene. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation' (their canonical location if not in scene), 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts' (general world knowledge if not in scene), an optional 'shortTermGoal', and optionally 'seriesContextNotes'. Dialogue history should be empty."),
+  storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro for the series context."),
 });
 
 const RawLoreEntrySchemaInternal = z.object({
@@ -373,11 +375,13 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
         - 'relationshipStatus' (numerical score, e.g., 0 for Neutral, or a starting value based on initial interaction like 10 for slightly positive, -5 for wary).
         - 'knownFacts' can include details observed by the player character in the 'Initial Scene', or be empty if no specific facts are revealed directly.
         - 'lastKnownLocation' MUST be '{{currentLocation}}'.
+        - Optionally set a simple 'shortTermGoal' if their actions in the scene imply one.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): You MAY also include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe who are NOT in the 'Initial Scene'.
         - 'firstEncounteredLocation': Set this to their canonical or widely-known location from series lore (e.g., "Hogwarts Castle", "The Jedi Temple", "Their shop in the Market District"). DO NOT use '{{currentLocation}}' for these NPCs.
         - 'relationshipStatus' (numerical score): Typically 0 (Neutral) or a value representing common perception of this character towards a protagonist in '{{seriesName}}'.
         - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
         - 'lastKnownLocation': Set this to their canonical or widely-known location, similar to their 'firstEncounteredLocation'.
+        - Optionally set a simple, canon-aligned 'shortTermGoal' (e.g., "Protect the village," "Find the ancient artifact").
     - For ALL NPCs (both in-scene and pre-populated):
         - Ensure each profile has a unique 'id', 'name', and 'description' (fitting the series).
         - 'classOrRole' (optional, e.g., 'Hokage', 'Soul Reaper Captain').
@@ -385,7 +389,7 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
         - 'lastSeenTurnId' MUST be "initial_turn_0".
         - 'dialogueHistory' should be empty or omitted.
         - 'seriesContextNotes' (optional, for major characters, about their canon role).
-Adhere strictly to the JSON schema. Ensure NPC IDs are unique. Ensure all required fields for NPCProfile are present, and 'relationshipStatus' is a number. Output ONLY the object: { "trackedNPCs": [...] }.`,
+Adhere strictly to the JSON schema. Ensure NPC IDs are unique. Ensure all required fields for NPCProfile are present, 'relationshipStatus' is a number, and 'shortTermGoal' is optional. Output ONLY the object: { "trackedNPCs": [...] }.`,
 });
 
 
@@ -542,10 +546,11 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         character: fullCharacterProfile,
         currentLocation: currentLocation,
         inventory: inventory,
-        equippedItems: equippedItems as Required<typeof equippedItems>, // Cast after merging
+        equippedItems: equippedItems as Required<typeof equippedItems>, 
         quests: quests,
         worldFacts: worldFacts,
         trackedNPCs: trackedNPCs,
+        storySummary: `The adventure begins for ${fullCharacterProfile.name} in the world of ${mainInput.seriesName}, starting in ${currentLocation}. Initial scene: ${sceneDescription.substring(0,150)}${sceneDescription.length > 150 ? '...' : ''}`, // Basic initial summary
     };
 
     // Step 5: Generate lore entries
@@ -743,7 +748,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-          npc.updatedAt = new Date().toISOString(); // Always set to current time on creation
+          npc.updatedAt = new Date().toISOString(); 
           npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; 
           npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; 
           
@@ -751,7 +756,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
           if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
           if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
+          if (npc.shortTermGoal === null || (npc.shortTermGoal as unknown) === '') delete npc.shortTermGoal;
       });
+      finalOutput.storyState.storySummary = finalOutput.storyState.storySummary ?? "";
     }
 
     if (finalOutput.initialLoreEntries) {

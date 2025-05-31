@@ -4,10 +4,6 @@ export interface Skill {
   name: string;
   description: string;
   type: string; // E.g., "Combat", "Utility", "Passive", "Series-Specific Trait"
-  // Future considerations:
-  // manaCost?: number;
-  // cooldownTurns?: number;
-  // usageRequirements?: string[];
 }
 
 export interface Item {
@@ -92,6 +88,7 @@ export interface NPCProfile {
   lastKnownLocation?: string;
   lastSeenTurnId?: string;
   seriesContextNotes?: string; // AI-internal note about their role if from a known series
+  shortTermGoal?: string; // A simple, immediate goal this NPC might be pursuing.
   updatedAt?: string; // Timestamp of the last update to this profile
 }
 
@@ -103,6 +100,7 @@ export interface StructuredStoryState {
   quests: Quest[];
   worldFacts: string[];
   trackedNPCs: NPCProfile[];
+  storySummary?: string; // A brief, running summary of key story events and character developments.
 }
 
 export interface StoryTurn {
@@ -172,5 +170,6 @@ export interface GenerateNextSceneOutput {
   nextScene: string;
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
-  newLoreEntries?: RawLoreEntry[]; // Added for AI to suggest new lore
+  newLoreEntries?: RawLoreEntry[];
+  updatedStorySummary: string; // The new running summary of the story
 }
