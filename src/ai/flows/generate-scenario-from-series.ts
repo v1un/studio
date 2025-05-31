@@ -167,17 +167,24 @@ User's character preferences:
 - Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}
 - Class/Role: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}
 
-Generate ONLY:
-1.  'sceneDescription': A vivid initial scene.
-2.  'character': A full character profile.
-    - If 'characterNameInput' is a known character, create them authentically.
-    - If it's an OC, or only 'characterClassInput' is given, create a fitting new character. Explain their place in the series.
-    - If no input, create a compelling character for "{{seriesName}}".
-    - Ensure stats (5-15), mana (0 if not applicable), level 1, 0 XP, XPToNextLevel (e.g., 100).
-    - Include 'skillsAndAbilities': an array of 2-3 starting skills, unique abilities, or passive traits. Each skill needs an 'id' (unique, e.g., "skill_[name]_001"), 'name', 'description' (what it does narratively/mechanically), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Passive Trait", or a series-specific type like "Ninjutsu Technique" or "Semblance") appropriate for the character's class and "{{seriesName}}".
-    - **Crucially**: If the series is "{{seriesName}}" and the character being generated is known for a signature, fate-altering ability (e.g., for "Re:Zero" and a character like Subaru, this would be "Return by Death"; for other series, it might be a unique superpower or prophetic vision), ensure this ability is included in 'skillsAndAbilities' with a fitting name, detailed description of its effects and narrative implications, and an appropriate type like "Unique Ability" or "Cursed Power".
-3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}" relevant to the character and scene.
-Adhere strictly to the JSON schema. Ensure skill IDs are unique.`,
+You MUST generate an object with the following three top-level properties: 'sceneDescription', 'character', and 'currentLocation'.
+
+1.  'sceneDescription': A vivid and engaging initial scene description that sets the stage for the adventure in "{{seriesName}}".
+2.  'character': A complete CharacterProfile object.
+    - If 'characterNameInput' is a known character from "{{seriesName}}", create their profile authentically, reflecting their known traits and abilities.
+    - If 'characterNameInput' suggests an Original Character (OC), or if only 'characterClassInput' is provided, create a new character fitting the "{{seriesName}}" universe. Explain their place or origin within the series in their description.
+    - If no character input is provided, create a compelling protagonist suitable for an adventure in "{{seriesName}}".
+    - The character profile MUST include:
+        - 'name', 'class', 'description'.
+        - 'health' and 'maxHealth' (e.g., 100).
+        - 'mana' and 'maxMana' (use 0 for both if not applicable to the character/class, otherwise provide appropriate starting values).
+        - Core stats ('strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma') with values between 5 and 15. Omit a stat if it's truly not applicable.
+        - 'level' initialized to 1, 'experiencePoints' to 0, and 'experienceToNextLevel' to a starting value (e.g., 100).
+        - 'skillsAndAbilities': An array of 2-3 starting skills, unique abilities, or passive traits. Each skill object in this array MUST have a unique 'id' (e.g., "skill_teleport_001"), 'name', 'description' (detailing its effect/narrative impact), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Series-Specific Power").
+        - **Crucially for "Return by Death" or similar abilities**: If the character being generated is known for a signature, fate-altering ability (e.g., for "Re:Zero" and Subaru, this would be "Return by Death"; for other series, it might be a unique power), ensure this ability is included in 'skillsAndAbilities' with a fitting name, detailed description of its effects and narrative implications, and an appropriate type like "Unique Ability" or "Cursed Power".
+3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}" that is relevant to the character and the initial 'sceneDescription'.
+
+Your entire response MUST be a single JSON object adhering strictly to the CharacterAndSceneOutputSchema, containing 'sceneDescription', 'character', and 'currentLocation'. Ensure all skill IDs within character.skillsAndAbilities are unique.`,
 });
 
 // STEP 2: Initial Inventory, Equipment, World Facts
@@ -203,7 +210,7 @@ Location: {{currentLocation}}
 
 Generate ONLY:
 1.  'inventory': 0-3 unequipped starting items (unique id, name, description. 'equipSlot' if equippable gear, otherwise omit 'equipSlot'). For consumable items (like potions), set \`isConsumable: true\` and provide an \`effectDescription\`. If an item is a quest item, set \`isQuestItem: true\` and optionally \`relevantQuestId\`.
-2.  'equippedItems': All 10 slots ('weapon', 'shield', etc.) mapped to an item object or null. Item must have 'equipSlot' if equippable. Ensure consistency with scene.
+2.  'equippedItems': All 10 slots ('weapon', 'shield', etc.) mapped to an item object or null. Item must have 'equipSlot' if equippable. Ensure consistency with scene. This object MUST contain all 10 slot keys, using 'null' for empty ones.
 3.  'worldFacts': 3-5 key world facts relevant to the start.
 Adhere strictly to the JSON schema. Ensure all item IDs are unique.`,
 });
@@ -257,12 +264,12 @@ Generate ONLY:
 1. 'trackedNPCs': A list of NPC profiles.
     - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
         - 'firstEncounteredLocation' MUST be '{{currentLocation}}' (the Player's Starting Location).
-        - 'relationshipStatus' (numerical score, e.g., 0 for Neutral, 50 for Friendly based on initial interaction).
+        - 'relationshipStatus' (numerical score, e.g., 0 for Neutral, or a starting value based on initial interaction like 10 for slightly positive, -5 for wary).
         - 'knownFacts' can include details observed by the player character in the 'Initial Scene', or be empty if no specific facts are revealed directly.
         - 'lastKnownLocation' MUST be '{{currentLocation}}'.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): You MAY also include profiles for 2-4 other major, well-known characters from the '{{seriesName}}' universe who are NOT in the 'Initial Scene'.
         - 'firstEncounteredLocation': Set this to their canonical or widely-known location from series lore (e.g., "Hogwarts Castle", "The Jedi Temple", "Their shop in the Market District"). DO NOT use '{{currentLocation}}' for these NPCs.
-        - 'relationshipStatus' (numerical score): Typically 0 (Neutral) towards the player character, unless a strong canonical reason dictates otherwise (e.g. a known villain to a hero might be -50).
+        - 'relationshipStatus' (numerical score): Typically 0 (Neutral) towards the player character, unless a strong canonical reason dictates otherwise (e.g., a known villain to a hero might be -50).
         - 'knownFacts': 1-2 pieces of COMMON KNOWLEDGE or widely known rumors about this character within '{{seriesName}}'. These facts represent general world knowledge, NOT necessarily direct knowledge by the player character at this moment.
         - 'lastKnownLocation': Set this to their canonical or widely-known location, similar to their 'firstEncounteredLocation'.
     - For ALL NPCs (both in-scene and pre-populated):
@@ -414,7 +421,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       char.dexterity = char.dexterity ?? 10;
       char.constitution = char.constitution ?? 10;
       char.intelligence = char.intelligence ?? 10;
-      char.wisdom = char.wisdom ?? 10;
+      char.wisdom = typeof char.wisdom === 'number' ? Math.round(char.wisdom) : 10; // Round wisdom
       char.charisma = char.charisma ?? 10;
       char.level = char.level ?? 1;
       char.experiencePoints = char.experiencePoints ?? 0;
@@ -572,3 +579,5 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
+
+    
