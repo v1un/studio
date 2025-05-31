@@ -35,6 +35,18 @@ const getRelationshipInfo = (score: number): RelationshipInfo => {
   return { label: "Staunch Ally", variant: "default", icon: TrendingUp, colorClass:"text-sky-500" }; 
 };
 
+const formatTurnIdForDisplay = (turnId?: string): string => {
+  if (!turnId) {
+    return "N/A";
+  }
+  const trimmedTurnId = turnId.trim();
+  if (trimmedTurnId.toLowerCase() === "initial_turn_0") {
+    return "(Game Start)";
+  }
+  // Ensure substring doesn't error if length is less than 8
+  return `${trimmedTurnId.substring(0, Math.min(trimmedTurnId.length, 8))}${trimmedTurnId.length > 8 ? '...' : ''}`;
+};
+
 
 const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, currentTurnId }) => {
   const isLastSeenCurrent = npc.lastSeenTurnId === currentTurnId;
@@ -68,7 +80,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                     <MapPinIcon className="w-3.5 h-3.5 mr-1.5 mt-0.5 text-primary/70 shrink-0"/> 
                     <div>
                         <span className="font-medium">First Met: </span> 
-                        <span className="text-muted-foreground">{npc.firstEncounteredLocation} (Turn: {npc.firstEncounteredTurnId?.substring(0,8)}...)</span>
+                        <span className="text-muted-foreground">{npc.firstEncounteredLocation} (Turn: {formatTurnIdForDisplay(npc.firstEncounteredTurnId)})</span>
                     </div>
                 </div>
             )}
@@ -77,8 +89,9 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                     <MapPinIcon className="w-3.5 h-3.5 mr-1.5 mt-0.5 text-primary/70 shrink-0"/>
                     <div>
                         <span className="font-medium">Last Seen: </span>
-                        <span className="text-muted-foreground">{npc.lastKnownLocation} (Turn: {npc.lastSeenTurnId?.substring(0,8)}...
-                          {isLastSeenCurrent && <Badge className="ml-1 py-0 px-1.5 text-[10px] bg-accent/80 text-accent-foreground border border-accent-foreground/30 flex items-center gap-1 hover:bg-accent"><SparklesIcon className="w-2.5 h-2.5"/>Current</Badge>}
+                        <span className="text-muted-foreground">
+                          {npc.lastKnownLocation} (Turn: {formatTurnIdForDisplay(npc.lastSeenTurnId)}
+                          {isLastSeenCurrent && <Badge className="ml-1 py-0 px-1.5 text-[10px] bg-accent text-accent-foreground border-accent-foreground/30 hover:bg-accent/90 flex items-center gap-1"><SparklesIcon className="w-2.5 h-2.5"/>Current</Badge>}
                         </span>
                     </div>
                 </div>
@@ -145,7 +158,9 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                   <li key={index} className="border-b border-border/50 pb-1 last:border-b-0 last:pb-0">
                     {entry.playerInput && <p><span className="font-medium text-primary/80">You:</span> <span className="text-muted-foreground italic">"{entry.playerInput}"</span></p>}
                     <p><span className="font-medium text-accent">{npc.name}:</span> <span className="text-muted-foreground">"{entry.npcResponse}"</span></p>
-                    <p className="text-right text-muted-foreground/70 text-[10px]">Turn: {entry.turnId.substring(0,8)}...</p>
+                    <p className="text-right text-muted-foreground/70 text-[10px]">
+                      Turn: {formatTurnIdForDisplay(entry.turnId)}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -207,3 +222,5 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
     </Card>
   );
 }
+
+    
