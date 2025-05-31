@@ -12,6 +12,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import type { EquipmentSlot } from '@/types/story';
+import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
 const EquipSlotEnum = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
@@ -103,6 +104,7 @@ const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
   input: {schema: GenerateNextSceneInputSchema},
   output: {schema: GenerateNextSceneOutputSchema},
+  tools: [lookupLoreTool],
   prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
 
 Current Scene:
@@ -148,6 +150,8 @@ Known World Facts:
 {{/each}}
 
 Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. An item's 'equipSlot' property determines where it can go. 'ring' items can go in 'ring1' or 'ring2'.
+
+If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore, use the 'lookupLoreTool' to get more information about it. Integrate this information naturally into your response if relevant. For example, if the player asks "What do you know about the Blade of Marmora?", use the tool.
 
 Based on the current scene, player's input, and detailed story state, generate the next scene.
 Describe any quest-related developments (new quests, progress, completion) clearly in the \`nextScene\` text.
@@ -240,6 +244,3 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
-
-
-    
