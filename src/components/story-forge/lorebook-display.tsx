@@ -11,7 +11,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LibraryIcon, InfoIcon, PlusCircleIcon, Edit3Icon, Trash2Icon, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 export default function LorebookDisplay() {
   const [loreEntries, setLoreEntries] = useState<LoreEntry[]>([]);
@@ -170,24 +171,26 @@ export default function LorebookDisplay() {
                     <div className="flex items-center justify-between w-full pr-2">
                       <span className="truncate mr-2">{entry.keyword}</span>
                       <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7 cursor-pointer")}
                           onClick={(e) => { e.stopPropagation(); openEditDialog(entry); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openEditDialog(entry); } }}
                           aria-label="Edit"
                         >
                           <Edit3Icon className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
+                        </div>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7 cursor-pointer hover:bg-destructive/20 hover:text-destructive focus:outline-none focus:ring-0 focus:ring-offset-0")}
                           onClick={(e) => { e.stopPropagation(); setEntryToDelete(entry); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setEntryToDelete(entry); } }}
                           aria-label="Delete"
                         >
                           <Trash2Icon className="w-4 h-4" />
-                        </Button>
+                        </div>
                         {entry.category && <Badge variant="secondary" className="ml-2 text-xs hidden sm:inline-flex">{entry.category}</Badge>}
                       </div>
                     </div>
