@@ -2,17 +2,19 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context. It also allows the AI to propose new lore entries.
  *
- * - generateNextScene - A function that takes the current story state and user input, and returns the next scene and updated state.
+ * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, and potentially new lore.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
  * - GenerateNextSceneOutput - The return type for the generateNextScene function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z}from 'genkit';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
+import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
+
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
@@ -145,10 +147,18 @@ const ActiveNPCInfoSchemaInternal = z.object({
     keyDialogueOrAction: z.string().optional().describe("A key line of dialogue spoken by the NPC or a significant action they took in this scene.")
 });
 
+// Schema for RawLoreEntry, consistent with types/story.ts and generate-scenario-from-series.ts
+const RawLoreEntrySchemaInternal = z.object({
+  keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
+  content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
+  category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
+});
+
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
   updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs, new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
-  activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active.")
+  activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
+  newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'.")
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -368,6 +378,12 @@ Based on the current scene, player's input, and detailed story state, generate t
 - **Learning New Skills:** As a reward for completing significant quests, achieving major story milestones, or through specific interactions (e.g., finding a rare tome, being taught by a master NPC), you can award the character a new skill. Add this new skill object (with a unique \`id\`, \`name\`, \`description\`, and series-appropriate \`type\`) to \`updatedStoryState.character.skillsAndAbilities\`. Narrate how the character learned or acquired this new skill.
 - **Stat Increases (Rare):** For exceptionally impactful achievements or the use of powerful, unique artifacts, you may grant a small, permanent increase (e.g., +1) to one of the character's core stats (Strength, Dexterity, etc.). This should be rare. Clearly state the stat and the increase in your narration and update it in \`updatedStoryState.character\`.
 
+**Lore Discovery & Generation:**
+- If the 'nextScene' reveals significant new information about a character, location, item, concept, or event that is not already common knowledge (you can use \`lookupLoreTool\` for very common terms if unsure), and this information feels like it should be recorded for long-term reference, you can propose a new lore entry.
+- Add these new entries to the \`newLoreEntries\` array in the output. Each entry needs a \`keyword\`, \`content\` (a concise description of the new information), and an optional \`category\` (e.g., 'Character Detail', 'Historical Event', 'Location Secret').
+- Do not add trivial information. Focus on facts that deepen the understanding of the '{{seriesName}}' world as it unfolds in *this* story.
+- The system will handle adding these to the main lorebook.
+
 Crucially, you must also update the story state. This includes:
 - Character: Update all character fields as necessary, **including effects from skills, items, and progression.**
   - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats.
@@ -424,6 +440,7 @@ The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot name
 The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
 The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects, with 'relationshipStatus' as a number.
 The 'activeNPCsInScene' array (if provided) should contain objects with 'name', and optional 'description' and 'keyDialogueOrAction'.
+The \`newLoreEntries\` array should contain newly discovered lore for the lorebook.
 `,
 });
 
@@ -450,6 +467,28 @@ const generateNextSceneFlow = ai.defineFlow(
 
     const {output} = await prompt(promptPayload);
     if (!output) throw new Error("Failed to generate next scene output.");
+
+    // Post-process new lore entries
+    if (output.newLoreEntries && Array.isArray(output.newLoreEntries)) {
+      for (const lore of output.newLoreEntries) {
+        if (lore.keyword && lore.content) {
+          try {
+            saveNewLoreEntry({
+              keyword: lore.keyword,
+              content: lore.content,
+              category: lore.category,
+              source: 'AI-Discovered',
+            });
+          } catch (e) {
+            console.error("Error saving AI discovered lore:", e);
+            // Optionally, decide if this error should propagate or be logged only
+          }
+        }
+      }
+       // Clean up the newLoreEntries from the output after processing, if not needed by client
+       // For now, we'll keep it in case the client wants to show a notification
+    }
+
 
     // Character post-processing
     if (output.updatedStoryState.character && input.storyState.character) {
@@ -623,13 +662,8 @@ const generateNextSceneFlow = ai.defineFlow(
             npc.id = currentNpcId; 
             
             if (npcIdMap.has(npc.id)) { 
-                // This should ideally not happen if ID generation is robust.
-                // If it does, it means the AI might be trying to update an NPC it already processed in this turn's output.
-                // Or, it could be an ID collision with an existing NPC from input if the new ID logic wasn't perfect.
-                // For now, log and skip to prevent overwriting the first instance processed this turn.
-                // A more sophisticated merge might be needed for complex scenarios.
                 console.warn(`Duplicate NPC ID ${npc.id} encountered in AI output for current turn. Skipping duplicate to avoid overwriting.`);
-                return; // Skip this duplicate entry for this turn's output processing
+                return; 
             }
             npcIdMap.set(npc.id, npc);
 
@@ -641,7 +675,6 @@ const generateNextSceneFlow = ai.defineFlow(
             if (typeof npc.relationshipStatus !== 'number') {
                 npc.relationshipStatus = originalNpcProfile?.relationshipStatus ?? 0;
             } else {
-                 // Cap relationship score
                 npc.relationshipStatus = Math.max(-100, Math.min(100, npc.relationshipStatus));
             }
 
@@ -651,29 +684,24 @@ const generateNextSceneFlow = ai.defineFlow(
                 if(!dh.turnId) dh.turnId = input.currentTurnId; 
             });
 
-            // Preserve first encounter details if this NPC is an update to an existing one
             const originalNpc = input.storyState.trackedNPCs.find(onpc => onpc.id === npc.id);
-            if (!originalNpc) { // This is a new NPC being introduced in this turn
+            if (!originalNpc) { 
                 npc.firstEncounteredLocation = npc.firstEncounteredLocation || input.storyState.currentLocation;
                 npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || input.currentTurnId;
-            } else { // This is an update to an existing NPC
+            } else { 
                  npc.firstEncounteredLocation = originalNpc.firstEncounteredLocation;
                  npc.firstEncounteredTurnId = originalNpc.firstEncounteredTurnId;
-                 npc.seriesContextNotes = npc.seriesContextNotes ?? originalNpc.seriesContextNotes; // Preserve series notes if AI doesn't override
+                 npc.seriesContextNotes = npc.seriesContextNotes ?? originalNpc.seriesContextNotes; 
             }
             
-            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation || input.storyState.currentLocation; // Update if AI specified, else keep old or default
-            npc.lastSeenTurnId = input.currentTurnId; // Always update to current turn
-            npc.updatedAt = new Date().toISOString(); // Always update timestamp
+            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation || input.storyState.currentLocation; 
+            npc.lastSeenTurnId = input.currentTurnId; 
+            npc.updatedAt = new Date().toISOString(); 
 
-            // Clean up optional empty string fields
             if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
             if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
-            // firstEncounteredTurnId should always be set, so no null check needed if logic is correct
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
-            // lastSeenTurnId should always be set
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
-            // updatedAt should always be set
         });
          output.updatedStoryState.trackedNPCs = Array.from(npcIdMap.values());
     }
@@ -688,6 +716,20 @@ const generateNextSceneFlow = ai.defineFlow(
         delete output.activeNPCsInScene;
       }
     }
+    
+    // Ensure newLoreEntries is an array or undefined in the final output
+    output.newLoreEntries = output.newLoreEntries && Array.isArray(output.newLoreEntries) ? output.newLoreEntries : undefined;
+    if (output.newLoreEntries) {
+        output.newLoreEntries.forEach(lore => {
+            if (lore.category === null || (lore.category as unknown) === '') {
+                delete lore.category;
+            }
+        });
+        if (output.newLoreEntries.length === 0) {
+            delete output.newLoreEntries;
+        }
+    }
+
 
     return output!;
   }

@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/types/story"; // Adjusted import path
-import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile } from "@/types/story";
+import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, RawLoreEntry } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -18,8 +18,8 @@ import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon } from "lucide-react";
-import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus } from "lucide-react";
+import { initializeLorebook, clearLorebook, getLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -46,6 +46,13 @@ export default function StoryForgePage() {
           const session: GameSession = JSON.parse(sessionData);
           setStoryHistory(session.storyHistory);
           setCurrentSession(session);
+          // Ensure lorebook is loaded for the current session if it exists
+          // Note: Lore is global, but initializing here ensures it's present if a session had specific starting lore.
+          // If generateScenarioFromSeries populated it, this won't hurt.
+          if (getLorebook().length === 0 && session.storyHistory.length > 0) {
+            // This part is tricky. If initialLoreEntries were part of the session, we'd load them.
+            // For now, lorebook is global and loaded/cleared on new game.
+          }
         } catch (e) {
           console.error("Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
@@ -143,7 +150,7 @@ export default function StoryForgePage() {
     setIsLoadingInteraction(true);
     setLoadingMessage("AI is crafting the next part of your tale...");
     try {
-      const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
+      const { generateNextScene } = await import("@/ai/flows/generate-next-scene"); // Dynamic import
       const result = await generateNextScene({
         currentScene: currentTurn.sceneDescription,
         userInput: userInput,
@@ -159,6 +166,26 @@ export default function StoryForgePage() {
         userInputThatLedToScene: userInput,
       };
       setStoryHistory((prevHistory) => [...prevHistory, nextTurnItem]);
+
+      if (result.newLoreEntries && result.newLoreEntries.length > 0) {
+        const keywords = result.newLoreEntries.map(l => l.keyword).join(', ');
+        toast({
+          title: "New Lore Discovered!",
+          description: (
+            <div className="flex items-start">
+              <BookPlus className="w-5 h-5 mr-2 mt-0.5 text-accent shrink-0" />
+              <span>Added entries for: {keywords}</span>
+            </div>
+          ),
+          duration: 5000,
+        });
+        // Force a re-render of the lorebook if it's the active tab,
+        // or ensure it updates next time it's opened.
+        // This can be done by a state update if LorebookDisplay depends on it,
+        // or by calling a refresh function if LorebookDisplay exposes one.
+        // For now, the lorebook will update on its own useEffect when it becomes visible or data changes.
+      }
+
     } catch (error) {
       console.error("Failed to generate next scene:", error);
       toast({

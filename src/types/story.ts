@@ -73,9 +73,6 @@ export interface Quest {
   updatedAt?: string;
 }
 
-// NPCRelationshipStatus enum is removed as relationshipStatus is now a number.
-// UI will map numbers to descriptive labels.
-
 export interface NPCDialogueEntry {
   playerInput?: string;
   npcResponse: string;
@@ -131,7 +128,7 @@ export interface LoreEntry {
   keyword: string;
   content: string;
   category?: string;
-  source: 'AI-Generated' | 'System' | 'User-Added' | 'AI-Generated-Scenario-Start';
+  source: 'AI-Generated' | 'System' | 'User-Added' | 'AI-Generated-Scenario-Start' | 'AI-Discovered';
   createdAt: string;
   updatedAt?: string;
 }
@@ -175,4 +172,5 @@ export interface GenerateNextSceneOutput {
   nextScene: string;
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
+  newLoreEntries?: RawLoreEntry[]; // Added for AI to suggest new lore
 }
