@@ -20,14 +20,17 @@ export interface CharacterProfile {
   intelligence?: number;
   wisdom?: number;
   charisma?: number;
+  level: number; // New
+  experiencePoints: number; // New
+  experienceToNextLevel: number; // New
 }
 
 export interface StructuredStoryState {
   character: CharacterProfile;
   currentLocation: string;
-  inventory: Item[]; // Changed from string[]
-  activeQuests: string[]; // List of quest descriptions
-  worldFacts: string[]; // Key observations or state changes
+  inventory: Item[];
+  activeQuests: string[];
+  worldFacts: string[];
 }
 
 export interface StoryTurn {
@@ -39,9 +42,9 @@ export interface StoryTurn {
 
 export interface GameSession {
   id: string;
-  storyPrompt: string; // The initial prompt that started this session
-  characterName: string; // The name of the character in this session
+  storyPrompt: string;
+  characterName: string;
   storyHistory: StoryTurn[];
-  createdAt: string; // ISO date string
-  lastPlayedAt: string; // ISO date string
+  createdAt: string;
+  lastPlayedAt: string;
 }

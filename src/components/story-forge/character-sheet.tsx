@@ -8,9 +8,9 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // Changed from custom Label
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon } from "lucide-react";
+import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon, AwardIcon, GaugeIcon } from "lucide-react";
 
 interface CharacterSheetProps {
   character: CharacterProfile;
@@ -31,12 +31,27 @@ const StatDisplay: React.FC<{ icon: React.ElementType, label: string, value?: nu
 export default function CharacterSheet({ character, storyState }: CharacterSheetProps) {
   const healthPercentage = character.maxHealth > 0 ? (character.health / character.maxHealth) * 100 : 0;
   const manaPercentage = (character.maxMana ?? 0) > 0 ? ((character.mana ?? 0) / (character.maxMana ?? 1)) * 100 : 0;
+  const xpPercentage = character.experienceToNextLevel > 0 ? (character.experiencePoints / character.experienceToNextLevel) * 100 : 0;
 
   return (
     <Card className="w-full shadow-lg bg-card/80 backdrop-blur-sm animate-fade-in">
       <CardHeader className="pb-2">
         <CardTitle className="font-headline text-3xl flex items-center justify-between">
-          {character.name}
+          <div className="flex items-center">
+            {character.name}
+            <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Badge variant="outline" className="ml-2 text-lg cursor-default">
+                            <AwardIcon className="w-4 h-4 mr-1 text-yellow-500"/>Lvl {character.level}
+                        </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                        <p>Level {character.level}</p>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
+          </div>
           <Badge variant="secondary" className="text-sm">{character.class}</Badge>
         </CardTitle>
         <CardDescription className="text-sm italic">{character.description}</CardDescription>
@@ -64,6 +79,16 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <Progress value={manaPercentage} aria-label={`${manaPercentage}% mana`} className="h-3 [&>div]:bg-blue-500" />
           </div>
         )}
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <Label className="text-sm font-medium flex items-center">
+              <GaugeIcon className="w-4 h-4 mr-1.5 text-green-500" />
+              XP
+            </Label>
+            <span className="text-sm text-muted-foreground">{character.experiencePoints} / {character.experienceToNextLevel}</span>
+          </div>
+          <Progress value={xpPercentage} aria-label={`${xpPercentage}% experience points`} className="h-3 [&>div]:bg-green-500" />
+        </div>
 
         <Separator />
 

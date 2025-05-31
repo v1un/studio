@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats and mana.
+ * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, and XP.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
  * - GenerateStoryStartInput - The input type for the generateStoryStart function.
@@ -33,10 +33,13 @@ const CharacterProfileSchema = z.object({
   intelligence: z.number().optional().describe('Character\'s reasoning and memory. Affects mana for magic users. Assign a value between 5 and 15.'),
   wisdom: z.number().optional().describe('Character\'s perception and intuition. Affects mana regeneration or spell effectiveness. Assign a value between 5 and 15.'),
   charisma: z.number().optional().describe('Character\'s social skills and influence. Assign a value between 5 and 15.'),
+  level: z.number().describe('The current level of the character. Initialize to 1.'),
+  experiencePoints: z.number().describe('Current experience points. Initialize to 0.'),
+  experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100.'),
 });
 
 const StructuredStoryStateSchema = z.object({
-  character: CharacterProfileSchema.describe('The profile of the main character, including core stats.'),
+  character: CharacterProfileSchema.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchema).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, and description.'),
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions. Initialize as an empty array if no quest is generated.'),
@@ -54,7 +57,7 @@ export type GenerateStoryStartInput = z.infer<typeof GenerateStoryStartInputSche
 
 const GenerateStoryStartOutputSchema = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchema.describe('The initial structured state of the story, including character details and stats.'),
+  storyState: StructuredStoryStateSchema.describe('The initial structured state of the story, including character details, stats, level, and XP.'),
 });
 export type GenerateStoryStartOutput = z.infer<typeof GenerateStoryStartOutputSchema>;
 
@@ -81,8 +84,9 @@ Based on the theme and any user suggestions, generate the following:
     -   Set initial health and maxHealth (e.g., 100 health, 100 maxHealth).
     -   Set initial mana and maxMana. If the class is not a magic user, set both to 0 or a low symbolic value like 10.
     -   Assign initial values (between 5 and 15, average 10) for the six core stats: Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma. These stats should generally align with the character's class (e.g., a warrior might have higher Strength and Constitution).
+    -   Initialize the character at \`level\` 1, with 0 \`experiencePoints\`, and set an initial \`experienceToNextLevel\` (e.g., 100).
 3.  An initial structured story state, including:
-    -   The character profile you just created (with all stats).
+    -   The character profile you just created (with all stats, level, and XP details).
     -   A starting location relevant to the scene.
     -   An empty inventory (initialize as an empty array: []). Each item in the inventory, if any were to be added at start (though typically it's empty), must be an object with 'id', 'name', and 'description' fields.
     -   If appropriate for the story's theme and the user's prompt, generate one simple starting quest description and include it in the 'activeQuests' array. Otherwise, initialize 'activeQuests' as an empty array: [].
@@ -90,8 +94,8 @@ Based on the theme and any user suggestions, generate the following:
 
 Your entire response must strictly follow the JSON schema defined for the output, containing 'sceneDescription' and 'storyState'.
 The 'storyState' itself must be a JSON object with keys 'character', 'currentLocation', 'inventory', 'activeQuests', and 'worldFacts'. The 'inventory' and 'activeQuests' must be arrays, even if empty.
-The 'character' object within 'storyState' must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'.
-Ensure all stat fields (strength, dexterity, etc.) are populated with numbers.
+The 'character' object within 'storyState' must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'.
+Ensure all stat fields (strength, dexterity, etc.) and level/XP fields are populated with numbers.
 `,
 });
 
@@ -113,6 +117,10 @@ const generateStoryStartFlow = ai.defineFlow(
       char.intelligence = char.intelligence ?? 10;
       char.wisdom = char.wisdom ?? 10;
       char.charisma = char.charisma ?? 10;
+      char.level = char.level ?? 1;
+      char.experiencePoints = char.experiencePoints ?? 0;
+      char.experienceToNextLevel = char.experienceToNextLevel ?? 100;
+      if (char.experienceToNextLevel <= 0) char.experienceToNextLevel = 100;
     }
     if (output?.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
@@ -122,4 +130,3 @@ const generateStoryStartFlow = ai.defineFlow(
     return output!;
   }
 );
-

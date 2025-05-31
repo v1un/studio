@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats and mana.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, and XP.
  *
  * - generateNextScene - A function that takes the current story state and user input, and returns the next scene and updated state.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
@@ -34,12 +34,15 @@ const CharacterProfileSchema = z.object({
   intelligence: z.number().optional().describe('Character\'s reasoning and memory.'),
   wisdom: z.number().optional().describe('Character\'s perception and intuition.'),
   charisma: z.number().optional().describe('Character\'s social skills and influence.'),
+  level: z.number().describe('The current level of the character.'),
+  experiencePoints: z.number().describe('Current experience points of the character.'),
+  experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level.'),
 });
 export type CharacterProfile = z.infer<typeof CharacterProfileSchema>;
 
 
 const StructuredStoryStateSchema = z.object({
-  character: CharacterProfileSchema.describe('The profile of the main character, including core stats.'),
+  character: CharacterProfileSchema.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchema).describe('A list of items in the character\'s inventory. Each item is an object with id, name, and description.'),
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
@@ -51,13 +54,13 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchema>;
 const GenerateNextSceneInputSchema = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchema.describe('The current structured state of the story (character, location, inventory, etc.).'),
+  storyState: StructuredStoryStateSchema.describe('The current structured state of the story (character, location, inventory, XP, etc.).'),
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema>;
 
 const GenerateNextSceneOutputSchema = z.object({
   nextScene: z.string().describe('The generated text for the next scene.'),
-  updatedStoryState: StructuredStoryStateSchema.describe('The updated structured story state after the scene.'),
+  updatedStoryState: StructuredStoryStateSchema.describe('The updated structured story state after the scene, including any XP or level changes.'),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchema>;
 
@@ -78,9 +81,10 @@ Player Input:
 {{userInput}}
 
 Current Character:
-- Name: {{storyState.character.name}}, the {{storyState.character.class}}
+- Name: {{storyState.character.name}}, the {{storyState.character.class}} (Level: {{storyState.character.level}})
 - Health: {{storyState.character.health}}/{{storyState.character.maxHealth}}
 - Mana: {{#if storyState.character.mana}}{{storyState.character.mana}}/{{storyState.character.maxMana}}{{else}}N/A{{/if}}
+- XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 - Stats:
   - Strength: {{storyState.character.strength}}
   - Dexterity: {{storyState.character.dexterity}}
@@ -114,21 +118,26 @@ Your generated scene should consider the character's stats. For example, a high 
 Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
 
 Crucially, you must also update the story state. This includes:
-- Character: Update health if they took damage or healed. Update mana if spells were cast or mana was restored. Max health/mana should generally remain the same unless a significant event occurs. Core stats (Strength, etc.) should generally remain unchanged unless a very significant, transformative event happens that explicitly justifies a permanent stat change.
+- Character:
+  - Update health if they took damage or healed. Update mana if spells were cast or mana was restored. Max health/mana should generally remain the same unless a significant event occurs.
+  - Core stats (Strength, etc.) should generally remain unchanged unless a very significant, transformative event happens that explicitly justifies a permanent stat change OR if a level up occurs that grants stat increases (for now, level ups do NOT grant stat increases, only increase level number and XP threshold).
+  - Update \`experiencePoints\` if the character gained experience from the scene (e.g., for overcoming challenges, clever solutions, or quest progression). Describe any XP gain clearly in the \`nextScene\` text.
+  - If \`experiencePoints\` reach or exceed \`experienceToNextLevel\`:
+    - Increment \`level\` by 1.
+    - The \`experiencePoints\` should carry over the excess (e.g., if current XP is 80, XP to next is 100, and they gain 30 XP, the new XP becomes 10 (80+30-100=10)).
+    - Set a new, higher \`experienceToNextLevel\` (e.g., current \`experienceToNextLevel\` * 1.5, rounded down, or a similar logical progression like adding 50 or 100).
+    - Clearly narrate the level-up event in the \`nextScene\` text.
+    - For now, do not change core stats (Strength, Dexterity etc.) on level up, only level, XP, and XP to next level. Max health/mana might increase slightly if you deem it narratively appropriate for a level up.
 - Location: Update if the character moved.
 - Inventory:
-  - If new items are found: Add them as objects to the \`inventory\` array in \`updatedStoryState\`. Each item object **must** have a unique \`id\` (e.g., 'item_potion_123', 'ancient_sword_001', or even a UUID like 'item_a1b2c3d4'), a \`name\`, and a \`description\`. Describe these new items clearly in the \`nextScene\` text.
-  - If items are used, consumed, or lost: Remove the corresponding item object(s) from the \`inventory\` array. Be specific about which item is removed (e.g., by its name or id).
-- Active Quests: Update if a quest progressed, was completed, or a new one started. Add or remove quest strings from the 'activeQuests' array as appropriate.
-- World Facts: Add, modify, or remove facts based on what happened or was discovered in the scene. Update the 'worldFacts' array accordingly.
+  - If new items are found: Add them as objects to the \`inventory\` array in \`updatedStoryState\`. Each item object **must** have a unique \`id\`, a \`name\`, and a \`description\`. Describe these new items clearly in the \`nextScene\` text.
+  - If items are used, consumed, or lost: Remove the corresponding item object(s) from the \`inventory\` array.
+- Active Quests: Update if a quest progressed, was completed, or a new one started.
+- World Facts: Add, modify, or remove facts based on what happened or was discovered.
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema defined for the output, providing 'nextScene' and the complete 'updatedStoryState' object.
-The 'updatedStoryState' must be a complete JSON object including all its fields (character, currentLocation, inventory, activeQuests, worldFacts), reflecting all changes.
-The 'updatedStoryState.inventory' must be an array of item objects (or an empty array if none). Each item object **must** contain 'id', 'name', and 'description' fields.
-If a field like activeQuests or worldFacts was empty and remains empty, output it as an empty array.
-If the character's health or mana changes, reflect it in 'updatedStoryState.character.health' or 'updatedStoryState.character.mana'.
-All character stats (strength, dexterity etc.) must be present in the output character object. If they didn't change, return their existing values.
+The 'updatedStoryState.character' must include all fields, including 'level', 'experiencePoints', and 'experienceToNextLevel'.
 `,
 });
 
@@ -143,6 +152,7 @@ const generateNextSceneFlow = ai.defineFlow(
     if (output?.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
+      // Default existing stats if AI omits them
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
@@ -151,6 +161,19 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.intelligence = updatedChar.intelligence ?? originalChar.intelligence ?? 10;
       updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
       updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
+
+      // Default new progression fields if AI omits them
+      updatedChar.level = updatedChar.level ?? originalChar.level ?? 1;
+      updatedChar.experiencePoints = updatedChar.experiencePoints ?? originalChar.experiencePoints ?? 0;
+      updatedChar.experienceToNextLevel = updatedChar.experienceToNextLevel ?? originalChar.experienceToNextLevel ?? 100;
+
+      // Basic sanity check for experienceToNextLevel
+      if (updatedChar.experienceToNextLevel <= 0) {
+         updatedChar.experienceToNextLevel = (originalChar.experienceToNextLevel > 0 ? originalChar.experienceToNextLevel : 100) * 1.5;
+         if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints && updatedChar.experiencePoints > 0) { // ensure it's higher than current XP if possible
+            updatedChar.experienceToNextLevel = updatedChar.experiencePoints + 50;
+         }
+      }
     }
      if (output?.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
@@ -160,4 +183,3 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
-
