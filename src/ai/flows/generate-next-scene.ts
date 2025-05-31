@@ -150,13 +150,14 @@ Known World Facts:
 Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. An item's 'equipSlot' property determines where it can go. 'ring' items can go in 'ring1' or 'ring2'.
 
 Based on the current scene, player's input, and detailed story state, generate the next scene.
-Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
+Describe any quest-related developments (new quests, progress, completion) clearly in the \`nextScene\` text.
 
 Crucially, you must also update the story state. This includes:
-- Character: Update health, mana, XP, and level as needed.
+- Character: Update health, mana, XP, and level as needed. If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs.
 - Location: Update if the character moved.
 - Inventory:
   - If new items are found: Add them as objects to the \`inventory\` array (unequipped items). Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`, and if equippable, an 'equipSlot'. Describe these new items clearly in the \`nextScene\` text.
+  - If an existing quest is completed as part of this scene, consider awarding a relevant item (with unique id, name, description, and optional equipSlot) and add it to the \`inventory\`.
   - If items are used, consumed, or lost: Remove them from \`inventory\` or \`equippedItems\` as appropriate.
 - Equipped Items:
   - If the player tries to equip an item (e.g., "equip rusty sword", "wear leather helmet"):
@@ -172,7 +173,15 @@ Crucially, you must also update the story state. This includes:
     3. Set \`equippedItems[slot]\` to null.
     4. Narrate the action (e.g., "You remove the Battered Shield and put it in your pack.").
   - Ensure an item is either in \`inventory\` OR \`equippedItems\`, never both.
-- Active Quests & World Facts: Update as necessary.
+- Active Quests:
+  - If a new quest is started based on the scene or player actions, add its description as a string to the \`activeQuests\` array. Narrate this new quest in the \`nextScene\` text.
+  - If an existing quest in \`activeQuests\` is progressed, update its description in the array if needed, or simply narrate the progress in \`nextScene\`.
+  - If a quest from \`activeQuests\` is completed, remove it from the \`activeQuests\` array. Clearly state the completion in \`nextScene\` and ensure any rewards (XP, items) are processed as described above.
+- World Facts:
+  - If significant events occur, new important information about the world or current location is revealed, or the state of the world changes, add new descriptive strings to the \`worldFacts\` array.
+  - Modify existing facts if they change.
+  - Remove facts that are no longer true or relevant.
+  - Narrate these changes or new facts in the \`nextScene\` if they are directly observable or learned by the character.
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema for the output.
@@ -231,3 +240,6 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
+
+
+    
