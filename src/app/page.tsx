@@ -5,21 +5,86 @@ import { useState, useEffect } from "react";
 import { generateStoryStart } from "@/ai/flows/generate-story-start";
 import type { GenerateStoryStartInput } from "@/ai/flows/generate-story-start";
 import { generateNextScene } from "@/ai/flows/generate-next-scene";
-import type { StoryTurn, CharacterProfile, StructuredStoryState } from "@/types/story";
+import type { StoryTurn, CharacterProfile, StructuredStoryState, GameSession } from "@/types/story";
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
 import UserInputForm from "@/components/story-forge/user-input-form";
 import StoryControls from "@/components/story-forge/story-controls";
-import CharacterSheet from "@/components/story-forge/character-sheet"; // We'll create this
+import CharacterSheet from "@/components/story-forge/character-sheet";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
+const SESSION_KEY_PREFIX = "storyForgeSession_";
 
 export default function StoryForgePage() {
   const [storyHistory, setStoryHistory] = useState<StoryTurn[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isLoadingPage, setIsLoadingPage] = useState(true); // For initial page load
+  const [isLoadingInteraction, setIsLoadingInteraction] = useState(false); // For AI calls
   const { toast } = useToast();
+
+  // Load session on mount
+  useEffect(() => {
+    setIsLoadingPage(true);
+    const activeId = localStorage.getItem(ACTIVE_SESSION_ID_KEY);
+    if (activeId) {
+      const sessionData = localStorage.getItem(`${SESSION_KEY_PREFIX}${activeId}`);
+      if (sessionData) {
+        try {
+          const session: GameSession = JSON.parse(sessionData);
+          setStoryHistory(session.storyHistory);
+          setCurrentSessionId(session.id);
+        } catch (e) {
+          console.error("Failed to parse saved session:", e);
+          localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
+          localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
+        }
+      } else {
+        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); // Clean up if ID exists but no data
+      }
+    }
+    setIsLoadingPage(false);
+  }, []);
+
+  // Save session whenever storyHistory or currentSessionId changes meaningfully
+  useEffect(() => {
+    if (isLoadingPage) return; // Don't save during initial load
+
+    if (currentSessionId && storyHistory.length > 0) {
+      const sessionKey = `${SESSION_KEY_PREFIX}${currentSessionId}`;
+      const existingSessionRaw = localStorage.getItem(sessionKey);
+      let sessionToSave: GameSession | null = null;
+
+      if (existingSessionRaw) {
+        try {
+          const existingSession: GameSession = JSON.parse(existingSessionRaw);
+          // Check if storyHistory actually changed to avoid redundant saves
+          if (JSON.stringify(existingSession.storyHistory) !== JSON.stringify(storyHistory)) {
+            sessionToSave = {
+              ...existingSession,
+              storyHistory: storyHistory,
+              lastPlayedAt: new Date().toISOString(),
+            };
+          } else if (new Date().getTime() - new Date(existingSession.lastPlayedAt).getTime() > 60000) { // Or if lastPlayedAt is old, update it
+             sessionToSave = {
+              ...existingSession,
+              lastPlayedAt: new Date().toISOString(),
+            };
+          }
+        } catch (e) {
+          console.error("Error parsing existing session for update:", e);
+          // Potentially corrupted data, avoid saving over it unless it's a new session start
+        }
+      }
+      // If sessionToSave is prepared (meaning it's an update or forced update), save it.
+      // Initial save is handled by handleStartStory.
+      if (sessionToSave) {
+        localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
+      }
+    }
+  }, [storyHistory, currentSessionId, isLoadingPage]);
+
 
   const currentTurn = storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null;
   const character = currentTurn?.storyStateAfterScene.character;
@@ -29,7 +94,7 @@ export default function StoryForgePage() {
     characterName?: string;
     characterClass?: string;
   }) => {
-    setIsLoading(true);
+    setIsLoadingInteraction(true);
     try {
       const input: GenerateStoryStartInput = {
         prompt: data.prompt,
@@ -42,21 +107,40 @@ export default function StoryForgePage() {
         sceneDescription: result.sceneDescription,
         storyStateAfterScene: result.storyState,
       };
+      
+      const newSessionId = crypto.randomUUID();
+      const newSession: GameSession = {
+        id: newSessionId,
+        storyPrompt: data.prompt,
+        characterName: result.storyState.character.name,
+        storyHistory: [firstTurn],
+        createdAt: new Date().toISOString(),
+        lastPlayedAt: new Date().toISOString(),
+      };
+
+      localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
+      localStorage.setItem(ACTIVE_SESSION_ID_KEY, newSession.id);
+
       setStoryHistory([firstTurn]);
+      setCurrentSessionId(newSession.id);
+      toast({
+        title: "New Adventure Begun!",
+        description: `Character ${newSession.characterName} created.`,
+      });
     } catch (error) {
       console.error("Failed to start story:", error);
       toast({
         title: "Error Starting Story",
-        description: "The AI encountered an issue generating the story. Please try a different prompt or check the console for details.",
+        description: "The AI encountered an issue. Please try a different prompt.",
         variant: "destructive",
       });
     }
-    setIsLoading(false);
+    setIsLoadingInteraction(false);
   };
 
   const handleUserAction = async (userInput: string) => {
-    if (!currentTurn) return;
-    setIsLoading(true);
+    if (!currentTurn || !currentSessionId) return;
+    setIsLoadingInteraction(true);
     try {
       const result = await generateNextScene({
         currentScene: currentTurn.sceneDescription,
@@ -70,33 +154,51 @@ export default function StoryForgePage() {
         userInputThatLedToScene: userInput,
       };
       setStoryHistory((prevHistory) => [...prevHistory, nextTurnItem]);
+      // Save will be handled by useEffect
     } catch (error) {
       console.error("Failed to generate next scene:", error);
       toast({
         title: "Error Generating Scene",
-        description: "The AI encountered an issue generating the next scene. Please try again or check the console.",
+        description: "The AI encountered an issue. Please try again.",
         variant: "destructive",
       });
     }
-    setIsLoading(false);
+    setIsLoadingInteraction(false);
   };
 
   const handleUndo = () => {
     if (storyHistory.length > 1) {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
+       toast({ title: "Last action undone."});
+      // Save will be handled by useEffect
     } else if (storyHistory.length === 1) {
+      // Undoing the very first turn means restarting the session
       handleRestart();
     }
   };
 
   const handleRestart = () => {
+    if (currentSessionId) {
+      localStorage.removeItem(`${SESSION_KEY_PREFIX}${currentSessionId}`);
+    }
+    localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
     setStoryHistory([]);
+    setCurrentSessionId(null);
     toast({
-      title: "Story Restarted",
+      title: "Story Session Cleared",
       description: "Let the new adventure begin!",
     });
   };
   
+  if (isLoadingPage) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 sm:p-8">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="mt-4 text-lg text-foreground">Loading your adventure...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center min-h-screen bg-background p-4 sm:p-8 selection:bg-primary/20 selection:text-primary">
       <header className="mb-8 text-center">
@@ -110,35 +212,40 @@ export default function StoryForgePage() {
       </header>
 
       <main className="w-full max-w-2xl space-y-6">
-        {isLoading && (
-          <div className="flex justify-center items-center p-4 rounded-md bg-card/50 backdrop-blur-sm shadow-md">
+        {isLoadingInteraction && (
+          <div className="flex justify-center items-center p-4 rounded-md bg-card/50 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="ml-3 text-lg text-foreground">AI is forging your tale...</p>
           </div>
         )}
 
-        {!currentTurn && !isLoading && (
-          <InitialPromptForm onSubmit={handleStartStory} isLoading={isLoading} />
+        {!currentSessionId && !isLoadingInteraction && (
+          <InitialPromptForm onSubmit={handleStartStory} isLoading={isLoadingInteraction} />
         )}
-
-        {character && !isLoading && (
-          <CharacterSheet character={character} storyState={currentTurn.storyStateAfterScene} />
-        )}
-
-        {currentTurn && (
+        
+        {currentSessionId && currentTurn && (
           <>
+            {character && !isLoadingInteraction && (
+              <CharacterSheet character={character} storyState={currentTurn.storyStateAfterScene} />
+            )}
             <StoryControls
               onUndo={handleUndo}
               onRestart={handleRestart}
               canUndo={storyHistory.length > 0}
-              isLoading={isLoading}
+              isLoading={isLoadingInteraction}
             />
             <StoryDisplay
               sceneDescription={currentTurn.sceneDescription}
               keyProp={currentTurn.id}
             />
-            <UserInputForm onSubmit={handleUserAction} isLoading={isLoading} />
+            <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
           </>
+        )}
+         {currentSessionId && !currentTurn && !isLoadingInteraction && (
+            <div className="text-center p-6 bg-card rounded-lg shadow-md">
+                <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
+                <Button onClick={handleRestart}>Start a New Adventure</Button>
+            </div>
         )}
       </main>
       <footer className="mt-12 text-center text-sm text-muted-foreground">
