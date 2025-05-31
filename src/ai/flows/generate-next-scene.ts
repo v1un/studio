@@ -309,7 +309,7 @@ Based on the current scene, player's input, and detailed story state, generate t
     2. Then, transition the narrative to describe the character's experience of 'returning' or time rewinding. They should explicitly retain memories and knowledge from the 'failed' timeline.
     3. The story should then resume from a narratively coherent 'checkpoint' or a point just before the critical failure, with the character now possessing this foreknowledge.
 - Subtly reflect any emotional toll or consequences of such a return in the character's state or your descriptive text (e.g., 'Subaru awoke with a gasp, the phantom pain still fresh, the events of the last hour seared into his mind. He was back at the market stall, moments before...').
-- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \`worldFacts\`; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
+- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \\\`worldFacts\\\`; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
 
 **Skill Usage & Effects:**
 - If the player's input indicates they are using one of their listed \`skillsAndAbilities\`:
@@ -414,7 +414,7 @@ Crucially, you must also update the story state. This includes:
   - Ensure 'updatedStoryState.trackedNPCs' contains all previously tracked NPCs, plus any new ones, with their profiles updated as described above.
   - All fields in each NPCProfile must adhere to their schema definitions. 'id' must be unique for new NPCs.
   - For existing NPCs, ensure their 'id' is preserved from the input 'storyState.trackedNPCs'.
-  - **Ensure `relationshipStatus` is a number reflecting the cumulative interactions.**
+  - **Ensure \\\`relationshipStatus\\\` is a number reflecting the cumulative interactions.**
 
 The next scene should logically follow the player's input and advance the narrative, respecting the style and lore of {{seriesName}}.
 Ensure your entire response strictly adheres to the JSON schema for the output.
@@ -609,10 +609,12 @@ const generateNextSceneFlow = ai.defineFlow(
 
         output.updatedStoryState.trackedNPCs.forEach((npc) => {
             let currentNpcId = npc.id;
+            // Ensure ID uniqueness for newly generated NPCs or if AI reuses an ID from another new NPC.
             if (!currentNpcId || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
                  let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
                  let newId = baseId;
                  let counter = 0;
+                 // Ensure the new ID is unique against both already processed new NPCs and existing input NPCs
                  while(npcIdMap.has(newId) || existingNpcIdsFromInput.has(newId)) { 
                      newId = `${baseId}_u${counter++}`;
                  }
@@ -621,10 +623,16 @@ const generateNextSceneFlow = ai.defineFlow(
             npc.id = currentNpcId; 
             
             if (npcIdMap.has(npc.id)) { 
-                console.warn(`Duplicate NPC ID ${npc.id} encountered in AI output for current turn. Skipping duplicate.`);
-                return; 
+                // This should ideally not happen if ID generation is robust.
+                // If it does, it means the AI might be trying to update an NPC it already processed in this turn's output.
+                // Or, it could be an ID collision with an existing NPC from input if the new ID logic wasn't perfect.
+                // For now, log and skip to prevent overwriting the first instance processed this turn.
+                // A more sophisticated merge might be needed for complex scenarios.
+                console.warn(`Duplicate NPC ID ${npc.id} encountered in AI output for current turn. Skipping duplicate to avoid overwriting.`);
+                return; // Skip this duplicate entry for this turn's output processing
             }
             npcIdMap.set(npc.id, npc);
+
 
             npc.name = npc.name || "Unnamed NPC";
             npc.description = npc.description || "No description provided.";
@@ -643,24 +651,29 @@ const generateNextSceneFlow = ai.defineFlow(
                 if(!dh.turnId) dh.turnId = input.currentTurnId; 
             });
 
+            // Preserve first encounter details if this NPC is an update to an existing one
             const originalNpc = input.storyState.trackedNPCs.find(onpc => onpc.id === npc.id);
-            if (!originalNpc) { 
+            if (!originalNpc) { // This is a new NPC being introduced in this turn
                 npc.firstEncounteredLocation = npc.firstEncounteredLocation || input.storyState.currentLocation;
                 npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || input.currentTurnId;
-            } else { 
+            } else { // This is an update to an existing NPC
                  npc.firstEncounteredLocation = originalNpc.firstEncounteredLocation;
                  npc.firstEncounteredTurnId = originalNpc.firstEncounteredTurnId;
-                 npc.seriesContextNotes = npc.seriesContextNotes ?? originalNpc.seriesContextNotes;
+                 npc.seriesContextNotes = npc.seriesContextNotes ?? originalNpc.seriesContextNotes; // Preserve series notes if AI doesn't override
             }
             
-            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation || input.storyState.currentLocation;
-            npc.lastSeenTurnId = input.currentTurnId; 
-            npc.updatedAt = new Date().toISOString();
+            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation || input.storyState.currentLocation; // Update if AI specified, else keep old or default
+            npc.lastSeenTurnId = input.currentTurnId; // Always update to current turn
+            npc.updatedAt = new Date().toISOString(); // Always update timestamp
 
+            // Clean up optional empty string fields
             if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
             if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
+            // firstEncounteredTurnId should always be set, so no null check needed if logic is correct
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
+            // lastSeenTurnId should always be set
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
+            // updatedAt should always be set
         });
          output.updatedStoryState.trackedNPCs = Array.from(npcIdMap.values());
     }
