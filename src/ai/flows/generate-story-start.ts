@@ -13,8 +13,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot } from '@/types/story';
-import type { Item as ItemType } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType } from '@/types/story';
 
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -60,13 +59,19 @@ const EquipmentSlotsSchemaInternal = z.object({
   ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
 }).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. Initialize all 10 slots to null.");
 
+const QuestStatusEnumInternal = z.enum(['active', 'completed']);
+const QuestSchemaInternal = z.object({
+  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_generic_001'."),
+  description: z.string().describe("A clear description of the quest's objective."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests.")
+});
 
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted entirely.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  activeQuests: z.array(z.string()).describe('A list of active quest descriptions. Initialize as an empty array if no quest is generated.'),
+  quests: z.array(QuestSchemaInternal).describe('A list of quests, each an object with id, description, and status. Initialize as an empty array if no quest is generated, or with one simple starting quest with status \'active\'.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts.'),
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
@@ -81,7 +86,7 @@ export type GenerateStoryStartInput = z.infer<typeof GenerateStoryStartInputSche
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, and empty equipment slots.'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details, stats, level, XP, empty equipment slots, and any initial quests.'),
 });
 export type GenerateStoryStartOutput = z.infer<typeof GenerateStoryStartOutputSchemaInternal>;
 
@@ -113,14 +118,16 @@ Based on the theme and any user suggestions, generate the following:
     -   The character profile you just created.
     -   A starting location relevant to the scene.
     -   An empty inventory (initialize as an empty array: []). If any starting items are somehow generated, each item must include an 'id', 'name', 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head', 'body'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
-    -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.**
-    -   If appropriate, one simple starting quest in 'activeQuests' array. Otherwise, an empty array.
+    -   Initialize 'equippedItems' as an object with all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') set to null, as the character starts with nothing equipped.
+    -   If appropriate, one simple starting quest in the 'quests' array. Each quest must be an object with a unique 'id', a 'description', and 'status' set to 'active'. Otherwise, 'quests' should be an empty array.
     -   One or two initial 'worldFacts'.
 
 Your entire response must strictly follow the JSON schema defined for the output.
-The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'activeQuests', and 'worldFacts'.
-The 'character' object must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'. For optional numeric fields like 'mana', 'maxMana', or stats, if they are provided, they must be numbers (e.g., 0 for mana if not applicable). Do not use 'null' for fields expecting numbers.
+The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', and 'worldFacts'.
+The 'character' object must have all fields required by its schema.
 The 'equippedItems' must be an object with all 10 specified slots initially set to null.
+The 'quests' array must contain quest objects, each with 'id', 'description', and 'status'.
+For items in inventory or equipped, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
 `,
 });
 
@@ -150,11 +157,21 @@ const generateStoryStartFlow = ai.defineFlow(
     if (output?.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
         output.storyState.inventory.forEach(item => {
-          if (item.equipSlot === null) { // Safeguard: remove equipSlot if AI provides it as null
+          if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
             delete (item as Partial<ItemType>).equipSlot;
           }
         });
-        output.storyState.activeQuests = output.storyState.activeQuests ?? [];
+        
+        output.storyState.quests = output.storyState.quests ?? [];
+        output.storyState.quests.forEach((quest, index) => {
+          if (!quest.id) {
+            quest.id = `quest_start_generated_${Date.now()}_${index}`;
+          }
+          if (!quest.status) {
+            quest.status = 'active';
+          }
+        });
+
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
 
         const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
@@ -164,8 +181,7 @@ const generateStoryStartFlow = ai.defineFlow(
         const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
-             // Ensure equipped items also don't have null equipSlots
-            if (newEquippedItems[slotKey] && newEquippedItems[slotKey]!.equipSlot === null) {
+            if (newEquippedItems[slotKey] && (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
               delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
             }
         }

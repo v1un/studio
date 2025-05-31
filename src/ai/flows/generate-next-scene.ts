@@ -11,9 +11,8 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
-import type { Item as ItemType } from '@/types/story';
 
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -59,13 +58,19 @@ const EquipmentSlotsSchemaInternal = z.object({
   ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
 }).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. All 10 slots must be present, with 'null' for empty ones.");
 
+const QuestStatusEnumInternal = z.enum(['active', 'completed']);
+const QuestSchemaInternal = z.object({
+  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_main_001' or 'quest_side_witch_forest_003'. Must be unique among all quests."),
+  description: z.string().describe("A clear description of the quest's objective."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed'.")
+});
 
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted entirely.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
+  quests: z.array(QuestSchemaInternal).describe('A list of all quests, each an object with id, description, and status (\'active\' or \'completed\').'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
@@ -74,18 +79,18 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInte
 const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, etc.).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, etc.).'),
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchemaInternal>;
 
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
-  formattedActiveQuestsString: z.string().describe("Pre-formatted string of active quests."),
+  formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses."),
 });
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, and equipment changes.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, equipment changes, and quest updates.'),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -105,6 +110,14 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
   }
   return output.trim();
 }
+
+function formatQuests(quests: QuestType[] | undefined | null): string {
+  if (!quests || !Array.isArray(quests) || quests.length === 0) {
+    return "None";
+  }
+  return quests.map(q => `- ${q.description} (Status: ${q.status}, ID: ${q.id})`).join("\n");
+}
+
 
 const prompt = ai.definePrompt({
   name: 'generateNextScenePrompt',
@@ -146,7 +159,8 @@ Current Inventory (Unequipped Items):
 Empty
 {{/if}}
 
-Active Quests: {{{formattedActiveQuestsString}}}
+Quests (ID, Description, Status):
+{{{formattedQuestsString}}}
 
 Known World Facts:
 {{#each storyState.worldFacts}}
@@ -163,44 +177,43 @@ Based on the current scene, player's input, and detailed story state, generate t
 Describe any quest-related developments (new quests, progress, completion) clearly in the \`nextScene\` text.
 
 Crucially, you must also update the story state. This includes:
-- Character: Update all character fields as necessary: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'level', 'experiencePoints', 'experienceToNextLevel'.
+- Character: Update all character fields as necessary.
   - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats, provide a number or omit if not applicable and allowed by schema, do not use 'null'.
   - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs.
 - Location: Update if the character moved.
 - Inventory:
-  - If new items are found: Add them as objects to the \`inventory\` array (unequipped items). Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Describe these new items clearly in the \`nextScene\` text.
+  - If new items are found: Add them as objects to the \`inventory\` array. Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Describe these new items clearly in the \`nextScene\` text.
   - If an existing quest is completed as part of this scene, consider awarding a relevant item (with unique id, name, description, and optional equipSlot - omit if not equippable) and add it to the \`inventory\`.
   - If items are used, consumed, or lost: Remove them from \`inventory\` or \`equippedItems\` as appropriate.
 - Equipped Items:
-  - If the player tries to equip an item (e.g., "equip rusty sword", "wear leather helmet"):
-    1. Find the item in the \`inventory\`. If not found, state that the player doesn't have it.
-    2. Check if the item has an \`equipSlot\` property (meaning it is an inherently equippable item). If not, state it's not equippable (e.g., "You cannot equip the diary.").
-    3. Determine the target slot. For 'ring' items, try 'ring1' first, then 'ring2' if 'ring1' is full.
-    4. If the target slot is already occupied by another item, move the currently equipped item from \`equippedItems[slot]\` back to the \`inventory\` array.
-    5. Move the item to be equipped from the \`inventory\` array to \`equippedItems[slot]\`. The \`inventory\` array should no longer contain this item.
-    6. Narrate the action (e.g., "You equip the Rusty Sword. The Dagger is moved to your inventory.").
-  - If the player tries to unequip an item (e.g., "remove helmet", "unequip shield"):
-    1. Find the item in the relevant slot in \`equippedItems\`. If the slot is empty or item not found, state so.
-    2. Move the item from \`equippedItems[slot]\` to the \`inventory\` array.
+  - If the player tries to equip an item:
+    1. Find the item in \`inventory\`.
+    2. Check if it's equippable and has an \`equipSlot\`. If not, state it (e.g., "You cannot equip the diary.").
+    3. If the target slot is occupied, move the existing item from \`equippedItems[slot]\` to \`inventory\`.
+    4. Move the new item from \`inventory\` to \`equippedItems[slot]\`.
+    5. Narrate the action.
+  - If the player tries to unequip an item:
+    1. Find it in \`equippedItems\`.
+    2. Move it to \`inventory\`.
     3. Set \`equippedItems[slot]\` to null.
-    4. Narrate the action (e.g., "You remove the Battered Shield and put it in your pack.").
+    4. Narrate the action.
   - Ensure an item is either in \`inventory\` OR \`equippedItems\`, never both.
-  - The 'updatedStoryState.equippedItems' object must include all 10 slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'), with 'null' for any empty slots.
-- Active Quests:
-  - If a new quest is started based on the scene or player actions, add its description as a string to the \`activeQuests\` array. Narrate this new quest in the \`nextScene\` text.
-  - If an existing quest in \`activeQuests\` is progressed, update its description in the array if needed, or simply narrate the progress in \`nextScene\`.
-  - If a quest from \`activeQuests\` is completed, remove it from the \`activeQuests\` array. Clearly state the completion in \`nextScene\` and ensure any rewards (XP, items) are processed as described above.
+  - The 'updatedStoryState.equippedItems' object must include all 10 slots, with 'null' for empty ones.
+- Quests:
+  - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects: \`{ id: string, description: string, status: 'active' | 'completed' }\`.
+  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`, a clear \`description\`, and its \`status\` must be set to \`'active'\`. Narrate this new quest in \`nextScene\`.
+  - If an existing quest in \`quests\` is progressed: Update its \`description\` in the array if needed, or simply narrate the progress in \`nextScene\`. The status remains \`'active'\`.
+  - If an existing quest from \`quests\` is completed: Find the quest object in the \`quests\` array (match by \`id\` if possible, or by conceptual understanding of the description). Update its \`status\` to \`'completed'\`. Do NOT remove it from the array. Clearly state the completion in \`nextScene\` and ensure any rewards (XP, items) are processed.
+  - Ensure quest IDs are unique (e.g., by incrementing a counter or using a descriptive naming convention like 'main_01', 'side_forest_01').
 - World Facts:
-  - If significant events occur, new important information about the world or current location is revealed, or the state of the world changes, add new descriptive strings to the \`worldFacts\` array.
-  - Modify existing facts if they change.
-  - Remove facts that are no longer true or relevant.
-  - Narrate these changes or new facts in the \`nextScene\` if they are directly observable or learned by the character.
+  - Add, modify, or remove strings in \`worldFacts\` as the world state changes. Narrate these if observable.
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema for the output.
-The 'updatedStoryState.character' must include all fields required by its schema. Optional numeric fields like 'mana', 'maxMana', or stats, if present, must be numbers (e.g., 0 if not applicable); do not use 'null'. Omit if truly not applicable and allowed by schema.
-The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
+The 'updatedStoryState.character' must include all fields required by its schema.
+The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable it must be omitted.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
+The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status'.
 `,
 });
 
@@ -212,14 +225,12 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
-    const formattedActiveQuestsString = input.storyState.activeQuests && input.storyState.activeQuests.length > 0
-                                        ? input.storyState.activeQuests.map(q => `- ${q}`).join("\n")
-                                        : "None";
+    const formattedQuestsString = formatQuests(input.storyState.quests);
 
     const promptPayload: z.infer<typeof PromptInternalInputSchema> = {
       ...input,
       formattedEquippedItemsString: formattedEquippedItemsString,
-      formattedActiveQuestsString: formattedActiveQuestsString,
+      formattedQuestsString: formattedQuestsString,
     };
 
     const {output} = await prompt(promptPayload);
@@ -247,14 +258,23 @@ const generateNextSceneFlow = ai.defineFlow(
     }
      if (output?.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
-        // Safeguard: Remove equipSlot if AI provides it as null or for items that should not have it.
         output.updatedStoryState.inventory.forEach(item => {
-          if (item.equipSlot === null) { // Explicitly null
+          if (item.equipSlot === null || (item.equipSlot as unknown) === '') { 
             delete (item as Partial<ItemType>).equipSlot;
           }
-          // Further safeguard can be added here if we have a definitive list of non-equippable item types/names
         });
-        output.updatedStoryState.activeQuests = output.updatedStoryState.activeQuests ?? [];
+
+        output.updatedStoryState.quests = output.updatedStoryState.quests ?? [];
+        // Ensure quest IDs are present if AI forgets
+        output.updatedStoryState.quests.forEach((quest, index) => {
+          if (!quest.id) {
+            quest.id = `quest_generated_${Date.now()}_${index}`;
+          }
+          if (!quest.status) {
+            quest.status = 'active'; // Default to active if status is missing
+          }
+        });
+
         output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts ?? [];
 
         const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
@@ -265,8 +285,11 @@ const generateNextSceneFlow = ai.defineFlow(
         const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
+            if (newEquippedItems[slotKey] && (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
+              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+            }
         }
-        output.updatedStoryState.equippedItems = newEquippedItems as any;
+        output.updatedStoryState.equippedItems = newEquippedItems as any; // Cast back to expected type
     }
     return output!;
   }

@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/ai/flows/generate-scenario-from-series";
-import type { StoryTurn, GameSession } from "@/types/story";
+import type { StoryTurn, GameSession, StructuredStoryState } from "@/types/story"; // Added StructuredStoryState
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -95,7 +95,7 @@ export default function StoryForgePage() {
 
   const currentTurn = storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null;
   const character = currentTurn?.storyStateAfterScene.character;
-  const storyState = currentTurn?.storyStateAfterScene;
+  const storyState = currentTurn?.storyStateAfterScene; // Keep this for passing to components
 
   const handleStartStoryFromSeries = async (seriesName: string) => {
     setIsLoadingInteraction(true);
@@ -144,14 +144,14 @@ export default function StoryForgePage() {
   };
 
   const handleUserAction = async (userInput: string) => {
-    if (!currentTurn || !currentSessionId) return;
+    if (!currentTurn || !currentSessionId || !storyState) return; // Ensure storyState exists
     setIsLoadingInteraction(true);
     try {
       const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
       const result = await generateNextScene({
         currentScene: currentTurn.sceneDescription,
         userInput: userInput,
-        storyState: currentTurn.storyStateAfterScene,
+        storyState: storyState, // Pass the full storyState
       });
       const nextTurnItem: StoryTurn = {
         id: crypto.randomUUID(),
@@ -231,7 +231,7 @@ export default function StoryForgePage() {
           />
         )}
         
-        {currentSessionId && currentTurn && character && storyState && (
+        {currentSessionId && currentTurn && character && storyState && ( // Ensure storyState is available
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4 mb-4">
               <TabsTrigger value="story" className="text-xs sm:text-sm">
@@ -269,7 +269,7 @@ export default function StoryForgePage() {
 
             <TabsContent value="journal">
               <JournalDisplay 
-                activeQuests={storyState.activeQuests} 
+                quests={storyState.quests} // Pass the new quests array
                 worldFacts={storyState.worldFacts} 
               />
             </TabsContent>

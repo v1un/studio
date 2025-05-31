@@ -13,8 +13,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, RawLoreEntry } from '@/types/story';
-import type { Item as ItemType } from '@/types/story';
+import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
@@ -58,13 +57,19 @@ const EquipmentSlotsSchemaInternal = z.object({
   ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
 }).describe("Character's equipped items. Initialize with null or series-appropriate starting gear. All 10 slots should be represented, with 'null' for empty ones. This object MUST contain all 10 slot keys.");
 
+const QuestStatusEnumInternal = z.enum(['active', 'completed']);
+const QuestSchemaInternal = z.object({
+  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_series_main_001'."),
+  description: z.string().describe("A clear description of the quest's objective, fitting the series."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests.")
+});
 
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal,
   currentLocation: z.string().describe('A specific starting location from the series relevant to the initial scene.'),
   inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field must be omitted. Can be empty.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  activeQuests: z.array(z.string()).describe('One or two initial quest descriptions that fit the series and starting scenario.'),
+  quests: z.array(QuestSchemaInternal).describe('One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, and status set to \'active\'.'),
   worldFacts: z.array(z.string()).describe('A few (2-3) key world facts from the series relevant to the start of the story.'),
 });
 
@@ -101,30 +106,22 @@ const prompt = ai.definePrompt({
 Your goal is to generate:
 1.  An engaging initial 'sceneDescription' that drops the player right into the world of "{{seriesName}}". Make it vivid and intriguing.
 2.  A complete 'storyState' object, meticulously tailored to the "{{seriesName}}" universe:
-    *   'character':
-        *   Create a compelling protagonist. This could be an existing key character from the series if appropriate for a player to embody from the start (e.g., Naruto Uzumaki at the beginning of his journey), or an original character that fits seamlessly into the series' world and the generated scenario.
-        *   Define their 'name', 'class' (e.g., "Shinobi", "Soul Reaper", "Student at Beacon"), and a 'description' providing a brief backstory relevant to the starting scene and series.
-        *   Set initial 'health', 'maxHealth'.
-        *   Set 'mana', 'maxMana'. These fields must be numbers. If the character concept doesn't use mana, set both to 0. Do not use 'null' or omit if the character type typically has mana, even if starting at 0.
-        *   Assign appropriate initial values (between 5-15) for all six core stats: Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma, reflecting the character's archetype in "{{seriesName}}". If a stat is not particularly relevant, you can provide a default like 10, or omit it if the schema allows (check .optional()). These must be numbers if provided.
-        *   Initialize 'level' to 1, 'experiencePoints' to 0, and 'experienceToNextLevel' to 100.
-    *   'currentLocation': A specific, recognizable starting location from "{{seriesName}}" that matches the 'sceneDescription'.
-    *   'inventory': An array of 0-3 initial unequipped 'Item' objects. Each item must have a unique 'id', 'name', and 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
-    *   'equippedItems': An object explicitly mapping all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') to either an 'Item' object (if they start with something equipped, consistent with the series) or null if the slot is empty. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.**
-    *   'activeQuests': An array containing one or two initial quest descriptions (strings) that are compelling, fit the "{{seriesName}}" lore, and are relevant to the starting 'sceneDescription'.
-    *   'worldFacts': An array of 2-4 key 'worldFacts' (strings) about the "{{seriesName}}" universe that are immediately relevant or provide crucial context for the player at the start.
-3.  A list of 5-7 'initialLoreEntries' to pre-populate the game's lorebook. Each entry should be an object with:
-    *   'keyword': A significant term, character name, location, or concept from "{{seriesName}}".
-    *   'content': A concise (2-3 sentences) and accurate description of the keyword according to "{{seriesName}}" lore.
-    *   'category': (Optional) e.g., 'Character', 'Location', 'Ability', 'Organization'. **If no specific category is applicable or known, the 'category' field should be omitted entirely, not set to null.**
+    *   'character': (Details as before, ensure numeric stats and mana=0 if not applicable)
+    *   'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
+    *   'inventory': An array of 0-3 initial unequipped 'Item' objects. Each item must have a unique 'id', 'name', and 'description'. **If the item is an inherently equippable piece of gear, include its 'equipSlot'. If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
+    *   'equippedItems': An object explicitly mapping all 10 equipment slots to an 'Item' object or null. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.**
+    *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore, and 'status' set to 'active'.
+    *   'worldFacts': An array of 2-4 key 'worldFacts' (strings) about the "{{seriesName}}" universe.
+3.  A list of 5-7 'initialLoreEntries'. Each entry an object with 'keyword', 'content', and optional 'category'. **If 'category' is not applicable, omit the field.**
 
 **Crucially:** If the \`sceneDescription\` mentions the character starting with a specific item in hand (like a weapon) or wearing a piece of gear, ensure that item is properly defined as an \`Item\` object (with a unique 'id', 'name', 'description', and its 'equipSlot' property correctly defining which slot it occupies) and placed in the correct slot within \`storyState.equippedItems\`. If the item is merely nearby or just found, it should be in \`storyState.inventory\`. For items in inventory, if they are not inherently equippable gear, omit the 'equipSlot' field. Be consistent between the narrative and the structured state.
 
 Ensure all generated content is faithful to the tone, style, and established lore of "{{seriesName}}".
 The entire response must strictly follow the JSON schema for the output.
-Make sure all IDs for items are unique.
-The 'equippedItems' object in 'storyState' must include all 10 slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'), with 'null' for any empty slots.
-Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable) if provided, or omitted if appropriate and allowed by the schema. Do not use 'null' for fields expecting numbers or strings unless the schema explicitly allows for 'nullable' types. For optional string fields like 'Item.equipSlot' or 'RawLoreEntry.category', omit the field if not applicable.
+Make sure all IDs for items and quests are unique.
+The 'equippedItems' object in 'storyState' must include all 10 slots, with 'null' for empty slots.
+The 'quests' array in 'storyState' must contain quest objects, each with 'id', 'description', and 'status'.
+Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable) if provided, or omitted if appropriate and allowed by the schema. For optional string fields like 'Item.equipSlot' or 'RawLoreEntry.category', omit the field if not applicable.
 `,
 });
 
@@ -156,11 +153,21 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     if (output?.storyState) {
       output.storyState.inventory = output.storyState.inventory ?? [];
       output.storyState.inventory.forEach(item => {
-        if (item.equipSlot === null) { // Safeguard: remove equipSlot if AI provides it as null
+        if (item.equipSlot === null || (item.equipSlot as unknown) === '') { 
           delete (item as Partial<ItemType>).equipSlot;
         }
       });
-      output.storyState.activeQuests = output.storyState.activeQuests ?? [];
+
+      output.storyState.quests = output.storyState.quests ?? [];
+      output.storyState.quests.forEach((quest, index) => {
+        if (!quest.id) {
+          quest.id = `quest_series_generated_${Date.now()}_${index}`;
+        }
+        if (!quest.status) {
+          quest.status = 'active';
+        }
+      });
+
       output.storyState.worldFacts = output.storyState.worldFacts ?? [];
 
       const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
@@ -170,8 +177,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
       for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
           newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
-          // Ensure equipped items also don't have null equipSlots
-          if (newEquippedItems[slotKey] && newEquippedItems[slotKey]!.equipSlot === null) {
+          if (newEquippedItems[slotKey] && (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) {
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
           }
       }
@@ -181,7 +187,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     if (output?.initialLoreEntries) {
         output.initialLoreEntries = output.initialLoreEntries ?? [];
         output.initialLoreEntries.forEach(entry => {
-            if (entry.category === null) { // Safeguard: remove category if AI provides it as null
+            if (entry.category === null || (entry.category as unknown) === '') { 
                 delete (entry as Partial<RawLoreEntry>).category;
             }
         });

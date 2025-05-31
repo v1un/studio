@@ -37,12 +37,18 @@ export type EquipmentSlot =
   | 'ring1' 
   | 'ring2';
 
+export interface Quest {
+  id: string;
+  description: string;
+  status: 'active' | 'completed'; // 'failed' can be added later
+}
+
 export interface StructuredStoryState {
   character: CharacterProfile;
   currentLocation: string;
   inventory: Item[];
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
-  activeQuests: string[];
+  quests: Quest[]; // Changed from activeQuests: string[]
   worldFacts: string[];
 }
 
