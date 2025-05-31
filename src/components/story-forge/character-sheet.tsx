@@ -155,7 +155,10 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                           </div>
                         </TooltipTrigger>
                         <TooltipContent side="top" align="start" className="max-w-xs w-auto">
-                          <p className="font-medium text-sm">{skill.name} <Badge variant="secondary" className="ml-1 text-xs">{skill.type}</Badge></p>
+                          <div className="text-sm"> {/* Changed p to div */}
+                            <span className="font-medium">{skill.name}</span> {/* Wrapped name in span */}
+                            <Badge variant="secondary" className="ml-1 text-xs">{skill.type}</Badge>
+                          </div>
                           <p className="text-xs whitespace-pre-line">{skill.description}</p>
                         </TooltipContent>
                       </Tooltip>
