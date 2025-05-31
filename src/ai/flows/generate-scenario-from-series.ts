@@ -17,17 +17,17 @@ import type { EquipmentSlot, RawLoreEntry } from '@/types/story';
 import type { Item as ItemType } from '@/types/story'; // Ensure all necessary types are imported
 
 // Schemas from generate-story-start.ts, potentially refactor to a shared location later
-const EquipSlotEnum = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
+const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
 
-const ItemSchema = z.object({
+const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory/equipment."),
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
-  equipSlot: EquipSlotEnum.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, omit this field."),
+  equipSlot: EquipSlotEnumInternal.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, omit this field."),
 });
 
-const CharacterProfileSchema = z.object({
+const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the main character, appropriate for the series. This might be an existing character or an original character fitting the series.'),
   class: z.string().describe('The class, role, or archetype of the character within the series (e.g., "Shinobi", "Alchemist", "Keyblade Wielder").'),
   description: z.string().describe('A brief backstory or description of the character, consistent with the series lore and their starting situation.'),
@@ -46,29 +46,30 @@ const CharacterProfileSchema = z.object({
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100.'),
 });
 
-const EquipmentSlotsSchema = z.object({
-  weapon: ItemSchema.nullable().optional().describe("Weapon slot. Null if empty."),
-  shield: ItemSchema.nullable().optional().describe("Shield slot. Null if empty."),
-  head: ItemSchema.nullable().optional().describe("Head slot. Null if empty."),
-  body: ItemSchema.nullable().optional().describe("Body slot. Null if empty."),
-  legs: ItemSchema.nullable().optional().describe("Legs slot. Null if empty."),
-  feet: ItemSchema.nullable().optional().describe("Feet slot. Null if empty."),
-  hands: ItemSchema.nullable().optional().describe("Hands slot. Null if empty."),
-  neck: ItemSchema.nullable().optional().describe("Neck slot. Null if empty."),
-  ring1: ItemSchema.nullable().optional().describe("Ring 1 slot. Null if empty."),
-  ring2: ItemSchema.nullable().optional().describe("Ring 2 slot. Null if empty."),
-}).describe("Character's equipped items. Initialize with null or series-appropriate starting gear. All 10 slots should be represented, with 'null' for empty ones.");
+const EquipmentSlotsSchemaInternal = z.object({
+  weapon: ItemSchemaInternal.nullable().optional().describe("Weapon slot. Null if empty."),
+  shield: ItemSchemaInternal.nullable().optional().describe("Shield slot. Null if empty."),
+  head: ItemSchemaInternal.nullable().optional().describe("Head slot. Null if empty."),
+  body: ItemSchemaInternal.nullable().optional().describe("Body slot. Null if empty."),
+  legs: ItemSchemaInternal.nullable().optional().describe("Legs slot. Null if empty."),
+  feet: ItemSchemaInternal.nullable().optional().describe("Feet slot. Null if empty."),
+  hands: ItemSchemaInternal.nullable().optional().describe("Hands slot. Null if empty."),
+  neck: ItemSchemaInternal.nullable().optional().describe("Neck slot. Null if empty."),
+  ring1: ItemSchemaInternal.nullable().optional().describe("Ring 1 slot. Null if empty."),
+  ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
+}).describe("Character's equipped items. Initialize with null or series-appropriate starting gear. All 10 slots should be represented, with 'null' for empty ones. This object MUST contain all 10 slot keys.");
 
-const StructuredStoryStateSchema = z.object({
-  character: CharacterProfileSchema,
+
+const StructuredStoryStateSchemaInternal = z.object({
+  character: CharacterProfileSchemaInternal,
   currentLocation: z.string().describe('A specific starting location from the series relevant to the initial scene.'),
-  inventory: z.array(ItemSchema).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description, and optionally equipSlot. Can be empty.'),
-  equippedItems: EquipmentSlotsSchema,
+  inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description, and optionally equipSlot. Can be empty.'),
+  equippedItems: EquipmentSlotsSchemaInternal,
   activeQuests: z.array(z.string()).describe('One or two initial quest descriptions that fit the series and starting scenario.'),
   worldFacts: z.array(z.string()).describe('A few (2-3) key world facts from the series relevant to the start of the story.'),
 });
 
-const RawLoreEntrySchema = z.object({
+const RawLoreEntrySchemaInternal = z.object({
   keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
   content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
   category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept')."),
@@ -80,12 +81,12 @@ const GenerateScenarioFromSeriesInputSchema = z.object({
 });
 export type GenerateScenarioFromSeriesInput = z.infer<typeof GenerateScenarioFromSeriesInputSchema>;
 
-const GenerateScenarioFromSeriesOutputSchema = z.object({
+const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The engaging initial scene description that sets up the story in the chosen series.'),
-  storyState: StructuredStoryStateSchema.describe('The complete initial structured state of the story, tailored to the series.'),
-  initialLoreEntries: z.array(RawLoreEntrySchema).describe('An array of 5-10 key lore entries (characters, locations, concepts) from the series to pre-populate the lorebook. Ensure content is accurate to the series.'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, tailored to the series.'),
+  initialLoreEntries: z.array(RawLoreEntrySchemaInternal).describe('An array of 5-10 key lore entries (characters, locations, concepts) from the series to pre-populate the lorebook. Ensure content is accurate to the series.'),
 });
-export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFromSeriesOutputSchema>;
+export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFromSeriesOutputSchemaInternal>;
 
 
 export async function generateScenarioFromSeries(input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> {
@@ -95,7 +96,7 @@ export async function generateScenarioFromSeries(input: GenerateScenarioFromSeri
 const prompt = ai.definePrompt({
   name: 'generateScenarioFromSeriesPrompt',
   input: {schema: GenerateScenarioFromSeriesInputSchema},
-  output: {schema: GenerateScenarioFromSeriesOutputSchema},
+  output: {schema: GenerateScenarioFromSeriesOutputSchemaInternal},
   prompt: `You are a master storyteller and game designer, tasked with creating an immersive starting scenario for an interactive text adventure based on the series: "{{seriesName}}".
 
 Your goal is to generate:
@@ -118,6 +119,8 @@ Your goal is to generate:
     *   'content': A concise (2-3 sentences) and accurate description of the keyword according to "{{seriesName}}" lore.
     *   'category': (Optional) e.g., 'Character', 'Location', 'Ability', 'Organization'.
 
+**Crucially:** If the \`sceneDescription\` mentions the character starting with a specific item in hand (like a weapon) or wearing a piece of gear, ensure that item is properly defined as an \`Item\` object (with a unique 'id', 'name', 'description', and 'equipSlot' if applicable) and placed in the correct slot within \`storyState.equippedItems\`. If the item is merely nearby or just found, it should be in \`storyState.inventory\`. Be consistent between the narrative and the structured state.
+
 Ensure all generated content is faithful to the tone, style, and established lore of "{{seriesName}}".
 The entire response must strictly follow the JSON schema for the output.
 Make sure all IDs for items are unique.
@@ -129,7 +132,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
   {
     name: 'generateScenarioFromSeriesFlow',
     inputSchema: GenerateScenarioFromSeriesInputSchema,
-    outputSchema: GenerateScenarioFromSeriesOutputSchema,
+    outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal,
   },
   async (input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
     const {output} = await prompt(input);
@@ -177,3 +180,4 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return output!;
   }
 );
+
