@@ -2,15 +2,20 @@
 "use client";
 
 import * as React from "react";
-import type { CharacterProfile, StructuredStoryState, Item } from "@/types/story";
+import type { CharacterProfile, StructuredStoryState, Item, EquipmentSlot } from "@/types/story";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label"; // Changed from custom Label
+import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon, AwardIcon, GaugeIcon } from "lucide-react";
+import { 
+    PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, 
+    DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon, AwardIcon, 
+    GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
+    FootprintsIcon, HandIcon, CircleEllipsisIcon
+} from "lucide-react";
 
 interface CharacterSheetProps {
   character: CharacterProfile;
@@ -26,6 +31,29 @@ const StatDisplay: React.FC<{ icon: React.ElementType, label: string, value?: nu
     <span className="text-sm text-muted-foreground">{value ?? 'N/A'}</span>
   </div>
 );
+
+const equipmentSlotDisplayOrder: EquipmentSlot[] = [
+  'weapon', 'shield', 'head', 'body', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2'
+];
+
+const equipmentSlotIcons: Record<EquipmentSlot, React.ElementType> = {
+  weapon: SwordsIcon,
+  shield: ShieldIcon,
+  head: UserSquareIcon, // Using UserSquareIcon as a placeholder for headwear
+  body: ShirtIcon,
+  legs: CircleEllipsisIcon, // Placeholder
+  feet: FootprintsIcon,
+  hands: HandIcon,
+  neck: GemIcon, // Placeholder for amulet/necklace
+  ring1: CircleEllipsisIcon, // Placeholder
+  ring2: CircleEllipsisIcon, // Placeholder
+};
+
+function getSlotDisplayName(slot: EquipmentSlot): string {
+  if (slot === 'ring1') return 'Ring 1';
+  if (slot === 'ring2') return 'Ring 2';
+  return slot.charAt(0).toUpperCase() + slot.slice(1);
+}
 
 
 export default function CharacterSheet({ character, storyState }: CharacterSheetProps) {
@@ -106,13 +134,45 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
         
         <Separator />
 
+        <div>
+          <h4 className="font-semibold mb-2 text-md">Equipment</h4>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            {equipmentSlotDisplayOrder.map(slot => {
+              const equippedItem = storyState.equippedItems?.[slot];
+              const SlotIcon = equipmentSlotIcons[slot] || CircleEllipsisIcon;
+              return (
+                <div key={slot} className="flex items-center">
+                  <SlotIcon className="w-4 h-4 mr-1.5 text-primary" />
+                  <span className="font-medium mr-1">{getSlotDisplayName(slot)}:</span>
+                  {equippedItem ? (
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-foreground cursor-help hover:text-primary transition-colors truncate">{equippedItem.name}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="start">
+                          <p className="text-sm max-w-xs">{equippedItem.description}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span className="text-muted-foreground italic">Empty</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <Separator />
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm pt-1">
           <div>
             <h4 className="font-semibold mb-1 flex items-center"><MapPinIcon className="w-4 h-4 mr-1.5 text-primary" />Location</h4>
             <p className="text-muted-foreground">{storyState.currentLocation}</p>
           </div>
           <div>
-            <h4 className="font-semibold mb-1 flex items-center"><PackageIcon className="w-4 h-4 mr-1.5 text-primary" />Inventory</h4>
+            <h4 className="font-semibold mb-1 flex items-center"><PackageIcon className="w-4 h-4 mr-1.5 text-primary" />Inventory (Unequipped)</h4>
             {storyState.inventory.length > 0 ? (
               <ScrollArea className="h-20 rounded-md border p-2">
                 <ul className="list-disc list-inside pl-2 space-y-1">
@@ -121,7 +181,10 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                       <TooltipProvider delayDuration={100}>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="cursor-help font-medium text-foreground hover:text-primary transition-colors">{item.name}</span>
+                            <span className="cursor-help font-medium text-foreground hover:text-primary transition-colors">
+                              {item.name}
+                              {item.equipSlot && <Badge variant="outline" className="ml-1 text-xs">({item.equipSlot})</Badge>}
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent side="top" align="start">
                             <p className="text-sm max-w-xs">{item.description}</p>

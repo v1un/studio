@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, and XP.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, and equipped items.
  *
  * - generateNextScene - A function that takes the current story state and user input, and returns the next scene and updated state.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
@@ -11,11 +11,16 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import type { EquipmentSlot } from '@/types/story';
+
+const EquipSlotEnum = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
+  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
 
 const ItemSchema = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
   name: z.string().describe("The name of the item."),
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
+  equipSlot: EquipSlotEnum.optional().describe("If the item is equippable, specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If not equippable, omit this field."),
 });
 export type Item = z.infer<typeof ItemSchema>;
 
@@ -40,11 +45,26 @@ const CharacterProfileSchema = z.object({
 });
 export type CharacterProfile = z.infer<typeof CharacterProfileSchema>;
 
+const EquipmentSlotsSchema = z.record(z.nativeEnum(Object.values({ // Define enum for Zod validation
+  Weapon: 'weapon',
+  Shield: 'shield',
+  Head: 'head',
+  Body: 'body',
+  Legs: 'legs',
+  Feet: 'feet',
+  Hands: 'hands',
+  Neck: 'neck',
+  Ring1: 'ring1',
+  Ring2: 'ring2',
+} as const satisfies Record<string, EquipmentSlot>)), ItemSchema.nullable())
+  .describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty.");
+
 
 const StructuredStoryStateSchema = z.object({
   character: CharacterProfileSchema.describe('The profile of the main character, including core stats, level, and XP.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchema).describe('A list of items in the character\'s inventory. Each item is an object with id, name, and description.'),
+  inventory: z.array(ItemSchema).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and optionally equipSlot.'),
+  equippedItems: EquipmentSlotsSchema,
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
 });
@@ -54,18 +74,29 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchema>;
 const GenerateNextSceneInputSchema = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchema.describe('The current structured state of the story (character, location, inventory, XP, etc.).'),
+  storyState: StructuredStoryStateSchema.describe('The current structured state of the story (character, location, inventory, equipped items, XP, etc.).'),
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema>;
 
 const GenerateNextSceneOutputSchema = z.object({
   nextScene: z.string().describe('The generated text for the next scene.'),
-  updatedStoryState: StructuredStoryStateSchema.describe('The updated structured story state after the scene, including any XP or level changes.'),
+  updatedStoryState: StructuredStoryStateSchema.describe('The updated structured story state after the scene, including any XP, level changes, inventory changes, and equipment changes.'),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchema>;
 
 export async function generateNextScene(input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> {
   return generateNextSceneFlow(input);
+}
+
+// Helper function to render equipped items for the prompt
+function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, Item | null>>): string {
+  let output = "";
+  const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
+  for (const slot of slots) {
+    const item = equippedItems[slot];
+    output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${item ? item.name : 'Empty'}\n`;
+  }
+  return output.trim();
 }
 
 const prompt = ai.definePrompt({
@@ -93,12 +124,15 @@ Current Character:
   - Wisdom: {{storyState.character.wisdom}}
   - Charisma: {{storyState.character.charisma}}
 
+Equipped Items:
+{{{formatEquippedItems storyState.equippedItems}}}
+
 Current Location: {{storyState.currentLocation}}
 
-Current Inventory:
+Current Inventory (Unequipped Items):
 {{#if storyState.inventory.length}}
 {{#each storyState.inventory}}
-- {{this.name}} (ID: {{this.id}}): {{this.description}}
+- {{this.name}} (ID: {{this.id}}): {{this.description}} {{#if this.equipSlot}}(Equippable: {{this.equipSlot}}){{/if}}
 {{/each}}
 {{else}}
 Empty
@@ -113,32 +147,40 @@ Known World Facts:
 - None known.
 {{/each}}
 
-Based on the current scene, the player's input, and the detailed story state above, generate the next scene.
-Your generated scene should consider the character's stats. For example, a high Strength character might succeed at forcing a door, while a high Intelligence character might solve a riddle.
+Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. An item's 'equipSlot' property determines where it can go. 'ring' items can go in 'ring1' or 'ring2'.
+
+Based on the current scene, player's input, and detailed story state, generate the next scene.
 Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
 
 Crucially, you must also update the story state. This includes:
-- Character:
-  - Update health if they took damage or healed. Update mana if spells were cast or mana was restored. Max health/mana should generally remain the same unless a significant event occurs.
-  - Core stats (Strength, etc.) should generally remain unchanged unless a very significant, transformative event happens that explicitly justifies a permanent stat change OR if a level up occurs that grants stat increases (for now, level ups do NOT grant stat increases, only increase level number and XP threshold).
-  - Update \`experiencePoints\` if the character gained experience from the scene (e.g., for overcoming challenges, clever solutions, or quest progression). Describe any XP gain clearly in the \`nextScene\` text.
-  - If \`experiencePoints\` reach or exceed \`experienceToNextLevel\`:
-    - Increment \`level\` by 1.
-    - The \`experiencePoints\` should carry over the excess (e.g., if current XP is 80, XP to next is 100, and they gain 30 XP, the new XP becomes 10 (80+30-100=10)).
-    - Set a new, higher \`experienceToNextLevel\` (e.g., current \`experienceToNextLevel\` * 1.5, rounded down, or a similar logical progression like adding 50 or 100).
-    - Clearly narrate the level-up event in the \`nextScene\` text.
-    - For now, do not change core stats (Strength, Dexterity etc.) on level up, only level, XP, and XP to next level. Max health/mana might increase slightly if you deem it narratively appropriate for a level up.
+- Character: Update health, mana, XP, and level as needed.
 - Location: Update if the character moved.
 - Inventory:
-  - If new items are found: Add them as objects to the \`inventory\` array in \`updatedStoryState\`. Each item object **must** have a unique \`id\`, a \`name\`, and a \`description\`. Describe these new items clearly in the \`nextScene\` text.
-  - If items are used, consumed, or lost: Remove the corresponding item object(s) from the \`inventory\` array.
-- Active Quests: Update if a quest progressed, was completed, or a new one started.
-- World Facts: Add, modify, or remove facts based on what happened or was discovered.
+  - If new items are found: Add them as objects to the \`inventory\` array (unequipped items). Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`, and if equippable, an 'equipSlot'. Describe these new items clearly in the \`nextScene\` text.
+  - If items are used, consumed, or lost: Remove them from \`inventory\` or \`equippedItems\` as appropriate.
+- Equipped Items:
+  - If the player tries to equip an item (e.g., "equip rusty sword", "wear leather helmet"):
+    1. Find the item in the \`inventory\`. If not found, state that the player doesn't have it.
+    2. Check if the item has an \`equipSlot\` property. If not, state it's not equippable.
+    3. Determine the target slot. For 'ring' items, try 'ring1' first, then 'ring2' if 'ring1' is full.
+    4. If the target slot is already occupied by another item, move the currently equipped item from \`equippedItems[slot]\` back to the \`inventory\` array.
+    5. Move the item to be equipped from the \`inventory\` array to \`equippedItems[slot]\`. The \`inventory\` array should no longer contain this item.
+    6. Narrate the action (e.g., "You equip the Rusty Sword. The Dagger is moved to your inventory.").
+  - If the player tries to unequip an item (e.g., "remove helmet", "unequip shield"):
+    1. Find the item in the relevant slot in \`equippedItems\`. If the slot is empty or item not found, state so.
+    2. Move the item from \`equippedItems[slot]\` to the \`inventory\` array.
+    3. Set \`equippedItems[slot]\` to null.
+    4. Narrate the action (e.g., "You remove the Battered Shield and put it in your pack.").
+  - Ensure an item is either in \`inventory\` OR \`equippedItems\`, never both.
+- Active Quests & World Facts: Update as necessary.
 
 The next scene should logically follow the player's input and advance the narrative.
-Ensure your entire response strictly adheres to the JSON schema defined for the output, providing 'nextScene' and the complete 'updatedStoryState' object.
-The 'updatedStoryState.character' must include all fields, including 'level', 'experiencePoints', and 'experienceToNextLevel'.
+Ensure your entire response strictly adheres to the JSON schema for the output.
+The 'updatedStoryState.character' must include all fields.
+The 'updatedStoryState.inventory' must be an array of item objects.
+The 'updatedStoryState.equippedItems' must be an object mapping all slot names to either an item object or null.
 `,
+  helpers: { formatEquippedItems }
 });
 
 const generateNextSceneFlow = ai.defineFlow(
@@ -152,7 +194,6 @@ const generateNextSceneFlow = ai.defineFlow(
     if (output?.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
-      // Default existing stats if AI omits them
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
@@ -161,16 +202,12 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.intelligence = updatedChar.intelligence ?? originalChar.intelligence ?? 10;
       updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
       updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
-
-      // Default new progression fields if AI omits them
       updatedChar.level = updatedChar.level ?? originalChar.level ?? 1;
       updatedChar.experiencePoints = updatedChar.experiencePoints ?? originalChar.experiencePoints ?? 0;
       updatedChar.experienceToNextLevel = updatedChar.experienceToNextLevel ?? originalChar.experienceToNextLevel ?? 100;
-
-      // Basic sanity check for experienceToNextLevel
       if (updatedChar.experienceToNextLevel <= 0) {
          updatedChar.experienceToNextLevel = (originalChar.experienceToNextLevel > 0 ? originalChar.experienceToNextLevel : 100) * 1.5;
-         if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints && updatedChar.experiencePoints > 0) { // ensure it's higher than current XP if possible
+         if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints && updatedChar.experiencePoints > 0) {
             updatedChar.experienceToNextLevel = updatedChar.experiencePoints + 50;
          }
       }
@@ -179,6 +216,17 @@ const generateNextSceneFlow = ai.defineFlow(
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
         output.updatedStoryState.activeQuests = output.updatedStoryState.activeQuests ?? [];
         output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts ?? [];
+        
+        const defaultEquippedItems: Partial<Record<EquipmentSlot, Item | null>> = {
+            weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
+        };
+        // Ensure all slots are present, merging with AI output
+        const aiEquipped = output.updatedStoryState.equippedItems || {};
+        const newEquippedItems: Partial<Record<EquipmentSlot, Item | null>> = {};
+        for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
+            newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
+        }
+        output.updatedStoryState.equippedItems = newEquippedItems;
     }
     return output!;
   }
