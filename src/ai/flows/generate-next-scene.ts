@@ -2,9 +2,9 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context. It also allows the AI to propose new lore entries and updates a running story summary.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context. It also allows the AI to propose new lore entries, updates a running story summary, and handles character leveling.
  *
- * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, potentially new lore, and an updated story summary.
+ * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, potentially new lore, an updated story summary, and handles character progression.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
  * - GenerateNextSceneOutput - The return type for the generateNextScene function.
  */
@@ -157,7 +157,7 @@ const RawLoreEntrySchemaInternal = z.object({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes, inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including potential short-term goal changes), new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes (including potential stat/skill grant from level up), inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including potential short-term goal changes), new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
   newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'."),
   updatedStorySummary: z.string().describe("The new running summary of the story, concisely incorporating key events, decisions, and consequences from this scene, building upon the previous summary."),
@@ -375,7 +375,11 @@ While respecting player choices is paramount, ensure the story remains coherent 
   - Consider giving NPCs distinct mannerisms or ways of speaking, fitting the "{{seriesName}}" context.
 - If distinct NPCs were active in the scene you generate, populate 'activeNPCsInScene' array in the output.
 
-**Item Interaction & Utility:**
+**Environmental Interaction & Item Use:**
+- If the player's input suggests interacting with specific objects in the environment (e.g., 'search the desk', 'examine the painting', 'open the chest', 'read the book', 'climb the tree', 'hide behind the rock'), narrate the outcome of this action in the 'nextScene'.
+- If an item is found as a result of such interaction, add it to \`updatedStoryState.inventory\`.
+- If a new piece of information is discovered, add it to \`updatedStoryState.worldFacts\`.
+- If the interaction directly progresses or completes a quest objective, update the relevant quest in \`updatedStoryState.quests\`.
 - **Using Consumable Items:** If the player's input indicates they are using an item from their \`inventory\` and that item has \`isConsumable: true\`:
   - Narrate the item being consumed.
   - Remove one instance of the item from the \`updatedStoryState.inventory\`.
@@ -395,8 +399,19 @@ While respecting player choices is paramount, ensure the story remains coherent 
 - **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences. If a significant \`worldFact\` is added or changed (e.g., 'The ancient artifact is recovered,' 'The bandit leader is defeated'), describe how this impacts the \`currentLocation\`, NPC behaviors, or available dialogue and actions. The world should feel responsive. Describe tangible consequences or changes in the environment or NPC behavior due to significant \`worldFacts\` updates.
 
 **Character Progression:**
-- **Learning New Skills:** As a reward for completing significant quests, achieving major story milestones, or through specific interactions (e.g., finding a rare tome, being taught by a master NPC), you can award the character a new skill. Add this new skill object (with a unique \`id\`, \`name\`, \`description\`, and series-appropriate \`type\`) to \`updatedStoryState.character.skillsAndAbilities\`. Narrate how the character learned or acquired this new skill.
-- **Stat Increases (Rare):** For exceptionally impactful achievements or the use of powerful, unique artifacts, you may grant a small, permanent increase (e.g., +1) to one of the character's core stats (Strength, Dexterity, etc.). This should be rare. Clearly state the stat and the increase in your narration and update it in \`updatedStoryState.character\`.
+- **Learning New Skills (General):** As a reward for completing significant quests, achieving major story milestones, or through specific interactions (e.g., finding a rare tome, being taught by a master NPC), you can award the character a new skill. Add this new skill object (with a unique \`id\`, \`name\`, \`description\`, and series-appropriate \`type\`) to \`updatedStoryState.character.skillsAndAbilities\`. Narrate how the character learned or acquired this new skill.
+- **Stat Increases (Rare, General):** For exceptionally impactful achievements or the use of powerful, unique artifacts, you may grant a small, permanent increase (e.g., +1) to one of the character's core stats (Strength, Dexterity, etc.). This should be rare. Clearly state the stat and the increase in your narration and update it in \`updatedStoryState.character\`.
+- **Leveling Up:**
+    - When \`character.experiencePoints\` meets or exceeds \`character.experienceToNextLevel\`, a level up occurs.
+    - In \`updatedStoryState.character\`, you MUST:
+        1. Increment \`level\` by 1.
+        2. Update \`experiencePoints\` by subtracting the \`experienceToNextLevel\` value of the *previous* level (e.g., \`newXP = currentXP - oldXpToNextLevel\`). This means excess XP carries over.
+        3. Calculate and set a new, higher \`experienceToNextLevel\` (e.g., multiply the old \`experienceToNextLevel\` by 1.5 or a similar scaling factor, then round it. Ensure it's always greater than current \`experiencePoints\`).
+    - As a reward for leveling up, you MUST also grant ONE of the following:
+        A. A small, permanent increase (typically +1) to one of the character's core stats (Strength, Dexterity, Constitution, Intelligence, Wisdom, or Charisma).
+        OR
+        B. Award the character one new skill (add a new skill object to \`character.skillsAndAbilities\` with a unique ID, name, description, and type).
+    - Clearly narrate the level up event, the stat increase (if any), or the new skill learned (if any) in the \`nextScene\` text.
 
 **Lore Discovery & Generation:**
 - If the 'nextScene' reveals significant new information about a character, location, item, concept, or event that is not already common knowledge (you can use \`lookupLoreTool\` for very common terms if unsure), and this information feels like it should be recorded for long-term reference, you can propose a new lore entry.
@@ -405,9 +420,8 @@ While respecting player choices is paramount, ensure the story remains coherent 
 - The system will handle adding these to the main lorebook.
 
 Crucially, you must also update the story state. This includes:
-- Character: Update all character fields as necessary, **including effects from skills, items, and progression.**
+- Character: Update all character fields as necessary, **including effects from skills, items, and progression (especially level ups).**
   - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats.
-  - If a quest is completed, this is a good time to award experience points (update \`character.experiencePoints\`) and potentially increase stats if a level up occurs. Note: The system applies XP from quest rewards automatically, but you can narrate other XP gains.
   - **Skills & Abilities**: The character's \`skillsAndAbilities\` array should be updated if they learn a new skill or an existing one changes. New skills should have a unique \`id\`, \`name\`, \`description\`, and \`type\`.
 - Location: Update if the character moved.
 - Inventory:
@@ -507,13 +521,14 @@ const generateNextSceneFlow = ai.defineFlow(
       }
     }
 
-    // Character post-processing
+    // Character post-processing, including Level Up mechanics
     if (output.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
+
+      // Default values for optional stats
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
-
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
       updatedChar.dexterity = updatedChar.dexterity ?? originalChar.dexterity ?? 10;
       updatedChar.constitution = updatedChar.constitution ?? originalChar.constitution ?? 10;
@@ -521,19 +536,44 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
       updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
       
+      // Level up check and mechanics - AI is instructed to handle this, but we ensure mechanics are sound.
+      let originalXpToNextLevel = originalChar.experienceToNextLevel;
+      if (originalXpToNextLevel <=0) originalXpToNextLevel = 100; // Fallback if somehow invalid
+
+      // The AI should set the new level, new XP, and new XPToNextLevel.
+      // We will validate and adjust experienceToNextLevel if AI's calculation is problematic.
       updatedChar.level = updatedChar.level ?? originalChar.level ?? 1;
       updatedChar.experiencePoints = updatedChar.experiencePoints ?? originalChar.experiencePoints ?? 0;
       updatedChar.experienceToNextLevel = updatedChar.experienceToNextLevel ?? originalChar.experienceToNextLevel ?? 100;
-      if (updatedChar.experienceToNextLevel <= 0) {
-         updatedChar.experienceToNextLevel = (originalChar.experienceToNextLevel > 0 ? originalChar.experienceToNextLevel : 100) * 1.5;
-         if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints && updatedChar.experiencePoints > 0) {
-            updatedChar.experienceToNextLevel = updatedChar.experiencePoints + 50;
+
+      // If AI indicates a level up by increasing the level number, or if XP threshold was met
+      const didLevelUp = updatedChar.level > originalChar.level || 
+                         (originalChar.experiencePoints >= originalXpToNextLevel && updatedChar.level === originalChar.level +1);
+
+      if (didLevelUp && updatedChar.level === originalChar.level + 1) { // Confirmed level up by one level
+        // Ensure XP is correctly adjusted if AI didn't do it or did it differently
+        if(updatedChar.experiencePoints >= originalXpToNextLevel) { // If AI gave XP that also crosses the threshold
+            updatedChar.experiencePoints = originalChar.experiencePoints - originalXpToNextLevel;
+        }
+        // Ensure new XPToNextLevel is reasonable.
+        // AI is instructed to set this, but we can override if it's nonsensical.
+        const expectedNewXpToNextLevel = Math.floor(originalXpToNextLevel * 1.5);
+        if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints || updatedChar.experienceToNextLevel < originalXpToNextLevel) {
+           updatedChar.experienceToNextLevel = expectedNewXpToNextLevel > updatedChar.experiencePoints 
+                                              ? expectedNewXpToNextLevel 
+                                              : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevel * 0.5));
+        }
+      } else {
+         // If no level up, ensure experienceToNextLevel is at least the original or a sane default if it got messed up
+         if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel < updatedChar.experiencePoints) {
+            updatedChar.experienceToNextLevel = originalXpToNextLevel > updatedChar.experiencePoints ? originalXpToNextLevel : updatedChar.experiencePoints + 50;
          }
       }
+      
       updatedChar.skillsAndAbilities = updatedChar.skillsAndAbilities ?? originalChar.skillsAndAbilities ?? [];
       const skillIdSet = new Set<string>();
       updatedChar.skillsAndAbilities.forEach((skill, index) => {
-        if (!skill.id || skillIdSet.has(skill.id)) { 
+        if (!skill.id || skill.id.trim() === "" || skillIdSet.has(skill.id)) { 
             let baseId = `skill_generated_next_${skill.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
             let newId = baseId;
             let counter = 0;
@@ -551,10 +591,17 @@ const generateNextSceneFlow = ai.defineFlow(
 
      if (output.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
-        output.updatedStoryState.inventory.forEach(item => {
-          if (!item.id) {
-            item.id = `item_generated_inv_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const invItemIds = new Set<string>();
+        output.updatedStoryState.inventory.forEach((item, index) => {
+          if (!item.id || item.id.trim() === "" || invItemIds.has(item.id)) {
+            let baseId = `item_generated_inv_next_${Date.now()}_${Math.random().toString(36).substring(7)}_${index}`;
+            let newId = baseId;
+            let counter = 0;
+            while(invItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+            item.id = newId;
           }
+          invItemIds.add(item.id);
+
           if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
             delete (item as Partial<ItemType>).equipSlot;
           }
@@ -565,10 +612,17 @@ const generateNextSceneFlow = ai.defineFlow(
         });
 
         output.updatedStoryState.quests = output.updatedStoryState.quests ?? [];
+        const questIds = new Set<string>();
         output.updatedStoryState.quests.forEach((quest, index) => {
-          if (!quest.id) {
-            quest.id = `quest_generated_next_${Date.now()}_${index}`;
+          if (!quest.id || quest.id.trim() === "" || questIds.has(quest.id)) {
+            let baseId = `quest_generated_next_${Date.now()}_${index}`;
+            let newId = baseId;
+            let counter = 0;
+            while(questIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+            quest.id = newId;
           }
+          questIds.add(quest.id);
+
           if (!quest.status) {
             quest.status = 'active';
           }
@@ -593,9 +647,17 @@ const generateNextSceneFlow = ai.defineFlow(
             if (quest.rewards.items && Array.isArray(quest.rewards.items)) {
               quest.rewards.items.forEach(rewardItem => {
                 const cleanedRewardItem = { ...rewardItem };
-                 if (!cleanedRewardItem.id) {
-                    cleanedRewardItem.id = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                const rewardItemIds = new Set<string>();
+                 if (!cleanedRewardItem.id || cleanedRewardItem.id.trim() === "" || rewardItemIds.has(cleanedRewardItem.id) || invItemIds.has(cleanedRewardItem.id)) {
+                    let baseId = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                    let newId = baseId;
+                    let counter = 0;
+                    while(rewardItemIds.has(newId) || invItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+                    cleanedRewardItem.id = newId;
                 }
+                rewardItemIds.add(cleanedRewardItem.id);
+                invItemIds.add(cleanedRewardItem.id); // Also add to main inventory ID set
+
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
                   delete (cleanedRewardItem as Partial<ItemType>).equipSlot;
                 }
@@ -611,10 +673,17 @@ const generateNextSceneFlow = ai.defineFlow(
 
           if (quest.rewards) {
             quest.rewards.items = quest.rewards.items ?? [];
-             quest.rewards.items.forEach(rewardItem => {
-                if (!rewardItem.id) {
-                    rewardItem.id = `item_reward_next_def_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+            const rewardDefItemIds = new Set<string>();
+             quest.rewards.items.forEach((rewardItem, rIndex) => {
+                if (!rewardItem.id || rewardItem.id.trim() === "" || rewardDefItemIds.has(rewardItem.id)) {
+                    let baseId = `item_reward_next_def_${Date.now()}_${Math.random().toString(36).substring(7)}_${rIndex}`;
+                    let newId = baseId;
+                    let counter = 0;
+                    while(rewardDefItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+                    rewardItem.id = newId;
                 }
+                rewardDefItemIds.add(rewardItem.id);
+
                 if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
                     delete (rewardItem as Partial<ItemType>).equipSlot;
                 }
@@ -642,19 +711,27 @@ const generateNextSceneFlow = ai.defineFlow(
 
         const aiEquipped = output.updatedStoryState.equippedItems || {};
         const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
+        const equippedItemIds = new Set<string>();
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
             newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
             if (newEquippedItems[slotKey]) {
-                if (!newEquippedItems[slotKey]!.id) {
-                     newEquippedItems[slotKey]!.id = `item_equipped_next_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                const item = newEquippedItems[slotKey]!;
+                if (!item.id || item.id.trim() === "" || equippedItemIds.has(item.id) || invItemIds.has(item.id)) {
+                     let baseId = `item_equipped_next_${Date.now()}_${Math.random().toString(36).substring(7)}_${slotKey}`;
+                     let newId = baseId;
+                     let counter = 0;
+                     while(equippedItemIds.has(newId) || invItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+                     item.id = newId;
                 }
-                if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
-                  delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+                equippedItemIds.add(item.id);
+
+                if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
+                  delete (item as Partial<ItemType>)!.equipSlot;
                 }
-                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
-                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
-                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
-                delete (newEquippedItems[slotKey] as Partial<ItemType>)!.relevantQuestId;
+                delete (item as Partial<ItemType>)!.isConsumable;
+                delete (item as Partial<ItemType>)!.effectDescription;
+                delete (item as Partial<ItemType>)!.isQuestItem;
+                delete (item as Partial<ItemType>)!.relevantQuestId;
             }
         }
         output.updatedStoryState.equippedItems = newEquippedItems as any;
@@ -665,7 +742,7 @@ const generateNextSceneFlow = ai.defineFlow(
 
         output.updatedStoryState.trackedNPCs.forEach((npc) => {
             let currentNpcId = npc.id;
-            if (!currentNpcId || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
+            if (!currentNpcId || currentNpcId.trim() === "" || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
                  let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
                  let newId = baseId;
                  let counter = 0;
@@ -736,6 +813,7 @@ const generateNextSceneFlow = ai.defineFlow(
     
     output.newLoreEntries = output.newLoreEntries && Array.isArray(output.newLoreEntries) ? output.newLoreEntries : undefined;
     if (output.newLoreEntries) {
+        output.newLoreEntries = output.newLoreEntries.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "");
         output.newLoreEntries.forEach(lore => {
             if (lore.category === null || (lore.category as unknown) === '') {
                 delete lore.category;
@@ -750,3 +828,6 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
+
+
+    
