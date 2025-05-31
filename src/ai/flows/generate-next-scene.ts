@@ -11,7 +11,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z}from 'genkit';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
 
@@ -139,7 +139,7 @@ const StructuredStoryStateSchemaInternal = z.object({
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInternal>;
 
 const GenerateNextSceneInputSchemaInternal = z.object({
-  currentScene: z.string().describe('The current scene text.'),
+  currentScene: z.string().describe('The current scene text or a summary of the last GM message. This provides context for the AI.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
   storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, currency, quests, worldFacts, trackedNPCs, skills/abilities, storySummary etc.).'),
   seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
@@ -167,8 +167,16 @@ const RawLoreEntrySchemaInternal = z.object({
   category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
 });
 
+// New Schema for AI's structured message output
+const AIMessageSegmentSchemaInternal = z.object({
+  speaker: z.string().describe("Use 'GM' for general narration, world descriptions, or outcomes of player actions. For Non-Player Character dialogue, use the NPC's exact name as defined in `trackedNPCs` (e.g., 'Elara the Wise', 'Guard Captain Rex'). Ensure the NPC name matches an existing tracked NPC if they are speaking."),
+  content: z.string().describe("The narrative text or the NPC's spoken dialogue. Keep segments relatively focused; if GM narration shifts to NPC dialogue, or one NPC stops speaking and another starts, create a new message segment."),
+});
+
+
 const GenerateNextSceneOutputSchemaInternal = z.object({
-  nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
+  // nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
+  generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("An array of message segments that constitute the AI's response. This should include all narration and NPC dialogue, broken down by speaker."),
   updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, currency, level changes (including potential stat/skill grant from level up), inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including merchant status, inventory changes, potential short-term goal changes), new skills, or stat increases. Rewards for completed quests (including currency) are applied automatically. Items should always include a basePrice.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
   newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'."),
@@ -248,7 +256,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         if (npc.isMerchant && npc.merchantInventory && npc.merchantInventory.length > 0) {
             npcStr += "\n  Wares for Sale:\n";
             npc.merchantInventory.forEach(item => {
-                npcStr += `    - ${item.name} (Price: ${(item as any).price ?? item.basePrice ?? 0}, ID: ${item.id})\n`; // Cast to any to access price
+                npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}, ID: ${item.id})\n`;
             });
         }
         if (npc.knownFacts && npc.knownFacts.length > 0) {
@@ -287,7 +295,7 @@ Story Summary So Far:
 The story has just begun.
 {{/if}}
 
-Current Scene Narrative:
+Context from Previous Scene/Messages (Summary):
 {{currentScene}}
 
 Player Input:
@@ -342,33 +350,44 @@ All items must have a 'basePrice'. When a merchant sells an item, it will have a
 
 If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore *within the "{{seriesName}}" universe*, use the 'lookupLoreTool' (providing the current 'seriesName' to it) to get more information about it. Integrate this information naturally into your response if relevant.
 
-Based on the current scene, player's input, detailed story state, and the story summary so far, generate the 'nextScene' text.
+**Output Format - IMPORTANT:**
+Your response MUST be structured to produce a 'generatedMessages' array. Each element in this array is an object with two fields: 'speaker' and 'content'.
+- 'speaker': Use 'GM' for general narration, world descriptions, or outcomes of player actions. For Non-Player Character dialogue, use the NPC's exact name as defined in the 'Tracked NPCs' list (e.g., if an NPC is named "Elara the Wise", use "Elara the Wise" as the speaker).
+- 'content': The narrative text or the NPC's spoken dialogue.
+Break down the scene into logical segments. If the GM narrates, then an NPC speaks, then the GM narrates again, this should result in three separate objects in the 'generatedMessages' array.
+
+Example of 'generatedMessages' output:
+[
+  { "speaker": "GM", "content": "The old tavern door creaks open, revealing a dimly lit room." },
+  { "speaker": "Innkeeper Borin", "content": "Well, well, what brings a traveler like you to my humble establishment on a night like this?" },
+  { "speaker": "GM", "content": "He gestures towards an empty stool at the bar." }
+]
 
 **Story Summary & Context:**
-You are provided with a \`storyState.storySummary\` of key past events. Use this summary to maintain long-term coherence. After generating the \`nextScene\`, you MUST provide an \`updatedStorySummary\` in the output. This new summary should concisely incorporate the most important developments, decisions, and consequences from the \`nextScene\` you just generated, appending to or refining the previous summary. Keep it brief (1-2 new sentences ideally) but informative. When updating the summary, pay special attention to: significant changes in relationships with key NPCs (especially if they become hostile or very friendly), major unresolved plot threads or new mysteries introduced, important items gained or lost if they have plot significance, and choices made by the player that had significant, lasting consequences.
+You are provided with a storyState.storySummary of key past events. Use this summary to maintain long-term coherence. After generating the generatedMessages, you MUST provide an updatedStorySummary in the output. This new summary should concisely incorporate the most important developments, decisions, and consequences from the messages you just generated, appending to or refining the previous summary. Keep it brief (1-2 new sentences ideally) but informative. When updating the summary, pay special attention to: significant changes in relationships with key NPCs (especially if they become hostile or very friendly), major unresolved plot threads or new mysteries introduced, important items gained or lost if they have plot significance, and choices made by the player that had significant, lasting consequences.
 
 **Narrative Integrity & Player Impact:**
-While respecting player choices is paramount, ensure the story remains coherent within the established \`{{seriesName}}\` universe and its \`{{seriesStyleGuide}}\`.
+While respecting player choices is paramount, ensure the story remains coherent within the established {{seriesName}} universe and its {{seriesStyleGuide}}.
 - If a player action severely contradicts core series lore, established character personalities (for canon characters), or the fundamental tone of the series in a way that would break immersion, gently guide the narrative. This could involve: narrating internal conflict for the character, introducing unexpected obstacles that make the out-of-character action difficult, or NPCs reacting with strong disbelief or opposition. The aim is collaborative storytelling.
-- If player actions lead to significant, logical consequences (e.g., alerting an entire city guard, angering a powerful entity), these consequences MUST be reflected in the \`nextScene\`, \`updatedStoryState\` (especially \`worldFacts\`, NPC statuses/goals, and quest states), and the \`updatedStorySummary\`.
+- If player actions lead to significant, logical consequences (e.g., alerting an entire city guard, angering a powerful entity), these consequences MUST be reflected in the generatedMessages, updatedStoryState (especially worldFacts, NPC statuses/goals, and quest states), and the updatedStorySummary.
 
 **Special Abilities Awareness:** Be mindful of unique, potent character abilities listed in their profile, such as those involving fate, time, or death (e.g., 'Return by Death').
 
 **Narrating Character Failure with such Skills:** If a character possesses an ability like 'Return by Death' and the narrative leads to a situation that would typically be a permanent character death or an irreversible, catastrophic failure for others:
 - Do not abruptly end the story or declare a definitive 'game over' for that character.
-- Instead, your narrative should:
-    1. Describe the 'fatal' event or failure vividly.
+- Instead, your narrative (in 'generatedMessages') should:
+    1. Describe the 'fatal' event or failure vividly (as 'GM' speaker).
     2. Then, transition the narrative to describe the character's experience of 'returning' or time rewinding. They should explicitly retain memories and knowledge from the 'failed' timeline.
     3. The story should then resume from a narratively coherent 'checkpoint' or a point just before the critical failure, with the character now possessing this foreknowledge.
 - Subtly reflect any emotional toll or consequences of such a return in the character's state or your descriptive text (e.g., 'Subaru awoke with a gasp, the phantom pain still fresh, the events of the last hour seared into his mind. He was back at the market stall, moments before...').
-- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \`worldFacts\` like 'The Witch's Scent around you feels stronger', or affecting NPC \`relationshipStatus\` or \`shortTermGoal\` if they are sensitive to it; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
+- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new worldFacts like 'The Witch's Scent around you feels stronger', or affecting NPC relationshipStatus or shortTermGoal if they are sensitive to it; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
 
 **Skill Usage & Effects:**
-- If the player's input indicates they are using one of their listed \`skillsAndAbilities\`:
-  - Consult the skill's \`name\` and \`description\` from their profile.
-  - Narrate the skill's activation and its immediate consequences clearly.
+- If the player's input indicates they are using one of their listed skillsAndAbilities:
+  - Consult the skill's name and description from their profile.
+  - Narrate the skill's activation and its immediate consequences clearly in 'generatedMessages' (as 'GM' speaker).
   - **Purely Narrative Success/Failure:** Based on the skill's nature and the character's relevant stats (e.g., Intelligence for a spell, Dexterity for an agile maneuver, Strength for a powerful blow), you can narrate varying degrees of success or minor complications. For example: "Your Fireball, fueled by your high Intelligence, erupts with great force." or "You attempt to leap across the chasm using your Acrobatics skill; with your impressive Dexterity, you land gracefully. If it were a more difficult jump, you might have stumbled." Do not implement dice rolls; this is for narrative flavor.
-  - **Crucially, when a skill is used, its effects as described MUST be reflected in the \`updatedStoryState\`. For example, if a potion heals, \`character.health\` must increase. If a spell damages an NPC, their state (or a relevant \`worldFact\`) must change. If a skill costs mana, \`character.mana\` must decrease.**
+  - **Crucially, when a skill is used, its effects as described MUST be reflected in the updatedStoryState. For example, if a potion heals, character.health must increase. If a spell damages an NPC, their state (or a relevant worldFact) must change. If a skill costs mana, character.mana must decrease.**
 
 **NPC Management & Tracking:**
 - If new, significant NPCs are introduced (named, have dialogue, clear role):
@@ -382,33 +401,33 @@ While respecting player choices is paramount, ensure the story remains coherent 
   - Set 'lastKnownLocation' to 'storyState.currentLocation' and 'lastSeenTurnId' to '{{currentTurnId}}'. Set 'updatedAt'.
 - If interacting with an existing NPC:
   - Update their profile in 'updatedStoryState.trackedNPCs'.
-  - **Relationship Dynamics:** Update numerical \\\`relationshipStatus\\\` based on interactions.
-  - **NPC Memory & Consistency:** Refer to \`knownFacts\` and \`dialogueHistory\`.
-  - **NPC Proactivity & Goals:** Consider 'shortTermGoal'. Update it if logical. NPCs should react to changes in \`worldFacts\`.
+  - **Relationship Dynamics:** Update numerical relationshipStatus based on interactions.
+  - **NPC Memory & Consistency:** Refer to knownFacts and dialogueHistory.
+  - **NPC Proactivity & Goals:** Consider 'shortTermGoal'. Update it if logical. NPCs should react to changes in worldFacts.
   - If new info about NPC is learned, add to 'knownFacts'.
   - If key dialogue, add to 'dialogueHistory'.
   - If location changes, update 'lastKnownLocation'. Always update 'lastSeenTurnId' and 'updatedAt'.
 - Do not create duplicate NPC profiles.
-- For 'nextScene' narrative: Attribute dialogue/actions. NPCs react in character.
+- For 'generatedMessages' narrative: Attribute dialogue/actions. If an NPC speaks, use their name as the 'speaker'. NPCs react in character.
 - If distinct NPCs were active, populate 'activeNPCsInScene'.
 
 **NPC Merchants & Trading:**
 - If the player interacts with an NPC where \`isMerchant: true\`:
-  - **Viewing Wares:** If the player asks to see wares (e.g., "What do you have for sale?", "Show me your goods"), narrate a list of items from the NPC's \`merchantInventory\`, including their \`name\` and \`price\` in the \`nextScene\`.
+  - **Viewing Wares:** If the player asks to see wares (e.g., "What do you have for sale?", "Show me your goods"), list items from the NPC's \`merchantInventory\`, including their \`name\` and \`price\`, in the 'generatedMessages' (typically from the NPC 'speaker').
   - **Buying Items:** If the player expresses intent to buy an item from the merchant's \`merchantInventory\` (e.g., "I want to buy the Health Potion"):
     1. Find the item by name or ID in the merchant's \`merchantInventory\`. Let's assume the player mentions the item by name.
     2. Check if the merchant has the item and if the player character has enough \`currency\` (use the item's \`price\` from \`merchantInventory\`).
-    3. If yes: In \`updatedStoryState\`, deduct the \`price\` from \`character.currency\`. Remove ONE instance of the item from \`trackedNPCs[merchantIndex].merchantInventory\`. Add a new instance of the item (with its own unique ID, but copied properties like name, description, basePrice, equipSlot etc.) to \`character.inventory\`. Narrate the transaction successfully (e.g., "You hand over 50 gold and receive the Health Potion.").
-    4. If no (not enough currency, item not found, or merchant inventory empty): Narrate why the transaction cannot occur (e.g., "Sorry, I'm fresh out of those," or "You don't have enough gold for that.").
+    3. If yes: In \`updatedStoryState\`, deduct the \`price\` from \`character.currency\`. Remove ONE instance of the item from \`trackedNPCs[merchantIndex].merchantInventory\`. Add a new instance of the item (with its own unique ID, but copied properties like name, description, basePrice, equipSlot etc.) to \`character.inventory\`. Narrate the transaction successfully in 'generatedMessages' (e.g., NPC speaker: "Here you go.", GM speaker: "You hand over 50 gold and receive the Health Potion.").
+    4. If no (not enough currency, item not found, or merchant inventory empty): Narrate why the transaction cannot occur in 'generatedMessages' (e.g., NPC speaker: "Sorry, I'm fresh out of those," or "You don't have enough gold for that.").
   - **Selling Items:** If the player expresses intent to sell an item from their \`character.inventory\` (e.g., "I want to sell my Rusty Dagger"):
     1. Identify the item in \`character.inventory\` by name or player's description.
     2. Determine a fair \`buyPrice\` for the item. This price should generally be less than the item's \`basePrice\` (e.g., 50-70% of \`basePrice\`, rounded). Consider the merchant's \`buysItemTypes\` (if defined) – they might offer less or refuse if it's not their specialty. Player's charisma can have a small narrative influence on the offered price but no mechanical roll.
-    3. If the merchant agrees to buy and a \`buyPrice\` is determined: In \`updatedStoryState\`, add \`buyPrice\` to \`character.currency\`. Remove the item from \`character.inventory\`. Optionally, you can add the bought item to the merchant's \`merchantInventory\` (if it's something they might resell, give it a new ID and set a new \`price\` for resale, higher than \`buyPrice\`). Narrate the transaction (e.g., "The merchant offers you 10 gold for the Rusty Dagger. You accept.").
-    4. If the merchant refuses to buy (e.g., "I have no use for that."): Narrate the refusal.
+    3. If the merchant agrees to buy and a \`buyPrice\` is determined: In \`updatedStoryState\`, add \`buyPrice\` to \`character.currency\`. Remove the item from \`character.inventory\`. Optionally, you can add the bought item to the merchant's \`merchantInventory\` (if it's something they might resell, give it a new ID and set a new \`price\` for resale, higher than \`buyPrice\`). Narrate the transaction in 'generatedMessages' (e.g., NPC speaker: "I can offer you 10 gold for that dagger.", GM speaker: "You accept the offer.").
+    4. If the merchant refuses to buy (e.g., "I have no use for that."): Narrate the refusal in 'generatedMessages'.
   - **Important:** All changes to currency, player inventory, and merchant inventory MUST be reflected in \`updatedStoryState\`. Ensure item IDs remain unique when moving/copying items. Newly generated items should have a \`basePrice\`.
 
 **Environmental Interaction & Item Use:**
-- If the player's input suggests interacting with specific objects in the environment (e.g., 'search the desk', 'examine the painting', 'open the chest', 'read the book', 'climb the tree', 'hide behind the rock'), narrate the outcome of this action in the 'nextScene'.
+- If the player's input suggests interacting with specific objects in the environment (e.g., 'search the desk', 'examine the painting', 'open the chest', 'read the book', 'climb the tree', 'hide behind the rock'), narrate the outcome of this action in the 'generatedMessages' (as 'GM' speaker).
 - If an item is found as a result of such interaction, add it to \`updatedStoryState.inventory\` (ensure it has a unique ID and a \`basePrice\`).
 - If a new piece of information is discovered, add it to \`updatedStoryState.worldFacts\`.
 - If the interaction directly progresses or completes a quest objective, update the relevant quest in \`updatedStoryState.quests\`.
@@ -416,9 +435,9 @@ While respecting player choices is paramount, ensure the story remains coherent 
 - **Using Key/Quest Items:** If player uses an \`isQuestItem\` appropriately: Narrate outcome, update quest objectives/worldFacts.
 
 **Quests & World State:**
-- Describe quest developments. When a quest is completed, narrate rewards (XP, currency, items) being received.
+- Describe quest developments in 'generatedMessages'. When a quest is completed, narrate rewards (XP, currency, items) being received.
 - **Branching/Updating Quest Objectives:** Based on the player's actions, discoveries, or even failures, consider if an active quest's objectives should change or new ones should be added. For example, if they find an alternative solution to a problem, an objective might be marked completed and a new, unexpected one added. If they anger a quest-related NPC, an objective might become harder or change entirely. Reflect these dynamic updates in updatedStoryState.quests. If a player's action directly completes an objective, ensure it's marked isCompleted: true. If it logically leads to a new step for the *same quest*, add it as a new objective to that quest. If it spawns an entirely new side-quest, create a new quest object.
-- **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences.
+- **World Reactivity:** Changes to worldFacts should have noticeable consequences.
 
 **Character Progression:**
 - **Learning New Skills (General):** Award new skills for quests/milestones. Add to \`character.skillsAndAbilities\`.
@@ -433,10 +452,10 @@ While respecting player choices is paramount, ensure the story remains coherent 
         A. A small, permanent increase (typically +1) to one of the character's core stats.
         OR
         B. Award the character one new skill (add a new skill object to \`character.skillsAndAbilities\`).
-    - Clearly narrate the level up event, the stat increase (if any), or the new skill learned (if any) in the \`nextScene\` text.
+    - Clearly narrate the level up event, the stat increase (if any), or the new skill learned (if any) in the 'generatedMessages' text (as 'GM' speaker).
 
 **Lore Discovery & Generation:**
-- If the 'nextScene' reveals significant new information, propose new entries for the \`newLoreEntries\` array (keyword, content, optional category).
+- If the 'generatedMessages' reveal significant new information, propose new entries for the \`newLoreEntries\` array (keyword, content, optional category).
 
 Crucially, you must also update the story state. This includes:
 - Character: Update all character fields (health, mana, XP, level, currency, skills, stats).
@@ -446,7 +465,7 @@ Crucially, you must also update the story state. This includes:
 - Tracked NPCs: Update profiles, including merchant details (\`isMerchant\`, \`merchantInventory\` with item \`price\` and \`basePrice\`, \`buysItemTypes\`, \`sellsItemTypes\`).
 - World Facts: Add, modify, or remove facts.
 
-The next scene should logically follow. Ensure adherence to JSON schema.
+The generated messages should logically follow. Ensure adherence to JSON schema.
 The \`updatedStorySummary\` field MUST be provided.
 `,
 });
@@ -474,6 +493,22 @@ const generateNextSceneFlow = ai.defineFlow(
 
     const {output} = await prompt(promptPayload);
     if (!output) throw new Error("Failed to generate next scene output.");
+
+    // Ensure generatedMessages is an array, even if AI fails to provide it or provides it incorrectly
+    if (!output.generatedMessages || !Array.isArray(output.generatedMessages) || output.generatedMessages.length === 0) {
+      output.generatedMessages = [{ speaker: 'GM', content: "(The AI did not provide a structured response for the scene. Something may have gone slightly awry.)" }];
+    } else {
+        // Validate each message segment
+        output.generatedMessages.forEach(msg => {
+            if (typeof msg.speaker !== 'string' || msg.speaker.trim() === '') {
+                msg.speaker = 'GM'; // Default to GM if speaker is invalid
+            }
+            if (typeof msg.content !== 'string') {
+                msg.content = '(AI response content was invalid)';
+            }
+        });
+    }
+
 
     // Post-process new lore entries
     if (output.newLoreEntries && Array.isArray(output.newLoreEntries)) {
@@ -799,8 +834,8 @@ const generateNextSceneFlow = ai.defineFlow(
                 merchantItemIds.add(item.id);
                 item.basePrice = item.basePrice ?? 0;
                  if (item.basePrice < 0) item.basePrice = 0;
-                (item as any).price = (item as any).price ?? item.basePrice; // Ensure merchant items have a sale price
-                if ((item as any).price < 0) (item as any).price = 0;
+                item.price = item.price ?? item.basePrice; // Ensure merchant items have a sale price
+                if (item.price < 0) item.price = 0;
 
                 if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
 
@@ -837,9 +872,6 @@ const generateNextSceneFlow = ai.defineFlow(
         }
     }
 
-
     return output!;
   }
 );
-
-    

@@ -16,6 +16,8 @@ export interface Item {
   isQuestItem?: boolean;
   relevantQuestId?: string;
   basePrice?: number; // Base value of the item
+  // For merchant inventory specifically, price might be part of the item object if it's different from basePrice
+  price?: number; // The price a merchant sells this item for
 }
 
 export interface CharacterProfile {
@@ -174,6 +176,12 @@ export interface ActiveNPCInfo {
   keyDialogueOrAction?: string;
 }
 
+// This represents a single piece of dialogue or narration from the AI
+export interface AIMessageSegment {
+    speaker: string; // 'GM' for Game Master/narration, or the NPC's name if an NPC is speaking
+    content: string; // The text of the dialogue or narration
+}
+
 export interface GenerateNextSceneInput {
   currentScene: string; // This might need to be re-evaluated if we move to structured messages from AI
   userInput: string;
@@ -184,7 +192,8 @@ export interface GenerateNextSceneInput {
 }
 
 export interface GenerateNextSceneOutput {
-  nextScene: string; // This will be the AI's response, potentially containing GM narration and NPC dialogue
+  // nextScene: string; // This will be the AI's response, potentially containing GM narration and NPC dialogue
+  generatedMessages: AIMessageSegment[]; // An array of messages, each with a speaker ('GM' or NPC name) and content
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];

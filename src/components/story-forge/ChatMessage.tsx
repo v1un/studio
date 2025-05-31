@@ -12,17 +12,31 @@ interface ChatMessageProps {
 
 export default function ChatMessage({ message }: ChatMessageProps) {
   const isPlayer = message.speakerType === 'Player';
-  const nameLabelColor = isPlayer ? "text-blue-600 dark:text-blue-400" : "text-orange-600 dark:text-orange-400";
-  const messageBgColor = isPlayer
-    ? "bg-primary text-primary-foreground"
-    : "bg-muted text-muted-foreground";
+  
+  let nameLabelColor = "text-muted-foreground"; // Default
+  let messageBgColor = "bg-muted text-muted-foreground"; // Default for GM
+  let speakerLabelToDisplay = message.speakerNameLabel;
+
+  if (isPlayer) {
+    nameLabelColor = "text-blue-600 dark:text-blue-400";
+    messageBgColor = "bg-primary text-primary-foreground";
+    speakerLabelToDisplay = message.speakerDisplayName || message.speakerNameLabel; // Prefer display name for player (character name)
+  } else if (message.speakerType === 'NPC') {
+    nameLabelColor = "text-green-600 dark:text-green-400"; // Distinct color for NPCs
+    messageBgColor = "bg-secondary text-secondary-foreground"; // Slightly different bg for NPC
+    speakerLabelToDisplay = message.speakerNameLabel; // NPC's name
+  } else { // GM
+    nameLabelColor = "text-orange-600 dark:text-orange-400"; // GM color
+    // messageBgColor already set to default GM
+    speakerLabelToDisplay = message.speakerNameLabel; // "GAME-MASTER"
+  }
   
   const AvatarComponent = () => {
     if (message.avatarSrc) {
       return (
         <Image
           src={message.avatarSrc}
-          alt={`${message.speakerNameLabel}'s avatar`}
+          alt={`${speakerLabelToDisplay}'s avatar`}
           width={40}
           height={40}
           className="rounded-full"
@@ -33,6 +47,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     if (isPlayer) {
       return <UserCircle className="w-10 h-10 text-muted-foreground" />;
     }
+    // For GM/NPC, could differentiate later if needed
     return <Bot className="w-10 h-10 text-muted-foreground" />;
   };
 
@@ -52,8 +67,9 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           )}
         >
           <div className={cn("font-bold text-sm mb-0.5", nameLabelColor, isPlayer ? 'text-right' : 'text-left')}>
-            {message.speakerNameLabel}
-            {message.speakerDisplayName && message.speakerType !== 'Player' && (
+            {speakerLabelToDisplay}
+            {/* DisplayName for GM specifically if different, NPCs usually have NameLabel as their name */}
+            {message.speakerType === 'GM' && message.speakerDisplayName && message.speakerDisplayName !== speakerLabelToDisplay && (
                 <span className="ml-2 text-xs text-muted-foreground/80 font-normal">
                     ({message.speakerDisplayName})
                 </span>

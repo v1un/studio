@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
-import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/types/story";
+import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment } from "@/types/story";
 import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, RawLoreEntry, DisplayMessage } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
@@ -180,35 +180,20 @@ export default function StoryForgePage() {
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
       speakerType: 'Player',
-      speakerNameLabel: 'Player',
+      speakerNameLabel: character.name, // Player's name as label
       speakerDisplayName: character.name,
       content: userInput,
       avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
-      avatarHint: "profile female", // Assuming player avatar hint for consistency
+      avatarHint: "profile female",
       isPlayer: true,
     };
 
-    // Add player message immediately to history for responsiveness
-    // The actual turn object is created after AI response
     setStoryHistory(prevHistory => {
         const lastTurn = prevHistory[prevHistory.length -1];
-        // If this is the very first user action, create a new turn for this message
-        if (lastTurn.messages.some(m => m.speakerType === 'GM') && lastTurn.messages.every(m => m.speakerType !== 'Player')) {
-             return [...prevHistory, {
-                id: crypto.randomUUID(), // Temporary turn ID for player message
-                messages: [playerMessage],
-                storyStateAfterScene: lastTurn.storyStateAfterScene // Carry over state temporarily
-            }];
-        }
-        // Otherwise, append to the last turn's messages if it already contains user messages
-        // Or if last turn was just GM. In a robust system, each action might start a new "pending" turn.
-        // For simplicity now, let's assume player message can be appended or start a new turn contextually.
-        // This logic might need refinement based on how turns are strictly defined.
-        // A simpler approach for now: player message always initiates a new visual turn entry that AI completes.
          const newTurnForPlayerMessage: StoryTurn = {
-            id: `pending-${crypto.randomUUID()}`, // A temporary ID
+            id: `pending-${crypto.randomUUID()}`,
             messages: [playerMessage],
-            storyStateAfterScene: lastTurn.storyStateAfterScene // Carry over state
+            storyStateAfterScene: lastTurn.storyStateAfterScene 
         };
         return [...prevHistory, newTurnForPlayerMessage];
     });
@@ -217,11 +202,14 @@ export default function StoryForgePage() {
     try {
       const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
       
-      // Determine the "currentScene" to send to AI. This is tricky with message history.
-      // For now, let's send the content of the last GM message as "currentScene".
-      // This might need refinement if AI needs more context.
-      const lastGMMessages = storyHistory.flatMap(turn => turn.messages).filter(m => m.speakerType === 'GM');
-      const currentSceneContext = lastGMMessages.length > 0 ? lastGMMessages[lastGMMessages.length -1].content : "The story continues.";
+      const lastGMMessagesContent = storyHistory
+        .flatMap(turn => turn.messages)
+        .filter(m => m.speakerType === 'GM')
+        .slice(-3) // Get last 3 GM messages for context
+        .map(m => m.content)
+        .join("\n...\n"); // Join them with a separator
+
+      const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
 
 
       const result = await generateNextScene({
@@ -233,25 +221,27 @@ export default function StoryForgePage() {
         currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
       });
 
-      const aiMessage: DisplayMessage = {
-        id: crypto.randomUUID(),
-        speakerType: 'GM', // For now, all AI output is GM. Phase 2 will differentiate NPCs.
-        speakerNameLabel: 'GAME-MASTER',
-        speakerDisplayName: "admin",
-        content: result.nextScene,
-        avatarSrc: GM_AVATAR_PLACEHOLDER,
-        avatarHint: "profile male",
-        isPlayer: false,
-      };
+      const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
+        const isGM = aiMsg.speaker.toUpperCase() === 'GM'; // Case-insensitive check for GM
+        return {
+          id: crypto.randomUUID(),
+          speakerType: isGM ? 'GM' : 'NPC',
+          speakerNameLabel: isGM ? 'GAME-MASTER' : aiMsg.speaker,
+          speakerDisplayName: isGM ? 'admin' : aiMsg.speaker,
+          content: aiMsg.content,
+          avatarSrc: GM_AVATAR_PLACEHOLDER, // Placeholder for now; NPC avatars could be specific later
+          avatarHint: "profile male", // Generic hint
+          isPlayer: false,
+        };
+      });
       
       const completedTurn: StoryTurn = {
-        id: crypto.randomUUID(), // Final turn ID
-        messages: [playerMessage, aiMessage], // Contains both player and AI message for this interaction cycle
+        id: crypto.randomUUID(),
+        messages: [playerMessage, ...aiDisplayMessages], 
         storyStateAfterScene: result.updatedStoryState,
       };
 
       setStoryHistory(prevHistory => {
-        // Replace the temporary turn (that only had player message) with the completed turn
         const historyWithoutPending = prevHistory.filter(turn => !turn.id.startsWith('pending-'));
         return [...historyWithoutPending, completedTurn];
       });
@@ -278,7 +268,6 @@ export default function StoryForgePage() {
         description: "The AI encountered an issue. Please try again.",
         variant: "destructive",
       });
-       // Remove the temporary player message turn on error
         setStoryHistory(prevHistory => prevHistory.filter(turn => !turn.id.startsWith('pending-')));
     }
     setIsLoadingInteraction(false);
@@ -286,10 +275,10 @@ export default function StoryForgePage() {
   };
 
   const handleUndo = () => {
-    if (storyHistory.length > 1) { // Only undo if there's more than the initial scene
+    if (storyHistory.length > 1) { 
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last interaction undone."});
-    } else if (storyHistory.length === 1) { // If only initial scene is left, effectively restart
+    } else if (storyHistory.length === 1) { 
       handleRestart();
     }
   };
