@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview A Genkit flow for generating an initial game scenario based on a real-life series.
- * This includes the starting scene, character state, initial inventory, quests (with objectives and categories), world facts,
+ * This includes the starting scene, character state, initial inventory, quests (with objectives, categories, but no rewards initially), world facts,
  * and a set of pre-populated lorebook entries relevant to the series.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
@@ -13,7 +13,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, QuestObjective as QuestObjectiveType } from '@/types/story';
+import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, QuestObjective as QuestObjectiveType, QuestRewards as QuestRewardsType } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
@@ -63,12 +63,18 @@ const QuestObjectiveSchemaInternal = z.object({
   isCompleted: z.boolean().describe("Whether this specific objective is completed (should be false for initial quests).")
 });
 
+const QuestRewardsSchemaInternal = z.object({
+  experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded.")
+}).describe("Rewards for completing the quest. This field should be omitted for initial quests as they are not yet completed.");
+
 const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_series_main_001'."),
   description: z.string().describe("A clear description of the quest's overall objective, fitting the series."),
   status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Introduction'). Omit if not clearly classifiable."),
-  objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'.")
+  objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'."),
+  rewards: QuestRewardsSchemaInternal.optional().describe("Optional rewards. For initial quests with 'active' status, this field should be omitted.")
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
@@ -76,7 +82,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   currentLocation: z.string().describe('A specific starting location from the series relevant to the initial scene.'),
   inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description. If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED. Can be empty.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category' and 'objectives' (with 'isCompleted: false')."),
+  quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category' and 'objectives' (with 'isCompleted: false'). The 'rewards' field must be omitted for these initial quests."),
   worldFacts: z.array(z.string()).describe('A few (2-3) key world facts from the series relevant to the start of the story.'),
 });
 
@@ -115,7 +121,7 @@ Your goal is to generate:
     *   'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
     *   'inventory': An array of 0-3 initial unequipped 'Item' objects. Each item must have a unique 'id', 'name', and 'description'. **If the item is an inherently equippable piece of gear, include its 'equipSlot'. If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.**
     *   'equippedItems': An object explicitly mapping all 10 equipment slots to an 'Item' object or null. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.**
-    *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest") – if no category is clear, omit the 'category' field. If a quest is complex, you can provide an array of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array.
+    *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest") – if no category is clear, omit the 'category' field. If a quest is complex, you can provide an array of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. **The 'rewards' field for these initial 'active' quests must be omitted.**
     *   'worldFacts': An array of 2-4 key 'worldFacts' (strings) about the "{{seriesName}}" universe.
 3.  A list of 5-7 'initialLoreEntries'. Each entry an object with 'keyword', 'content', and optional 'category'. **If 'category' is not applicable for a lore entry, omit the field.**
 
@@ -125,7 +131,7 @@ Ensure all generated content is faithful to the tone, style, and established lor
 The entire response must strictly follow the JSON schema for the output.
 Make sure all IDs for items and quests are unique.
 The 'equippedItems' object in 'storyState' must include all 10 slots, with 'null' for empty slots.
-The 'quests' array in 'storyState' must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category' and 'objectives'.
+The 'quests' array in 'storyState' must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category' and 'objectives'. The 'rewards' field must be omitted for initial 'active' quests.
 Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable) if provided, or omitted if appropriate and allowed by the schema. For optional string fields like 'Item.equipSlot' or 'RawLoreEntry.category' or 'Quest.category', omit the field if not applicable.
 `,
 });
@@ -183,6 +189,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
              obj.description = "Objective details missing";
           }
         });
+        // Ensure rewards are not present for initial active quests
+        delete (quest as Partial<QuestType>).rewards;
       });
 
       output.storyState.worldFacts = output.storyState.worldFacts ?? [];

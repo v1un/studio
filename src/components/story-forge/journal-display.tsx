@@ -1,24 +1,55 @@
 
 "use client";
 
-import type { Quest, QuestObjective } from "@/types/story";
+import type { Quest, QuestObjective, QuestRewards, Item } from "@/types/story";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox"; // For objectives
-import { Label } from "@/components/ui/label"; // For objectives
-import { ScrollTextIcon, BookOpenIcon, CheckCircle2Icon, ListChecksIcon, TagIcon, TargetIcon } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox"; 
+import { Label } from "@/components/ui/label"; 
+import { ScrollTextIcon, BookOpenIcon, CheckCircle2Icon, ListChecksIcon, TagIcon, TargetIcon, GiftIcon, StarIcon, ShieldPlusIcon, PackageIcon } from "lucide-react";
 
 interface JournalDisplayProps {
   quests: Quest[];
   worldFacts: string[];
 }
 
+const QuestRewardsDisplay: React.FC<{ rewards: QuestRewards }> = ({ rewards }) => {
+  const hasXP = typeof rewards.experiencePoints === 'number' && rewards.experiencePoints > 0;
+  const hasItems = rewards.items && rewards.items.length > 0;
+
+  if (!hasXP && !hasItems) {
+    return null;
+  }
+
+  return (
+    <div className="mt-1.5 pl-4 pt-1 border-t border-border/30">
+      <h5 className="text-xs font-semibold text-foreground/90 mb-0.5 flex items-center">
+        <GiftIcon className="w-3.5 h-3.5 mr-1 text-yellow-500"/> Rewards:
+      </h5>
+      <ul className="list-none pl-2 space-y-0.5">
+        {hasXP && (
+          <li className="text-xs text-muted-foreground flex items-center">
+            <StarIcon className="w-3 h-3 mr-1 text-yellow-400"/>
+            {rewards.experiencePoints} XP
+          </li>
+        )}
+        {hasItems && rewards.items?.map((item: Item) => (
+          <li key={item.id} className="text-xs text-muted-foreground flex items-center">
+            <PackageIcon className="w-3 h-3 mr-1 text-orange-400"/>
+            {item.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 const QuestItem: React.FC<{ quest: Quest }> = ({ quest }) => {
   return (
     <li className="text-sm text-foreground leading-relaxed mb-3 pb-3 border-b border-border/50 last:border-b-0 last:pb-0 last:mb-0">
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start mb-0.5">
         <span className={quest.status === 'completed' ? 'line-through text-muted-foreground' : ''}>
           {quest.description}
         </span>
@@ -30,13 +61,13 @@ const QuestItem: React.FC<{ quest: Quest }> = ({ quest }) => {
         )}
       </div>
       {quest.objectives && quest.objectives.length > 0 && (
-        <ul className="mt-1.5 pl-4 space-y-1">
+        <ul className="mt-1.5 pl-4 space-y-1 mb-1">
           {quest.objectives.map((obj, index) => (
             <li key={index} className="flex items-center">
               <Checkbox
                 id={`quest-${quest.id}-obj-${index}`}
                 checked={obj.isCompleted}
-                disabled // Visually represents status, not interactive here
+                disabled 
                 className={`mr-2 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500 ${obj.isCompleted ? 'border-green-400' : 'border-muted-foreground/50'}`}
               />
               <Label
@@ -48,6 +79,9 @@ const QuestItem: React.FC<{ quest: Quest }> = ({ quest }) => {
             </li>
           ))}
         </ul>
+      )}
+      {quest.status === 'completed' && quest.rewards && (
+        <QuestRewardsDisplay rewards={quest.rewards} />
       )}
     </li>
   );
@@ -89,7 +123,7 @@ export default function JournalDisplay({ quests, worldFacts }: JournalDisplayPro
                 <CheckCircle2Icon className="w-5 h-5 mr-2 text-green-500" />
                 Completed Quests
               </h4>
-              <ScrollArea className="h-32 rounded-md border p-3 bg-background/50">
+              <ScrollArea className="h-40 rounded-md border p-3 bg-background/50">
                 <ul className="space-y-1">
                   {completedQuests.map((quest) => (
                      <QuestItem key={quest.id} quest={quest} />

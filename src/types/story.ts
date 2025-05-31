@@ -42,12 +42,18 @@ export interface QuestObjective {
   isCompleted: boolean;
 }
 
+export interface QuestRewards {
+  experiencePoints?: number;
+  items?: Item[];
+}
+
 export interface Quest {
   id: string;
   description: string;
   status: 'active' | 'completed';
-  category?: string; // e.g., "Main", "Side", "Personal", "Exploration"
+  category?: string; 
   objectives?: QuestObjective[];
+  rewards?: QuestRewards;
 }
 
 export interface StructuredStoryState {
