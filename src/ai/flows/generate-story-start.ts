@@ -39,7 +39,7 @@ const StructuredStoryStateSchema = z.object({
   character: CharacterProfileSchema.describe('The profile of the main character, including core stats.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchema).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, and description.'),
-  activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
+  activeQuests: z.array(z.string()).describe('A list of active quest descriptions. Initialize as an empty array if no quest is generated.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
 });
 export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchema>;
@@ -85,11 +85,11 @@ Based on the theme and any user suggestions, generate the following:
     -   The character profile you just created (with all stats).
     -   A starting location relevant to the scene.
     -   An empty inventory (initialize as an empty array: []). Each item in the inventory, if any were to be added at start (though typically it's empty), must be an object with 'id', 'name', and 'description' fields.
-    -   No active quests initially (initialize as an empty array: []).
-    -   One or two initial world facts relevant to the scene and character.
+    -   If appropriate for the story's theme and the user's prompt, generate one simple starting quest description and include it in the 'activeQuests' array. Otherwise, initialize 'activeQuests' as an empty array: [].
+    -   One or two initial world facts relevant to the scene and character for the 'worldFacts' array.
 
 Your entire response must strictly follow the JSON schema defined for the output, containing 'sceneDescription' and 'storyState'.
-The 'storyState' itself must be a JSON object with keys 'character', 'currentLocation', 'inventory', 'activeQuests', and 'worldFacts'. The 'inventory' must be an array of item objects, even if empty.
+The 'storyState' itself must be a JSON object with keys 'character', 'currentLocation', 'inventory', 'activeQuests', and 'worldFacts'. The 'inventory' and 'activeQuests' must be arrays, even if empty.
 The 'character' object within 'storyState' must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'.
 Ensure all stat fields (strength, dexterity, etc.) are populated with numbers.
 `,
@@ -116,7 +116,10 @@ const generateStoryStartFlow = ai.defineFlow(
     }
     if (output?.storyState) {
         output.storyState.inventory = output.storyState.inventory ?? [];
+        output.storyState.activeQuests = output.storyState.activeQuests ?? [];
+        output.storyState.worldFacts = output.storyState.worldFacts ?? [];
     }
     return output!;
   }
 );
+

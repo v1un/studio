@@ -111,20 +111,22 @@ Known World Facts:
 
 Based on the current scene, the player's input, and the detailed story state above, generate the next scene.
 Your generated scene should consider the character's stats. For example, a high Strength character might succeed at forcing a door, while a high Intelligence character might solve a riddle.
+Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
+
 Crucially, you must also update the story state. This includes:
 - Character: Update health if they took damage or healed. Update mana if spells were cast or mana was restored. Max health/mana should generally remain the same unless a significant event occurs. Core stats (Strength, etc.) should generally remain unchanged unless a very significant, transformative event happens that explicitly justifies a permanent stat change.
 - Location: Update if the character moved.
 - Inventory:
   - If new items are found: Add them as objects to the \`inventory\` array in \`updatedStoryState\`. Each item object **must** have a unique \`id\` (e.g., 'item_potion_123', 'ancient_sword_001', or even a UUID like 'item_a1b2c3d4'), a \`name\`, and a \`description\`. Describe these new items clearly in the \`nextScene\` text.
   - If items are used, consumed, or lost: Remove the corresponding item object(s) from the \`inventory\` array. Be specific about which item is removed (e.g., by its name or id).
-- Active Quests: Update if a quest progressed, was completed, or a new one started.
-- World Facts: Add, modify, or remove facts based on what happened or was discovered in the scene.
+- Active Quests: Update if a quest progressed, was completed, or a new one started. Add or remove quest strings from the 'activeQuests' array as appropriate.
+- World Facts: Add, modify, or remove facts based on what happened or was discovered in the scene. Update the 'worldFacts' array accordingly.
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema defined for the output, providing 'nextScene' and the complete 'updatedStoryState' object.
 The 'updatedStoryState' must be a complete JSON object including all its fields (character, currentLocation, inventory, activeQuests, worldFacts), reflecting all changes.
 The 'updatedStoryState.inventory' must be an array of item objects (or an empty array if none). Each item object **must** contain 'id', 'name', and 'description' fields.
-If a field like activeQuests was empty and remains empty, output it as an empty array.
+If a field like activeQuests or worldFacts was empty and remains empty, output it as an empty array.
 If the character's health or mana changes, reflect it in 'updatedStoryState.character.health' or 'updatedStoryState.character.mana'.
 All character stats (strength, dexterity etc.) must be present in the output character object. If they didn't change, return their existing values.
 `,
@@ -152,7 +154,10 @@ const generateNextSceneFlow = ai.defineFlow(
     }
      if (output?.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
+        output.updatedStoryState.activeQuests = output.updatedStoryState.activeQuests ?? [];
+        output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts ?? [];
     }
     return output!;
   }
 );
+
