@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { 
     Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, 
-    UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus, IdCardIcon, StoreIcon, PackageIcon
+    UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus, IdCardIcon, StoreIcon, PackageIcon, SparklesIcon
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -42,13 +42,13 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
 
   return (
     <AccordionItem value={npc.id} className="border-b-0">
-      <AccordionTrigger className="hover:no-underline p-3 rounded-md hover:bg-accent/50 data-[state=open]:bg-accent/80 data-[state=open]:text-accent-foreground">
+      <AccordionTrigger className="hover:no-underline p-3 rounded-md hover:bg-accent/10 data-[state=open]:bg-accent/20 data-[state=open]:text-foreground">
         <div className="flex items-center justify-between w-full">
             <div className="flex items-center">
                 <Users2Icon className="w-5 h-5 mr-3 text-primary shrink-0"/>
                 <span className="text-lg font-semibold">{npc.name}</span>
                 {npc.classOrRole && <Badge variant="secondary" className="ml-2 text-xs flex items-center"><IdCardIcon className="w-3 h-3 mr-1"/>{npc.classOrRole}</Badge>}
-                {npc.isMerchant && <Badge variant="outline" className="ml-2 text-xs text-green-600 border-green-500 flex items-center"><StoreIcon className="w-3 h-3 mr-1"/>Merchant</Badge>}
+                {npc.isMerchant && <Badge className="ml-2 text-xs flex items-center bg-green-100 text-green-700 border border-green-300 dark:bg-green-700/30 dark:text-green-300 dark:border-green-600 hover:bg-green-200 dark:hover:bg-green-700/40"><StoreIcon className="w-3 h-3 mr-1"/>Merchant</Badge>}
             </div>
             <Badge variant={relationshipInfo.variant} className="text-xs">
                 <RelationshipIcon className="w-3 h-3 mr-1"/>
@@ -76,7 +76,9 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                     <MapPinIcon className="w-3.5 h-3.5 mr-1.5 mt-0.5 text-primary/70 shrink-0"/>
                     <div>
                         <span className="font-medium">Last Seen: </span>
-                        <span className="text-muted-foreground">{npc.lastKnownLocation} (Turn: {npc.lastSeenTurnId?.substring(0,8)}...{isLastSeenCurrent && <Badge variant="secondary" className="ml-1 py-0 px-1 text-green-600 border-green-500 text-[10px]">Current</Badge>})</span>
+                        <span className="text-muted-foreground">{npc.lastKnownLocation} (Turn: {npc.lastSeenTurnId?.substring(0,8)}...
+                          {isLastSeenCurrent && <Badge className="ml-1 py-0 px-1.5 text-[10px] bg-accent text-accent-foreground border border-accent-foreground/30 flex items-center gap-1"><SparklesIcon className="w-2.5 h-2.5"/>Current</Badge>}
+                        </span>
                     </div>
                 </div>
             )}
@@ -90,7 +92,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                 {npc.merchantInventory && npc.merchantInventory.length > 0 ? (
                     <ScrollArea className="h-24 rounded-md border p-2 bg-background/50">
                         <ul className="list-disc list-inside pl-2 space-y-1 text-xs">
-                            {npc.merchantInventory.map((item: Item) => ( // Explicitly type item
+                            {npc.merchantInventory.map((item: Item) => ( 
                                 <li key={item.id} className="text-muted-foreground">
                                     <TooltipProvider delayDuration={100}>
                                         <Tooltip>
@@ -195,3 +197,5 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
     </Card>
   );
 }
+
+      
