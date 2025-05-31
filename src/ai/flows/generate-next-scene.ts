@@ -12,7 +12,14 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-// Schemas for structured story state
+const ItemSchema = z.object({
+  id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
+  name: z.string().describe("The name of the item."),
+  description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
+});
+export type Item = z.infer<typeof ItemSchema>;
+
+
 const CharacterProfileSchema = z.object({
   name: z.string().describe('The name of the character.'),
   class: z.string().describe('The class or archetype of the character.'),
@@ -34,7 +41,7 @@ export type CharacterProfile = z.infer<typeof CharacterProfileSchema>;
 const StructuredStoryStateSchema = z.object({
   character: CharacterProfileSchema.describe('The profile of the main character, including core stats.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(z.string()).describe('A list of item names in the character\'s inventory.'),
+  inventory: z.array(ItemSchema).describe('A list of items in the character\'s inventory. Each item is an object with id, name, and description.'),
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
 });
@@ -83,8 +90,18 @@ Current Character:
   - Charisma: {{storyState.character.charisma}}
 
 Current Location: {{storyState.currentLocation}}
-Inventory: {{#if storyState.inventory.length}}{{join storyState.inventory ", "}}{{else}}Empty{{/if}}
+
+Current Inventory:
+{{#if storyState.inventory.length}}
+{{#each storyState.inventory}}
+- {{this.name}} (ID: {{this.id}}): {{this.description}}
+{{/each}}
+{{else}}
+Empty
+{{/if}}
+
 Active Quests: {{#if storyState.activeQuests.length}}{{join storyState.activeQuests ", "}}{{else}}None{{/if}}
+
 Known World Facts:
 {{#each storyState.worldFacts}}
 - {{{this}}}
@@ -97,14 +114,17 @@ Your generated scene should consider the character's stats. For example, a high 
 Crucially, you must also update the story state. This includes:
 - Character: Update health if they took damage or healed. Update mana if spells were cast or mana was restored. Max health/mana should generally remain the same unless a significant event occurs. Core stats (Strength, etc.) should generally remain unchanged unless a very significant, transformative event happens that explicitly justifies a permanent stat change.
 - Location: Update if the character moved.
-- Inventory: Add or remove items if they were found, used, or lost.
+- Inventory:
+  - If new items are found: Add them as objects to the \`inventory\` array in \`updatedStoryState\`. Each item object **must** have a unique \`id\` (e.g., 'item_potion_123', 'ancient_sword_001', or even a UUID like 'item_a1b2c3d4'), a \`name\`, and a \`description\`. Describe these new items clearly in the \`nextScene\` text.
+  - If items are used, consumed, or lost: Remove the corresponding item object(s) from the \`inventory\` array. Be specific about which item is removed (e.g., by its name or id).
 - Active Quests: Update if a quest progressed, was completed, or a new one started.
 - World Facts: Add, modify, or remove facts based on what happened or was discovered in the scene.
 
 The next scene should logically follow the player's input and advance the narrative.
 Ensure your entire response strictly adheres to the JSON schema defined for the output, providing 'nextScene' and the complete 'updatedStoryState' object.
 The 'updatedStoryState' must be a complete JSON object including all its fields (character, currentLocation, inventory, activeQuests, worldFacts), reflecting all changes.
-If a field like inventory or activeQuests was empty and remains empty, output it as an empty array.
+The 'updatedStoryState.inventory' must be an array of item objects (or an empty array if none). Each item object **must** contain 'id', 'name', and 'description' fields.
+If a field like activeQuests was empty and remains empty, output it as an empty array.
 If the character's health or mana changes, reflect it in 'updatedStoryState.character.health' or 'updatedStoryState.character.mana'.
 All character stats (strength, dexterity etc.) must be present in the output character object. If they didn't change, return their existing values.
 `,
@@ -118,7 +138,6 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    // Ensure default values for stats if AI somehow omits them, preserving originals
     if (output?.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
@@ -130,6 +149,9 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.intelligence = updatedChar.intelligence ?? originalChar.intelligence ?? 10;
       updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
       updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
+    }
+     if (output?.updatedStoryState) {
+        output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
     }
     return output!;
   }

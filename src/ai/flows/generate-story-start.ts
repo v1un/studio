@@ -12,6 +12,13 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
+const ItemSchema = z.object({
+  id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
+  name: z.string().describe("The name of the item."),
+  description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
+});
+export type Item = z.infer<typeof ItemSchema>;
+
 const CharacterProfileSchema = z.object({
   name: z.string().describe('The name of the character.'),
   class: z.string().describe('The class or archetype of the character.'),
@@ -31,7 +38,7 @@ const CharacterProfileSchema = z.object({
 const StructuredStoryStateSchema = z.object({
   character: CharacterProfileSchema.describe('The profile of the main character, including core stats.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(z.string()).describe('A list of item names in the character\'s inventory.'),
+  inventory: z.array(ItemSchema).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, and description.'),
   activeQuests: z.array(z.string()).describe('A list of active quest descriptions.'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state.'),
 });
@@ -77,12 +84,12 @@ Based on the theme and any user suggestions, generate the following:
 3.  An initial structured story state, including:
     -   The character profile you just created (with all stats).
     -   A starting location relevant to the scene.
-    -   An empty inventory (initialize as an empty array: []).
+    -   An empty inventory (initialize as an empty array: []). Each item in the inventory, if any were to be added at start (though typically it's empty), must be an object with 'id', 'name', and 'description' fields.
     -   No active quests initially (initialize as an empty array: []).
     -   One or two initial world facts relevant to the scene and character.
 
 Your entire response must strictly follow the JSON schema defined for the output, containing 'sceneDescription' and 'storyState'.
-The 'storyState' itself must be a JSON object with keys 'character', 'currentLocation', 'inventory', 'activeQuests', and 'worldFacts'.
+The 'storyState' itself must be a JSON object with keys 'character', 'currentLocation', 'inventory', 'activeQuests', and 'worldFacts'. The 'inventory' must be an array of item objects, even if empty.
 The 'character' object within 'storyState' must have all fields: 'name', 'class', 'description', 'health', 'maxHealth', 'mana', 'maxMana', 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'.
 Ensure all stat fields (strength, dexterity, etc.) are populated with numbers.
 `,
@@ -96,7 +103,6 @@ const generateStoryStartFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    // Ensure default values if AI misses optional fields, though prompt guides it to include them.
     if (output?.storyState.character) {
       const char = output.storyState.character;
       char.mana = char.mana ?? 0;
@@ -107,6 +113,9 @@ const generateStoryStartFlow = ai.defineFlow(
       char.intelligence = char.intelligence ?? 10;
       char.wisdom = char.wisdom ?? 10;
       char.charisma = char.charisma ?? 10;
+    }
+    if (output?.storyState) {
+        output.storyState.inventory = output.storyState.inventory ?? [];
     }
     return output!;
   }

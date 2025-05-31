@@ -1,12 +1,19 @@
 
+export interface Item {
+  id: string;
+  name: string;
+  description: string;
+  // Future: type, rarity, effects, equipSlot etc.
+}
+
 export interface CharacterProfile {
   name: string;
   class: string;
   description: string;
   health: number;
   maxHealth: number;
-  mana?: number; // Optional for now, can be made mandatory later
-  maxMana?: number; // Optional for now
+  mana?: number;
+  maxMana?: number;
   strength?: number;
   dexterity?: number;
   constitution?: number;
@@ -18,7 +25,7 @@ export interface CharacterProfile {
 export interface StructuredStoryState {
   character: CharacterProfile;
   currentLocation: string;
-  inventory: string[]; // List of item names
+  inventory: Item[]; // Changed from string[]
   activeQuests: string[]; // List of quest descriptions
   worldFacts: string[]; // Key observations or state changes
 }
@@ -37,5 +44,4 @@ export interface GameSession {
   storyHistory: StoryTurn[];
   createdAt: string; // ISO date string
   lastPlayedAt: string; // ISO date string
-  // turnCount can be derived: storyHistory.length
 }

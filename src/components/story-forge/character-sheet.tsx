@@ -2,14 +2,15 @@
 "use client";
 
 import * as React from "react";
-import type { CharacterProfile, StructuredStoryState } from "@/types/story";
+import type { CharacterProfile, StructuredStoryState, Item } from "@/types/story";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, DumbbellIcon, ToyBrickIcon, BrainIcon, EyeIcon, SparklesIcon, VenetianMaskIcon } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon } from "lucide-react";
 
 interface CharacterSheetProps {
   character: CharacterProfile;
@@ -41,7 +42,6 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
         <CardDescription className="text-sm italic">{character.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 pt-2">
-        {/* Health and Mana Bars */}
         <div>
           <div className="flex justify-between items-center mb-1">
             <Label className="text-sm font-medium flex items-center">
@@ -67,13 +67,12 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
 
         <Separator />
 
-        {/* Core Stats */}
         <div>
           <h4 className="font-semibold mb-2 text-md">Core Stats</h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
             <StatDisplay icon={DumbbellIcon} label="Strength" value={character.strength} colorClass="text-orange-500" />
-            <StatDisplay icon={VenetianMaskIcon} label="Dexterity" value={character.dexterity} colorClass="text-green-500" /> {/* Using ToyBrick as placeholder for agility/dex */}
-            <StatDisplay icon={HeartIcon} label="Constitution" value={character.constitution} colorClass="text-red-600" /> {/* Using Heart as proxy for constitution/vitality */}
+            <StatDisplay icon={VenetianMaskIcon} label="Dexterity" value={character.dexterity} colorClass="text-green-500" />
+            <StatDisplay icon={HeartIcon} label="Constitution" value={character.constitution} colorClass="text-red-600" />
             <StatDisplay icon={BrainIcon} label="Intelligence" value={character.intelligence} colorClass="text-purple-500" />
             <StatDisplay icon={EyeIcon} label="Wisdom" value={character.wisdom} colorClass="text-sky-500" />
             <StatDisplay icon={SparklesIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
@@ -82,7 +81,6 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
         
         <Separator />
 
-        {/* Location, Inventory, Quests, Facts */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm pt-1">
           <div>
             <h4 className="font-semibold mb-1 flex items-center"><MapPinIcon className="w-4 h-4 mr-1.5 text-primary" />Location</h4>
@@ -92,9 +90,20 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <h4 className="font-semibold mb-1 flex items-center"><PackageIcon className="w-4 h-4 mr-1.5 text-primary" />Inventory</h4>
             {storyState.inventory.length > 0 ? (
               <ScrollArea className="h-20 rounded-md border p-2">
-                <ul className="list-disc list-inside pl-2">
-                  {storyState.inventory.map((item, index) => (
-                    <li key={index} className="text-muted-foreground">{item}</li>
+                <ul className="list-disc list-inside pl-2 space-y-1">
+                  {storyState.inventory.map((item: Item) => (
+                    <li key={item.id} className="text-muted-foreground">
+                      <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-help font-medium text-foreground hover:text-primary transition-colors">{item.name}</span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="start">
+                            <p className="text-sm max-w-xs">{item.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </li>
                   ))}
                 </ul>
               </ScrollArea>
