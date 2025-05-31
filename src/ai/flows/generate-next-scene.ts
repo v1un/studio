@@ -78,9 +78,10 @@ const GenerateNextSceneInputSchema = z.object({
 });
 export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema>;
 
-// Internal schema for the prompt, extending the main input schema with the pre-formatted string
+// Internal schema for the prompt, extending the main input schema with pre-formatted strings
 const PromptInternalInputSchema = GenerateNextSceneInputSchema.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
+  formattedActiveQuestsString: z.string().describe("Pre-formatted string of active quests."),
 });
 
 const GenerateNextSceneOutputSchema = z.object({
@@ -147,7 +148,7 @@ Current Inventory (Unequipped Items):
 Empty
 {{/if}}
 
-Active Quests: {{#if storyState.activeQuests.length}}{{join storyState.activeQuests ", "}}{{else}}None{{/if}}
+Active Quests: {{{formattedActiveQuestsString}}}
 
 Known World Facts:
 {{#each storyState.worldFacts}}
@@ -201,7 +202,6 @@ The 'updatedStoryState.character' must include all fields.
 The 'updatedStoryState.inventory' must be an array of item objects.
 The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
 `,
-  // Removed helpers: { formatEquippedItems }
 });
 
 const generateNextSceneFlow = ai.defineFlow(
@@ -212,11 +212,15 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => { // Type input according to flow's schema
     const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
+    const formattedActiveQuestsString = input.storyState.activeQuests && input.storyState.activeQuests.length > 0 
+                                        ? input.storyState.activeQuests.join(", ") 
+                                        : "None";
     
     // Create the payload for the prompt, matching PromptInternalInputSchema
     const promptPayload = {
       ...input,
       formattedEquippedItemsString: formattedEquippedItemsString,
+      formattedActiveQuestsString: formattedActiveQuestsString,
     };
 
     const {output} = await prompt(promptPayload);
