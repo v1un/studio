@@ -25,14 +25,17 @@ export default function StoryDisplay({ storyHistory, isLoadingInteraction }: Sto
   }, [storyHistory, isLoadingInteraction]); // Scroll when storyHistory changes or loading finishes
 
   const allMessages: DisplayMessage[] = storyHistory.reduce((acc, turn) => {
-    acc.push(...turn.messages);
+    // Ensure turn.messages is an array and not undefined before spreading
+    if (Array.isArray(turn.messages)) {
+      acc.push(...turn.messages);
+    }
     return acc;
   }, [] as DisplayMessage[]);
 
   return (
     <ScrollArea 
         ref={scrollAreaRef} 
-        className="w-full h-[calc(100vh-380px)] sm:h-[calc(100vh-350px)] pr-3" // Adjust height as needed
+        className="w-full flex-1 pr-3" // Changed to flex-1 for dynamic height
         viewportRef={viewportRef}
     >
       <div className="flex flex-col gap-2 p-1">
@@ -43,3 +46,4 @@ export default function StoryDisplay({ storyHistory, isLoadingInteraction }: Sto
     </ScrollArea>
   );
 }
+

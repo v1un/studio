@@ -180,7 +180,7 @@ export default function StoryForgePage() {
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
       speakerType: 'Player',
-      speakerNameLabel: character.name, // Player's name as label
+      speakerNameLabel: character.name, 
       speakerDisplayName: character.name,
       content: userInput,
       avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
@@ -205,9 +205,9 @@ export default function StoryForgePage() {
       const lastGMMessagesContent = storyHistory
         .flatMap(turn => turn.messages)
         .filter(m => m.speakerType === 'GM')
-        .slice(-3) // Get last 3 GM messages for context
+        .slice(-3) 
         .map(m => m.content)
-        .join("\n...\n"); // Join them with a separator
+        .join("\n...\n"); 
 
       const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
 
@@ -222,15 +222,15 @@ export default function StoryForgePage() {
       });
 
       const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
-        const isGM = aiMsg.speaker.toUpperCase() === 'GM'; // Case-insensitive check for GM
+        const isGM = aiMsg.speaker.toUpperCase() === 'GM'; 
         return {
           id: crypto.randomUUID(),
           speakerType: isGM ? 'GM' : 'NPC',
           speakerNameLabel: isGM ? 'GAME-MASTER' : aiMsg.speaker,
           speakerDisplayName: isGM ? 'admin' : aiMsg.speaker,
           content: aiMsg.content,
-          avatarSrc: GM_AVATAR_PLACEHOLDER, // Placeholder for now; NPC avatars could be specific later
-          avatarHint: "profile male", // Generic hint
+          avatarSrc: GM_AVATAR_PLACEHOLDER, 
+          avatarHint: "profile male", 
           isPlayer: false,
         };
       });
@@ -308,8 +308,8 @@ export default function StoryForgePage() {
   }
 
   return (
-    <div className="flex flex-col items-center min-h-screen bg-background p-4 sm:p-8 selection:bg-primary/20 selection:text-primary">
-      <header className="mb-6 text-center">
+    <div className="flex flex-col h-screen overflow-hidden bg-background selection:bg-primary/20 selection:text-primary">
+      <header className="mb-2 text-center pt-4 sm:pt-6">
         <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
           <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
           Story Forge
@@ -319,7 +319,7 @@ export default function StoryForgePage() {
         </p>
       </header>
 
-      <main className="w-full max-w-2xl">
+      <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto overflow-hidden px-4 sm:px-6">
         {isLoadingInteraction && (
           <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -328,15 +328,17 @@ export default function StoryForgePage() {
         )}
 
         {!currentSession && !isLoadingInteraction && (
-          <InitialPromptForm 
-            onSubmitSeries={handleStartStoryFromSeries}
-            isLoading={isLoadingInteraction} 
-          />
+          <div className="flex-grow flex items-center justify-center">
+            <InitialPromptForm 
+              onSubmitSeries={handleStartStoryFromSeries}
+              isLoading={isLoadingInteraction} 
+            />
+          </div>
         )}
         
         {currentSession && character && currentStoryState && (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-4"> 
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
+            <TabsList className="grid w-full grid-cols-5 mb-4 shrink-0"> 
               <TabsTrigger value="story" className="text-xs sm:text-sm">
                 <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
               </TabsTrigger>
@@ -354,51 +356,58 @@ export default function StoryForgePage() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="story" className="space-y-4">
-              <StoryControls
-                onUndo={handleUndo}
-                onRestart={handleRestart}
-                canUndo={storyHistory.length > 0}
-                isLoading={isLoadingInteraction}
-              />
-              <MinimalCharacterStatus character={character} storyState={currentStoryState} />
+            <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden">
+              <div className="shrink-0">
+                <StoryControls
+                    onUndo={handleUndo}
+                    onRestart={handleRestart}
+                    canUndo={storyHistory.length > 0}
+                    isLoading={isLoadingInteraction}
+                />
+              </div>
+              <div className="shrink-0">
+                <MinimalCharacterStatus character={character} storyState={currentStoryState} />
+              </div>
               <StoryDisplay
                 storyHistory={storyHistory}
                 isLoadingInteraction={isLoadingInteraction}
               />
-              <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
+              <div className="shrink-0 pt-2">
+                <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
+              </div>
             </TabsContent>
 
-            <TabsContent value="character">
+            <TabsContent value="character" className="overflow-y-auto flex-grow">
               <CharacterSheet character={character} storyState={currentStoryState} />
             </TabsContent>
 
-            <TabsContent value="npcs"> 
+            <TabsContent value="npcs" className="overflow-y-auto flex-grow"> 
               <NPCTrackerDisplay trackedNPCs={currentStoryState.trackedNPCs as NPCProfile[]} currentTurnId={storyHistory[storyHistory.length-1]?.id || 'initial'} />
             </TabsContent>
 
-            <TabsContent value="journal">
+            <TabsContent value="journal" className="overflow-y-auto flex-grow">
               <JournalDisplay 
                 quests={currentStoryState.quests as Quest[]} 
                 worldFacts={currentStoryState.worldFacts} 
               />
             </TabsContent>
             
-            <TabsContent value="lorebook">
+            <TabsContent value="lorebook" className="overflow-y-auto flex-grow">
               <LorebookDisplay />
             </TabsContent>
           </Tabs>
         )}
          {currentSession && (!character || !currentStoryState) && !isLoadingInteraction && ( 
-            <div className="text-center p-6 bg-card rounded-lg shadow-md">
+            <div className="text-center p-6 bg-card rounded-lg shadow-md flex-grow flex flex-col items-center justify-center">
                 <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
                 <Button onClick={handleRestart}>Start a New Adventure</Button>
             </div>
         )}
       </main>
-      <footer className="mt-12 text-center text-sm text-muted-foreground">
+      <footer className="mt-4 text-center text-sm text-muted-foreground pb-4 sm:pb-6 shrink-0">
         <p>&copy; {new Date().getFullYear()} Story Forge. Powered by GenAI.</p>
       </footer>
     </div>
   );
 }
+
