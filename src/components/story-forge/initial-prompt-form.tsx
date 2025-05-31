@@ -6,20 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookPlusIcon } from "lucide-react"; // Changed BookPlayIcon to BookPlusIcon
+import { BookPlusIcon, UserIcon, ShieldQuestionIcon } from "lucide-react";
 
 interface InitialPromptFormProps {
-  onSubmitSeries: (seriesName: string) => void; // Changed to accept series name
+  onSubmitSeries: (data: { seriesName: string; characterName?: string; characterClass?: string }) => void;
   isLoading: boolean;
 }
 
 export default function InitialPromptForm({ onSubmitSeries, isLoading }: InitialPromptFormProps) {
   const [seriesName, setSeriesName] = useState("");
+  const [characterName, setCharacterName] = useState("");
+  const [characterClass, setCharacterClass] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (seriesName.trim()) {
-      onSubmitSeries(seriesName.trim());
+      onSubmitSeries({
+        seriesName: seriesName.trim(),
+        characterName: characterName.trim() || undefined,
+        characterClass: characterClass.trim() || undefined,
+      });
     }
   };
 
@@ -27,17 +33,17 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
     <Card className="w-full shadow-xl animate-fade-in">
       <CardHeader>
         <CardTitle className="font-headline text-3xl flex items-center">
-            <BookPlusIcon className="w-7 h-7 mr-2 text-accent"/> {/* Changed Icon */}
+            <BookPlusIcon className="w-7 h-7 mr-2 text-accent"/>
             Choose Your Universe
         </CardTitle>
         <CardDescription>
-          Enter the name of a well-known series (e.g., Naruto, Harry Potter, Re:Zero) to begin your adventure there.
+          Enter the name of a well-known series to begin. You can also suggest a character name and class/role.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="series-name" className="text-lg font-semibold">Series Name</Label>
+            <Label htmlFor="series-name" className="text-lg font-semibold">Series Name <span className="text-red-500">*</span></Label>
             <Input
               id="series-name"
               placeholder="e.g., Death Note, Star Wars, One Piece..."
@@ -47,7 +53,39 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
               className="text-base"
               required
             />
-            <p className="text-xs text-muted-foreground">The AI will generate a starting scenario, character, and lore based on this series.</p>
+            <p className="text-xs text-muted-foreground">The AI will generate a scenario based on this series.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+                <Label htmlFor="character-name" className="text-md font-medium flex items-center">
+                    <UserIcon className="w-4 h-4 mr-1.5 text-primary/80"/> Character Name (Optional)
+                </Label>
+                <Input
+                id="character-name"
+                placeholder="e.g., Harry Potter, Original Character Name"
+                value={characterName}
+                onChange={(e) => setCharacterName(e.target.value)}
+                disabled={isLoading}
+                className="text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Suggest an existing character or a new one.</p>
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="character-class" className="text-md font-medium flex items-center">
+                    <ShieldQuestionIcon className="w-4 h-4 mr-1.5 text-primary/80"/> Character Class/Role (Optional)
+                </Label>
+                <Input
+                id="character-class"
+                placeholder="e.g., Jedi Knight, Alchemist, Detective"
+                value={characterClass}
+                onChange={(e) => setCharacterClass(e.target.value)}
+                disabled={isLoading}
+                className="text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Suggest a role or class for your character.</p>
+            </div>
           </div>
         </CardContent>
         <CardFooter>
@@ -59,3 +97,5 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
     </Card>
   );
 }
+
+    

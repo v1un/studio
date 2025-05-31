@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/ai/flows/generate-scenario-from-series";
-import type { StoryTurn, GameSession, StructuredStoryState } from "@/types/story"; // Added StructuredStoryState
+import type { StoryTurn, GameSession, StructuredStoryState, Quest } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -16,7 +16,7 @@ import JournalDisplay from "@/components/story-forge/journal-display";
 import LorebookDisplay from "@/components/story-forge/lorebook-display";
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library } from "lucide-react"; 
+import { Loader2, Sparkles, BookUser, StickyNote, Library } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,6 +43,8 @@ export default function StoryForgePage() {
           const session: GameSession = JSON.parse(sessionData);
           setStoryHistory(session.storyHistory);
           setCurrentSessionId(session.id);
+          // Initialize lorebook if it's associated with this session (requires lore to be part of session or linked)
+          // For now, lorebook is global. If a session has specific lore, this would be the place to load it.
         } catch (e) {
           console.error("Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
@@ -66,16 +68,17 @@ export default function StoryForgePage() {
       if (existingSessionRaw) {
         try {
           const existingSession: GameSession = JSON.parse(existingSessionRaw);
+          // Check if story history or character name (indicative of a new start) has changed
           if (JSON.stringify(existingSession.storyHistory) !== JSON.stringify(storyHistory) ||
-              existingSession.seriesName !== storyHistory[0]?.storyStateAfterScene.character.name) { 
+              existingSession.characterName !== storyHistory[0]?.storyStateAfterScene.character.name) {
             sessionToSave = {
               ...existingSession,
               storyHistory: storyHistory,
               lastPlayedAt: new Date().toISOString(),
-              characterName: storyHistory[0].storyStateAfterScene.character.name,
-              seriesName: existingSession.seriesName, 
+              characterName: storyHistory[0].storyStateAfterScene.character.name, // Update char name
+              seriesName: existingSession.seriesName, // Preserve original series name
             };
-          } else if (new Date().getTime() - new Date(existingSession.lastPlayedAt).getTime() > 60000) {
+          } else if (new Date().getTime() - new Date(existingSession.lastPlayedAt).getTime() > 60000) { // Update lastPlayedAt if unchanged for >1min
              sessionToSave = {
               ...existingSession,
               lastPlayedAt: new Date().toISOString(),
@@ -83,6 +86,7 @@ export default function StoryForgePage() {
           }
         } catch (e) {
           console.error("Error parsing existing session for update:", e);
+          // Potentially corrupted session, consider clearing it or handling error
         }
       }
       
@@ -95,14 +99,19 @@ export default function StoryForgePage() {
 
   const currentTurn = storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null;
   const character = currentTurn?.storyStateAfterScene.character;
-  const storyState = currentTurn?.storyStateAfterScene; // Keep this for passing to components
+  const storyState = currentTurn?.storyStateAfterScene;
 
-  const handleStartStoryFromSeries = async (seriesName: string) => {
+  const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string }) => {
     setIsLoadingInteraction(true);
     try {
-      const input: GenerateScenarioFromSeriesInput = { seriesName };
+      const input: GenerateScenarioFromSeriesInput = {
+        seriesName: data.seriesName,
+        characterNameInput: data.characterName,
+        characterClassInput: data.characterClass,
+      };
       const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
       
+      clearLorebook(); // Clear old lore before initializing new
       initializeLorebook(result.initialLoreEntries);
 
       const firstTurn: StoryTurn = {
@@ -114,12 +123,12 @@ export default function StoryForgePage() {
       const newSessionId = crypto.randomUUID();
       const newSession: GameSession = {
         id: newSessionId,
-        storyPrompt: `Adventure in the world of: ${seriesName}`,
+        storyPrompt: `Adventure in the world of: ${data.seriesName}${data.characterName ? ` as ${data.characterName}` : ''}`,
         characterName: result.storyState.character.name,
         storyHistory: [firstTurn],
         createdAt: new Date().toISOString(),
         lastPlayedAt: new Date().toISOString(),
-        seriesName: seriesName,
+        seriesName: data.seriesName,
       };
 
       localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
@@ -127,16 +136,16 @@ export default function StoryForgePage() {
       
       setStoryHistory([firstTurn]);
       setCurrentSessionId(newSession.id);
-      setActiveTab("story"); 
+      setActiveTab("story");
       toast({
-        title: `Adventure in ${seriesName} Begun!`,
+        title: `Adventure in ${data.seriesName} Begun!`,
         description: `Playing as ${newSession.characterName}.`,
       });
     } catch (error) {
       console.error("Failed to start story from series:", error);
       toast({
         title: "Error Starting Scenario",
-        description: "The AI encountered an issue creating the scenario. Please try a different series or try again.",
+        description: "The AI encountered an issue creating the scenario. Please try a different series or adjust character inputs.",
         variant: "destructive",
       });
     }
@@ -144,14 +153,14 @@ export default function StoryForgePage() {
   };
 
   const handleUserAction = async (userInput: string) => {
-    if (!currentTurn || !currentSessionId || !storyState) return; // Ensure storyState exists
+    if (!currentTurn || !currentSessionId || !storyState) return;
     setIsLoadingInteraction(true);
     try {
       const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
       const result = await generateNextScene({
         currentScene: currentTurn.sceneDescription,
         userInput: userInput,
-        storyState: storyState, // Pass the full storyState
+        storyState: storyState,
       });
       const nextTurnItem: StoryTurn = {
         id: crypto.randomUUID(),
@@ -176,6 +185,7 @@ export default function StoryForgePage() {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last action undone."});
     } else if (storyHistory.length === 1) {
+      // If only one turn (initial scene), undoing means restarting.
       handleRestart();
     }
   };
@@ -231,7 +241,7 @@ export default function StoryForgePage() {
           />
         )}
         
-        {currentSessionId && currentTurn && character && storyState && ( // Ensure storyState is available
+        {currentSessionId && currentTurn && character && storyState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4 mb-4">
               <TabsTrigger value="story" className="text-xs sm:text-sm">
@@ -252,13 +262,13 @@ export default function StoryForgePage() {
               <StoryControls
                 onUndo={handleUndo}
                 onRestart={handleRestart}
-                canUndo={storyHistory.length > 0}
+                canUndo={storyHistory.length > 0} // Can undo if there's any history
                 isLoading={isLoadingInteraction}
               />
               <MinimalCharacterStatus character={character} storyState={storyState} />
               <StoryDisplay
                 sceneDescription={currentTurn.sceneDescription}
-                keyProp={currentTurn.id}
+                keyProp={currentTurn.id} // Use turn ID to trigger re-render and animation
               />
               <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
             </TabsContent>
@@ -269,7 +279,7 @@ export default function StoryForgePage() {
 
             <TabsContent value="journal">
               <JournalDisplay 
-                quests={storyState.quests} // Pass the new quests array
+                quests={storyState.quests as Quest[]} // Cast to Quest[]
                 worldFacts={storyState.worldFacts} 
               />
             </TabsContent>
@@ -280,6 +290,7 @@ export default function StoryForgePage() {
           </Tabs>
         )}
          {currentSessionId && !currentTurn && !isLoadingInteraction && (
+            // This case handles if a session exists but storyHistory is empty or currentTurn couldn't be derived.
             <div className="text-center p-6 bg-card rounded-lg shadow-md">
                 <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
                 <Button onClick={handleRestart}>Start a New Adventure</Button>
@@ -292,3 +303,5 @@ export default function StoryForgePage() {
     </div>
   );
 }
+
+    
