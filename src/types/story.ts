@@ -110,18 +110,28 @@ export interface StructuredStoryState {
   storySummary?: string; // A brief, running summary of key story events and character developments.
 }
 
+export interface DisplayMessage {
+  id: string; // Unique ID for key prop
+  speakerType: 'Player' | 'GM' | 'NPC';
+  speakerNameLabel: string; // "Player", "GAME-MASTER", or NPC's actual name for the label
+  speakerDisplayName?: string; // For NPC, this would be their name. For GM, "admin". For Player, their character name.
+  content: string;
+  avatarSrc?: string; // URL for the avatar image
+  avatarHint?: string; // For AI-assisted image search if placeholder
+  isPlayer: boolean;
+}
+
 export interface StoryTurn {
   id: string;
-  sceneDescription: string;
-  storyStateAfterScene: StructuredStoryState;
-  userInputThatLedToScene?: string;
+  messages: DisplayMessage[];
+  storyStateAfterScene: StructuredStoryState; // Retains the full state after AI processing for this turn
 }
 
 export interface GameSession {
   id:string;
   storyPrompt: string;
   characterName: string;
-  storyHistory: StoryTurn[];
+  storyHistory: StoryTurn[]; // Array of story turns, each containing messages and state
   createdAt: string;
   lastPlayedAt: string;
   seriesName: string;
@@ -152,7 +162,7 @@ export interface GenerateScenarioFromSeriesInput {
 }
 
 export interface GenerateScenarioFromSeriesOutput {
-  sceneDescription: string;
+  sceneDescription: string; // AI's initial scene description
   storyState: StructuredStoryState;
   initialLoreEntries: RawLoreEntry[];
   seriesStyleGuide?: string;
@@ -165,7 +175,7 @@ export interface ActiveNPCInfo {
 }
 
 export interface GenerateNextSceneInput {
-  currentScene: string;
+  currentScene: string; // This might need to be re-evaluated if we move to structured messages from AI
   userInput: string;
   storyState: StructuredStoryState;
   seriesName: string;
@@ -174,7 +184,7 @@ export interface GenerateNextSceneInput {
 }
 
 export interface GenerateNextSceneOutput {
-  nextScene: string;
+  nextScene: string; // This will be the AI's response, potentially containing GM narration and NPC dialogue
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];

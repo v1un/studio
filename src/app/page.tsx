@@ -1,10 +1,10 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
-import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/types/story"; // Adjusted import path
-import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, RawLoreEntry } from "@/types/story";
+import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput } from "@/types/story";
+import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, RawLoreEntry, DisplayMessage } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -18,7 +18,7 @@ import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook, getLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,6 +26,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
 const SESSION_KEY_PREFIX = "storyForgeSession_";
+
+const GM_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
+const PLAYER_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 
 export default function StoryForgePage() {
   const [storyHistory, setStoryHistory] = useState<StoryTurn[]>([]);
@@ -36,7 +39,7 @@ export default function StoryForgePage() {
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
-  useEffect(() => {
+  const loadSession = useCallback(() => {
     setIsLoadingPage(true);
     const activeId = localStorage.getItem(ACTIVE_SESSION_ID_KEY);
     if (activeId) {
@@ -44,30 +47,44 @@ export default function StoryForgePage() {
       if (sessionData) {
         try {
           const session: GameSession = JSON.parse(sessionData);
-          setStoryHistory(session.storyHistory);
-          setCurrentSession(session);
-          // Ensure lorebook is loaded for the current session if it exists
-          // Note: Lore is global, but initializing here ensures it's present if a session had specific starting lore.
-          // If generateScenarioFromSeries populated it, this won't hurt.
-          if (getLorebook().length === 0 && session.storyHistory.length > 0) {
-            // This part is tricky. If initialLoreEntries were part of the session, we'd load them.
-            // For now, lorebook is global and loaded/cleared on new game.
+          // Basic validation for the new message structure
+          if (session.storyHistory.every(turn => Array.isArray(turn.messages))) {
+            setStoryHistory(session.storyHistory);
+            setCurrentSession(session);
+          } else {
+            // Attempt to migrate old data or clear if migration is too complex
+            console.warn("Old session format detected. Clearing for new structure.");
+            localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
+            localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
+            setCurrentSession(null);
+            setStoryHistory([]);
+          }
+          
+          if (getLorebook().length === 0 && session.storyHistory.length > 0 && session.storyHistory[0].messages.length > 0) {
+            // This part would ideally load lore if it was tied to session start
           }
         } catch (e) {
           console.error("Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
           localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
           setCurrentSession(null);
+          setStoryHistory([]);
         }
       } else {
         localStorage.removeItem(ACTIVE_SESSION_ID_KEY); 
         setCurrentSession(null);
+        setStoryHistory([]);
       }
     } else {
        setCurrentSession(null);
+       setStoryHistory([]);
     }
     setIsLoadingPage(false);
   }, []);
+
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
 
   useEffect(() => {
     if (isLoadingPage || !currentSession) return;
@@ -76,7 +93,7 @@ export default function StoryForgePage() {
         ...currentSession,
         storyHistory: storyHistory,
         lastPlayedAt: new Date().toISOString(),
-        characterName: storyHistory.length > 0 ? storyHistory[0].storyStateAfterScene.character.name : currentSession.characterName,
+        characterName: currentSession.characterName, // Character name set at session creation
       };
     
     const sessionKey = `${SESSION_KEY_PREFIX}${currentSession.id}`;
@@ -85,9 +102,8 @@ export default function StoryForgePage() {
   }, [storyHistory, currentSession, isLoadingPage]);
 
 
-  const currentTurn = useMemo(() => storyHistory.length > 0 ? storyHistory[storyHistory.length - 1] : null, [storyHistory]);
-  const character = useMemo(() => currentTurn?.storyStateAfterScene.character, [currentTurn]);
-  const storyState = useMemo(() => currentTurn?.storyStateAfterScene, [currentTurn]);
+  const currentStoryState = useMemo(() => storyHistory.length > 0 ? storyHistory[storyHistory.length - 1].storyStateAfterScene : null, [storyHistory]);
+  const character = useMemo(() => currentStoryState?.character, [currentStoryState]);
 
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string }) => {
     setIsLoadingInteraction(true);
@@ -105,9 +121,20 @@ export default function StoryForgePage() {
         initializeLorebook(result.initialLoreEntries);
       }
 
+      const initialMessage: DisplayMessage = {
+        id: crypto.randomUUID(),
+        speakerType: 'GM',
+        speakerNameLabel: 'GAME-MASTER',
+        speakerDisplayName: "admin",
+        content: result.sceneDescription,
+        avatarSrc: GM_AVATAR_PLACEHOLDER,
+        avatarHint: "profile male",
+        isPlayer: false,
+      };
+      
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
-        sceneDescription: result.sceneDescription,
+        messages: [initialMessage],
         storyStateAfterScene: result.storyState,
       };
       
@@ -115,7 +142,7 @@ export default function StoryForgePage() {
       const newSession: GameSession = {
         id: newSessionId,
         storyPrompt: `Adventure in the world of: ${data.seriesName}${data.characterName ? ` as ${data.characterName}` : ''}`,
-        characterName: result.storyState.character.name,
+        characterName: result.storyState.character.name, // Set character name from AI result
         storyHistory: [firstTurn],
         createdAt: new Date().toISOString(),
         lastPlayedAt: new Date().toISOString(),
@@ -146,26 +173,89 @@ export default function StoryForgePage() {
   };
 
   const handleUserAction = async (userInput: string) => {
-    if (!currentTurn || !currentSession || !storyState) return;
+    if (!currentStoryState || !currentSession || !character) return;
     setIsLoadingInteraction(true);
     setLoadingMessage("AI is crafting the next part of your tale...");
+
+    const playerMessage: DisplayMessage = {
+      id: crypto.randomUUID(),
+      speakerType: 'Player',
+      speakerNameLabel: 'Player',
+      speakerDisplayName: character.name,
+      content: userInput,
+      avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
+      avatarHint: "profile female", // Assuming player avatar hint for consistency
+      isPlayer: true,
+    };
+
+    // Add player message immediately to history for responsiveness
+    // The actual turn object is created after AI response
+    setStoryHistory(prevHistory => {
+        const lastTurn = prevHistory[prevHistory.length -1];
+        // If this is the very first user action, create a new turn for this message
+        if (lastTurn.messages.some(m => m.speakerType === 'GM') && lastTurn.messages.every(m => m.speakerType !== 'Player')) {
+             return [...prevHistory, {
+                id: crypto.randomUUID(), // Temporary turn ID for player message
+                messages: [playerMessage],
+                storyStateAfterScene: lastTurn.storyStateAfterScene // Carry over state temporarily
+            }];
+        }
+        // Otherwise, append to the last turn's messages if it already contains user messages
+        // Or if last turn was just GM. In a robust system, each action might start a new "pending" turn.
+        // For simplicity now, let's assume player message can be appended or start a new turn contextually.
+        // This logic might need refinement based on how turns are strictly defined.
+        // A simpler approach for now: player message always initiates a new visual turn entry that AI completes.
+         const newTurnForPlayerMessage: StoryTurn = {
+            id: `pending-${crypto.randomUUID()}`, // A temporary ID
+            messages: [playerMessage],
+            storyStateAfterScene: lastTurn.storyStateAfterScene // Carry over state
+        };
+        return [...prevHistory, newTurnForPlayerMessage];
+    });
+
+
     try {
-      const { generateNextScene } = await import("@/ai/flows/generate-next-scene"); // Dynamic import
+      const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
+      
+      // Determine the "currentScene" to send to AI. This is tricky with message history.
+      // For now, let's send the content of the last GM message as "currentScene".
+      // This might need refinement if AI needs more context.
+      const lastGMMessages = storyHistory.flatMap(turn => turn.messages).filter(m => m.speakerType === 'GM');
+      const currentSceneContext = lastGMMessages.length > 0 ? lastGMMessages[lastGMMessages.length -1].content : "The story continues.";
+
+
       const result = await generateNextScene({
-        currentScene: currentTurn.sceneDescription,
+        currentScene: currentSceneContext, 
         userInput: userInput,
-        storyState: storyState,
+        storyState: currentStoryState,
         seriesName: currentSession.seriesName,
         seriesStyleGuide: currentSession.seriesStyleGuide,
-        currentTurnId: currentTurn.id, 
+        currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
       });
-      const nextTurnItem: StoryTurn = {
+
+      const aiMessage: DisplayMessage = {
         id: crypto.randomUUID(),
-        sceneDescription: result.nextScene,
-        storyStateAfterScene: result.updatedStoryState,
-        userInputThatLedToScene: userInput,
+        speakerType: 'GM', // For now, all AI output is GM. Phase 2 will differentiate NPCs.
+        speakerNameLabel: 'GAME-MASTER',
+        speakerDisplayName: "admin",
+        content: result.nextScene,
+        avatarSrc: GM_AVATAR_PLACEHOLDER,
+        avatarHint: "profile male",
+        isPlayer: false,
       };
-      setStoryHistory((prevHistory) => [...prevHistory, nextTurnItem]);
+      
+      const completedTurn: StoryTurn = {
+        id: crypto.randomUUID(), // Final turn ID
+        messages: [playerMessage, aiMessage], // Contains both player and AI message for this interaction cycle
+        storyStateAfterScene: result.updatedStoryState,
+      };
+
+      setStoryHistory(prevHistory => {
+        // Replace the temporary turn (that only had player message) with the completed turn
+        const historyWithoutPending = prevHistory.filter(turn => !turn.id.startsWith('pending-'));
+        return [...historyWithoutPending, completedTurn];
+      });
+
 
       if (result.newLoreEntries && result.newLoreEntries.length > 0) {
         const keywords = result.newLoreEntries.map(l => l.keyword).join(', ');
@@ -179,11 +269,6 @@ export default function StoryForgePage() {
           ),
           duration: 5000,
         });
-        // Force a re-render of the lorebook if it's the active tab,
-        // or ensure it updates next time it's opened.
-        // This can be done by a state update if LorebookDisplay depends on it,
-        // or by calling a refresh function if LorebookDisplay exposes one.
-        // For now, the lorebook will update on its own useEffect when it becomes visible or data changes.
       }
 
     } catch (error) {
@@ -193,16 +278,18 @@ export default function StoryForgePage() {
         description: "The AI encountered an issue. Please try again.",
         variant: "destructive",
       });
+       // Remove the temporary player message turn on error
+        setStoryHistory(prevHistory => prevHistory.filter(turn => !turn.id.startsWith('pending-')));
     }
     setIsLoadingInteraction(false);
     setLoadingMessage(null);
   };
 
   const handleUndo = () => {
-    if (storyHistory.length > 1) {
+    if (storyHistory.length > 1) { // Only undo if there's more than the initial scene
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
-       toast({ title: "Last action undone."});
-    } else if (storyHistory.length === 1) {
+       toast({ title: "Last interaction undone."});
+    } else if (storyHistory.length === 1) { // If only initial scene is left, effectively restart
       handleRestart();
     }
   };
@@ -235,7 +322,7 @@ export default function StoryForgePage() {
     <div className="flex flex-col items-center min-h-screen bg-background p-4 sm:p-8 selection:bg-primary/20 selection:text-primary">
       <header className="mb-6 text-center">
         <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
-          <Sparkles className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
+          <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
           Story Forge
         </h1>
         <p className="text-muted-foreground text-lg mt-1">
@@ -258,7 +345,7 @@ export default function StoryForgePage() {
           />
         )}
         
-        {currentSession && currentTurn && character && storyState && (
+        {currentSession && character && currentStoryState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5 mb-4"> 
               <TabsTrigger value="story" className="text-xs sm:text-sm">
@@ -285,26 +372,26 @@ export default function StoryForgePage() {
                 canUndo={storyHistory.length > 0}
                 isLoading={isLoadingInteraction}
               />
-              <MinimalCharacterStatus character={character} storyState={storyState} />
+              <MinimalCharacterStatus character={character} storyState={currentStoryState} />
               <StoryDisplay
-                sceneDescription={currentTurn.sceneDescription}
-                keyProp={currentTurn.id} 
+                storyHistory={storyHistory}
+                isLoadingInteraction={isLoadingInteraction}
               />
               <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
             </TabsContent>
 
             <TabsContent value="character">
-              <CharacterSheet character={character} storyState={storyState} />
+              <CharacterSheet character={character} storyState={currentStoryState} />
             </TabsContent>
 
             <TabsContent value="npcs"> 
-              <NPCTrackerDisplay trackedNPCs={storyState.trackedNPCs as NPCProfile[]} currentTurnId={currentTurn.id} />
+              <NPCTrackerDisplay trackedNPCs={currentStoryState.trackedNPCs as NPCProfile[]} currentTurnId={storyHistory[storyHistory.length-1]?.id || 'initial'} />
             </TabsContent>
 
             <TabsContent value="journal">
               <JournalDisplay 
-                quests={storyState.quests as Quest[]} 
-                worldFacts={storyState.worldFacts} 
+                quests={currentStoryState.quests as Quest[]} 
+                worldFacts={currentStoryState.worldFacts} 
               />
             </TabsContent>
             
@@ -313,7 +400,7 @@ export default function StoryForgePage() {
             </TabsContent>
           </Tabs>
         )}
-         {currentSession && !currentTurn && !isLoadingInteraction && ( 
+         {currentSession && (!character || !currentStoryState) && !isLoadingInteraction && ( 
             <div className="text-center p-6 bg-card rounded-lg shadow-md">
                 <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
                 <Button onClick={handleRestart}>Start a New Adventure</Button>
@@ -326,4 +413,3 @@ export default function StoryForgePage() {
     </div>
   );
 }
-
