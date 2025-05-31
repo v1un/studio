@@ -172,7 +172,7 @@ const GenerateNextSceneOutputSchemaInternal = z.object({
   updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, currency, level changes (including potential stat/skill grant from level up), inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including merchant status, inventory changes, potential short-term goal changes), new skills, or stat increases. Rewards for completed quests (including currency) are applied automatically. Items should always include a basePrice.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
   newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'."),
-  updatedStorySummary: z.string().describe("The new running summary of the story, concisely incorporating key events, decisions, and consequences from this scene, building upon the previous summary."),
+  updatedStorySummary: z.string().describe("The new running summary of the story, concisely incorporating key events, decisions, and consequences from this scene, building upon the previous summary. Pay special attention to: significant changes in relationships with key NPCs, major unresolved plot threads or new mysteries introduced, important items gained or lost if they have plot significance, and choices made by the player that had significant, lasting consequences."),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -345,7 +345,7 @@ If the player's input or the unfolding scene mentions a specific named entity (l
 Based on the current scene, player's input, detailed story state, and the story summary so far, generate the 'nextScene' text.
 
 **Story Summary & Context:**
-You are provided with a \`storyState.storySummary\` of key past events. Use this summary to maintain long-term coherence. After generating the \`nextScene\`, you MUST provide an \`updatedStorySummary\` in the output. This new summary should concisely incorporate the most important developments, decisions, and consequences from the \`nextScene\` you just generated, appending to or refining the previous summary. Keep it brief (1-2 new sentences ideally) but informative.
+You are provided with a \`storyState.storySummary\` of key past events. Use this summary to maintain long-term coherence. After generating the \`nextScene\`, you MUST provide an \`updatedStorySummary\` in the output. This new summary should concisely incorporate the most important developments, decisions, and consequences from the \`nextScene\` you just generated, appending to or refining the previous summary. Keep it brief (1-2 new sentences ideally) but informative. When updating the summary, pay special attention to: significant changes in relationships with key NPCs (especially if they become hostile or very friendly), major unresolved plot threads or new mysteries introduced, important items gained or lost if they have plot significance, and choices made by the player that had significant, lasting consequences.
 
 **Narrative Integrity & Player Impact:**
 While respecting player choices is paramount, ensure the story remains coherent within the established \`{{seriesName}}\` universe and its \`{{seriesStyleGuide}}\`.
@@ -361,7 +361,7 @@ While respecting player choices is paramount, ensure the story remains coherent 
     2. Then, transition the narrative to describe the character's experience of 'returning' or time rewinding. They should explicitly retain memories and knowledge from the 'failed' timeline.
     3. The story should then resume from a narratively coherent 'checkpoint' or a point just before the critical failure, with the character now possessing this foreknowledge.
 - Subtly reflect any emotional toll or consequences of such a return in the character's state or your descriptive text (e.g., 'Subaru awoke with a gasp, the phantom pain still fresh, the events of the last hour seared into his mind. He was back at the market stall, moments before...').
-- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \\\`worldFacts\\\`; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
+- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \`worldFacts\` like 'The Witch's Scent around you feels stronger', or affecting NPC \`relationshipStatus\` or \`shortTermGoal\` if they are sensitive to it; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
 
 **Skill Usage & Effects:**
 - If the player's input indicates they are using one of their listed \`skillsAndAbilities\`:
@@ -417,7 +417,7 @@ While respecting player choices is paramount, ensure the story remains coherent 
 
 **Quests & World State:**
 - Describe quest developments. When a quest is completed, narrate rewards (XP, currency, items) being received.
-- **Branching/Updating Quest Objectives:** Modify or add objectives based on player actions.
+- **Branching/Updating Quest Objectives:** Based on the player's actions, discoveries, or even failures, consider if an active quest's objectives should change or new ones should be added. For example, if they find an alternative solution to a problem, an objective might be marked completed and a new, unexpected one added. If they anger a quest-related NPC, an objective might become harder or change entirely. Reflect these dynamic updates in updatedStoryState.quests. If a player's action directly completes an objective, ensure it's marked isCompleted: true. If it logically leads to a new step for the *same quest*, add it as a new objective to that quest. If it spawns an entirely new side-quest, create a new quest object.
 - **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences.
 
 **Character Progression:**
@@ -478,7 +478,7 @@ const generateNextSceneFlow = ai.defineFlow(
     // Post-process new lore entries
     if (output.newLoreEntries && Array.isArray(output.newLoreEntries)) {
       for (const lore of output.newLoreEntries) {
-        if (lore.keyword && lore.content) {
+        if (lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") {
           try {
             saveNewLoreEntry({
               keyword: lore.keyword,
@@ -536,6 +536,7 @@ const generateNextSceneFlow = ai.defineFlow(
                                               : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevel * 0.5));
         }
       } else {
+         // Ensure XP to next level is always reasonable even if no level up.
          if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel < updatedChar.experiencePoints) {
             updatedChar.experienceToNextLevel = originalXpToNextLevel > updatedChar.experiencePoints ? originalXpToNextLevel : updatedChar.experiencePoints + 50;
          }
@@ -840,6 +841,5 @@ const generateNextSceneFlow = ai.defineFlow(
     return output!;
   }
 );
-
 
     
