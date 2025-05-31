@@ -24,14 +24,15 @@ interface RelationshipInfo {
   label: string;
   variant: "default" | "secondary" | "destructive" | "outline";
   icon?: React.ElementType;
+  colorClass: string;
 }
 
 const getRelationshipInfo = (score: number): RelationshipInfo => {
-  if (score <= -75) return { label: "Arch-Nemesis", variant: "destructive", icon: TrendingDown };
-  if (score <= -25) return { label: "Hostile", variant: "destructive", icon: TrendingDown };
-  if (score < 25) return { label: "Neutral", variant: "secondary", icon: Minus };
-  if (score < 75) return { label: "Friendly", variant: "default", icon: TrendingUp };
-  return { label: "Staunch Ally", variant: "default", icon: TrendingUp }; 
+  if (score <= -75) return { label: "Arch-Nemesis", variant: "destructive", icon: TrendingDown, colorClass:"text-red-500"};
+  if (score <= -25) return { label: "Hostile", variant: "destructive", icon: TrendingDown, colorClass:"text-orange-500" };
+  if (score < 25) return { label: "Neutral", variant: "secondary", icon: Minus, colorClass:"text-gray-500" };
+  if (score < 75) return { label: "Friendly", variant: "default", icon: TrendingUp, colorClass:"text-green-500" };
+  return { label: "Staunch Ally", variant: "default", icon: TrendingUp, colorClass:"text-sky-500" }; 
 };
 
 
@@ -42,21 +43,21 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
 
   return (
     <AccordionItem value={npc.id} className="border-b-0">
-      <AccordionTrigger className="hover:no-underline p-3 rounded-md hover:bg-accent/10 data-[state=open]:bg-accent/20 data-[state=open]:text-foreground">
+      <AccordionTrigger className="hover:no-underline p-3 rounded-md hover:bg-accent/10 data-[state=open]:bg-accent/5 data-[state=open]:shadow-inner data-[state=open]:text-primary">
         <div className="flex items-center justify-between w-full">
             <div className="flex items-center">
-                <Users2Icon className="w-5 h-5 mr-3 text-primary shrink-0"/>
+                <Users2Icon className="w-5 h-5 mr-3 text-primary/80 shrink-0"/>
                 <span className="text-lg font-semibold">{npc.name}</span>
                 {npc.classOrRole && <Badge variant="secondary" className="ml-2 text-xs flex items-center"><IdCardIcon className="w-3 h-3 mr-1"/>{npc.classOrRole}</Badge>}
-                {npc.isMerchant && <Badge className="ml-2 text-xs flex items-center bg-green-100 text-green-700 border border-green-300 dark:bg-green-700/30 dark:text-green-300 dark:border-green-600 hover:bg-green-200 dark:hover:bg-green-700/40"><StoreIcon className="w-3 h-3 mr-1"/>Merchant</Badge>}
+                {npc.isMerchant && <Badge className="ml-2 text-xs flex items-center bg-green-100 text-green-700 border-green-300 dark:bg-green-800/60 dark:text-green-200 dark:border-green-700 hover:bg-green-200/80 dark:hover:bg-green-800/80"><StoreIcon className="w-3 h-3 mr-1"/>Merchant</Badge>}
             </div>
-            <Badge variant={relationshipInfo.variant} className="text-xs">
+            <Badge variant={relationshipInfo.variant} className={`text-xs ${relationshipInfo.colorClass} border-${relationshipInfo.colorClass}/50`}>
                 <RelationshipIcon className="w-3 h-3 mr-1"/>
                 {relationshipInfo.label} ({npc.relationshipStatus})
             </Badge>
         </div>
       </AccordionTrigger>
-      <AccordionContent className="pt-2 pb-3 px-3 text-sm space-y-3 bg-background/30 rounded-b-md">
+      <AccordionContent className="pt-2 pb-3 px-3 text-sm space-y-3 bg-background/10 rounded-b-md">
         <p className="text-muted-foreground italic">{npc.description}</p>
         
         <Separator/>
@@ -77,7 +78,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                     <div>
                         <span className="font-medium">Last Seen: </span>
                         <span className="text-muted-foreground">{npc.lastKnownLocation} (Turn: {npc.lastSeenTurnId?.substring(0,8)}...
-                          {isLastSeenCurrent && <Badge className="ml-1 py-0 px-1.5 text-[10px] bg-accent text-accent-foreground border border-accent-foreground/30 flex items-center gap-1"><SparklesIcon className="w-2.5 h-2.5"/>Current</Badge>}
+                          {isLastSeenCurrent && <Badge className="ml-1 py-0 px-1.5 text-[10px] bg-accent/80 text-accent-foreground border border-accent-foreground/30 flex items-center gap-1 hover:bg-accent"><SparklesIcon className="w-2.5 h-2.5"/>Current</Badge>}
                         </span>
                     </div>
                 </div>
@@ -136,7 +137,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
         {npc.dialogueHistory && npc.dialogueHistory.length > 0 && (
           <div>
             <h4 className="font-semibold mb-1 flex items-center text-sm">
-                <HistoryIcon className="w-4 h-4 mr-1.5 text-accent"/>Dialogue History
+                <HistoryIcon className="w-4 h-4 mr-1.5 text-accent"/>Dialogue History (Last 5)
             </h4>
             <ScrollArea className="h-24 rounded-md border p-2 bg-background/50">
               <ul className="space-y-2 text-xs">
@@ -175,7 +176,16 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
     );
   }
   
-  const sortedNPCs = [...trackedNPCs].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedNPCs = [...trackedNPCs].sort((a, b) => {
+    // Prioritize NPCs seen in the current turn
+    const aIsCurrent = a.lastSeenTurnId === currentTurnId;
+    const bIsCurrent = b.lastSeenTurnId === currentTurnId;
+    if (aIsCurrent && !bIsCurrent) return -1;
+    if (!aIsCurrent && bIsCurrent) return 1;
+    
+    // Then sort by name
+    return a.name.localeCompare(b.name);
+  });
 
   return (
     <Card className="w-full shadow-lg animate-fade-in">
@@ -184,7 +194,7 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
           <UserCogIcon className="w-6 h-6 mr-2 text-accent" /> NPC Tracker ({sortedNPCs.length})
         </CardTitle>
         <CardDescription>
-          Profiles of significant characters encountered in your story.
+          Profiles of significant characters encountered in your story. NPCs active in the current scene are highlighted.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0 sm:p-2"> 
@@ -197,5 +207,3 @@ export default function NPCTrackerDisplay({ trackedNPCs, currentTurnId }: NPCTra
     </Card>
   );
 }
-
-      
