@@ -8,16 +8,28 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label"; // Import standard Label
-import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { PackageIcon, MapPinIcon, ScrollTextIcon, BookOpenIcon, HeartIcon, ZapIcon, DumbbellIcon, ToyBrickIcon, BrainIcon, EyeIcon, SparklesIcon, VenetianMaskIcon } from "lucide-react";
 
 interface CharacterSheetProps {
   character: CharacterProfile;
   storyState: StructuredStoryState;
 }
 
+const StatDisplay: React.FC<{ icon: React.ElementType, label: string, value?: number, colorClass?: string }> = ({ icon: Icon, label, value, colorClass }) => (
+  <div className="flex items-center justify-between">
+    <div className="flex items-center">
+      <Icon className={`w-4 h-4 mr-1.5 ${colorClass || 'text-primary'}`} />
+      <Label className="text-sm font-medium">{label}</Label>
+    </div>
+    <span className="text-sm text-muted-foreground">{value ?? 'N/A'}</span>
+  </div>
+);
+
+
 export default function CharacterSheet({ character, storyState }: CharacterSheetProps) {
   const healthPercentage = character.maxHealth > 0 ? (character.health / character.maxHealth) * 100 : 0;
+  const manaPercentage = (character.maxMana ?? 0) > 0 ? ((character.mana ?? 0) / (character.maxMana ?? 1)) * 100 : 0;
 
   return (
     <Card className="w-full shadow-lg bg-card/80 backdrop-blur-sm animate-fade-in">
@@ -28,7 +40,8 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
         </CardTitle>
         <CardDescription className="text-sm italic">{character.description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 pt-2">
+      <CardContent className="space-y-3 pt-2">
+        {/* Health and Mana Bars */}
         <div>
           <div className="flex justify-between items-center mb-1">
             <Label className="text-sm font-medium flex items-center">
@@ -39,10 +52,38 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
           </div>
           <Progress value={healthPercentage} aria-label={`${healthPercentage}% health`} className="h-3 [&>div]:bg-red-500" />
         </div>
+        {(character.maxMana ?? 0) > 0 && (
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <Label className="text-sm font-medium flex items-center">
+                <ZapIcon className="w-4 h-4 mr-1.5 text-blue-500" />
+                Mana
+              </Label>
+              <span className="text-sm text-muted-foreground">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
+            </div>
+            <Progress value={manaPercentage} aria-label={`${manaPercentage}% mana`} className="h-3 [&>div]:bg-blue-500" />
+          </div>
+        )}
 
         <Separator />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        {/* Core Stats */}
+        <div>
+          <h4 className="font-semibold mb-2 text-md">Core Stats</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+            <StatDisplay icon={DumbbellIcon} label="Strength" value={character.strength} colorClass="text-orange-500" />
+            <StatDisplay icon={VenetianMaskIcon} label="Dexterity" value={character.dexterity} colorClass="text-green-500" /> {/* Using ToyBrick as placeholder for agility/dex */}
+            <StatDisplay icon={HeartIcon} label="Constitution" value={character.constitution} colorClass="text-red-600" /> {/* Using Heart as proxy for constitution/vitality */}
+            <StatDisplay icon={BrainIcon} label="Intelligence" value={character.intelligence} colorClass="text-purple-500" />
+            <StatDisplay icon={EyeIcon} label="Wisdom" value={character.wisdom} colorClass="text-sky-500" />
+            <StatDisplay icon={SparklesIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
+          </div>
+        </div>
+        
+        <Separator />
+
+        {/* Location, Inventory, Quests, Facts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm pt-1">
           <div>
             <h4 className="font-semibold mb-1 flex items-center"><MapPinIcon className="w-4 h-4 mr-1.5 text-primary" />Location</h4>
             <p className="text-muted-foreground">{storyState.currentLocation}</p>

@@ -5,6 +5,14 @@ export interface CharacterProfile {
   description: string;
   health: number;
   maxHealth: number;
+  mana?: number; // Optional for now, can be made mandatory later
+  maxMana?: number; // Optional for now
+  strength?: number;
+  dexterity?: number;
+  constitution?: number;
+  intelligence?: number;
+  wisdom?: number;
+  charisma?: number;
 }
 
 export interface StructuredStoryState {
