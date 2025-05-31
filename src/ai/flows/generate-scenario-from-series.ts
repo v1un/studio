@@ -151,7 +151,7 @@ export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFr
 
 // --- Prompts for Multi-Step Generation ---
 
-// STEP 1: Character, Scene, Location, Skills
+// STEP 1: Character, Scene, Location
 const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
 const CharacterAndSceneOutputSchema = z.object({
     sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
@@ -187,38 +187,79 @@ You MUST generate an object with the following three top-level properties: 'scen
 Your entire response MUST be a single JSON object adhering strictly to the CharacterAndSceneOutputSchema, containing 'sceneDescription', 'character', and 'currentLocation'. Ensure all skill IDs within character.skillsAndAbilities are unique.`,
 });
 
-// STEP 2: Initial Inventory, Equipment, World Facts
-const InitialItemsAndFactsInputSchema = z.object({
+
+// STEP 2: Sub-steps for Items, Equipment, and World Facts
+
+const MinimalContextForItemsFactsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterProfileSchemaInternal,
+    character: CharacterProfileSchemaInternal.pick({ name: true, class: true, description: true }), // Only relevant parts for context
     sceneDescription: z.string(),
     currentLocation: z.string(),
 });
-const InitialItemsAndFactsOutputSchema = z.object({
+
+// STEP 2a: Initial Inventory
+const InitialInventoryOutputSchema = z.object({
     inventory: StructuredStoryStateSchemaInternal.shape.inventory,
-    equippedItems: StructuredStoryStateSchemaInternal.shape.equippedItems,
-    worldFacts: StructuredStoryStateSchemaInternal.shape.worldFacts,
 });
-const initialItemsAndFactsPrompt = ai.definePrompt({
-  name: 'initialItemsAndFactsPrompt',
-  input: { schema: InitialItemsAndFactsInputSchema },
-  output: { schema: InitialItemsAndFactsOutputSchema },
+const initialInventoryPrompt = ai.definePrompt({
+  name: 'initialInventoryPrompt',
+  input: { schema: MinimalContextForItemsFactsInputSchema },
+  output: { schema: InitialInventoryOutputSchema },
   prompt: `For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
-Generate ONLY:
-1.  'inventory': 0-3 unequipped starting items (unique id, name, description. 'equipSlot' if equippable gear, otherwise omit 'equipSlot'). For consumable items (like potions), set \`isConsumable: true\` and provide an \`effectDescription\`. If an item is a quest item, set \`isQuestItem: true\` and optionally \`relevantQuestId\`.
-2.  'equippedItems': All 10 slots ('weapon', 'shield', etc.) mapped to an item object or null. Item must have 'equipSlot' if equippable. Ensure consistency with scene. This object MUST contain all 10 slot keys, using 'null' for empty ones.
-3.  'worldFacts': 3-5 key world facts relevant to the start.
-Adhere strictly to the JSON schema. Ensure all item IDs are unique.`,
+Generate ONLY 'inventory': An array of 0-3 unequipped starting items appropriate for the character and scene.
+- Each item must have a unique 'id', 'name', and 'description'.
+- If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key), the 'equipSlot' field MUST BE OMITTED.
+- For consumable items (like potions), set \`isConsumable: true\` and provide an \`effectDescription\`.
+- If an item is a quest item, set \`isQuestItem: true\` and optionally \`relevantQuestId\`.
+Adhere strictly to the JSON schema. Ensure all item IDs are unique. Output ONLY the object: { "inventory": [...] }.`,
 });
+
+// STEP 2b: Initial Equipped Items
+const InitialEquippedItemsOutputSchema = z.object({
+    equippedItems: StructuredStoryStateSchemaInternal.shape.equippedItems,
+});
+const initialEquippedItemsPrompt = ai.definePrompt({
+  name: 'initialEquippedItemsPrompt',
+  input: { schema: MinimalContextForItemsFactsInputSchema },
+  output: { schema: InitialEquippedItemsOutputSchema },
+  prompt: `For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY 'equippedItems': An object representing the character's equipped gear.
+- It MUST contain all 10 equipment slots: 'weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'.
+- Each slot should be mapped to either an item object (with unique 'id', 'name', 'description', and its specific 'equipSlot') or 'null' if the slot is empty.
+- Any items provided should be appropriate starting gear for the character and series, consistent with the scene.
+Adhere strictly to the JSON schema. Ensure all item IDs are unique. Output ONLY the object: { "equippedItems": { ... } }.`,
+});
+
+// STEP 2c: Initial World Facts
+const InitialWorldFactsOutputSchema = z.object({
+    worldFacts: StructuredStoryStateSchemaInternal.shape.worldFacts,
+});
+const initialWorldFactsPrompt = ai.definePrompt({
+  name: 'initialWorldFactsPrompt',
+  input: { schema: MinimalContextForItemsFactsInputSchema },
+  output: { schema: InitialWorldFactsOutputSchema },
+  prompt: `For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY 'worldFacts': An array of 3-5 key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation.
+Adhere strictly to the JSON schema. Output ONLY the object: { "worldFacts": [...] }.`,
+});
+
 
 // STEP 3: Initial Quests
 const InitialQuestsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterProfileSchemaInternal,
+    character: CharacterProfileSchemaInternal, // Full character for richer quest context
     sceneDescription: z.string(),
     currentLocation: z.string(),
 });
@@ -244,7 +285,7 @@ Adhere strictly to the JSON schema. Ensure quest and item IDs are unique.`,
 // STEP 4: Initial Tracked NPCs
 const InitialTrackedNPCsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterProfileSchemaInternal,
+    character: CharacterProfileSchemaInternal, // Full character for context
     sceneDescription: z.string(),
     currentLocation: z.string(), // Player character's starting location
 });
@@ -340,29 +381,61 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       console.error("Character/Scene generation failed or returned unexpected structure:", charSceneOutput);
       throw new Error('Failed to generate character, scene, or location.');
     }
+    const characterForContext = {
+        name: charSceneOutput.character.name,
+        class: charSceneOutput.character.class,
+        description: charSceneOutput.character.description,
+    };
 
-    // Step 2: Generate initial items and facts
-    const itemsFactsInput: z.infer<typeof InitialItemsAndFactsInputSchema> = {
+    // Step 2a: Generate initial inventory
+    const inventoryInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: charSceneOutput.character,
+        character: characterForContext,
         sceneDescription: charSceneOutput.sceneDescription,
         currentLocation: charSceneOutput.currentLocation,
     };
-    const { output: itemsFactsOutput } = await initialItemsAndFactsPrompt(itemsFactsInput);
-    if (!itemsFactsOutput) {
-        console.error("Initial items/facts generation failed:", itemsFactsOutput);
-        throw new Error('Failed to generate initial items and facts.');
+    const { output: inventoryOutput } = await initialInventoryPrompt(inventoryInput);
+    if (!inventoryOutput || !inventoryOutput.inventory) {
+        console.error("Initial inventory generation failed:", inventoryOutput);
+        throw new Error('Failed to generate initial inventory.');
     }
+
+    // Step 2b: Generate initial equipped items
+    const equippedItemsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
+        seriesName: mainInput.seriesName,
+        character: characterForContext,
+        sceneDescription: charSceneOutput.sceneDescription,
+        currentLocation: charSceneOutput.currentLocation,
+    };
+    const { output: equippedItemsOutput } = await initialEquippedItemsPrompt(equippedItemsInput);
+     if (!equippedItemsOutput || !equippedItemsOutput.equippedItems) {
+        console.error("Initial equipped items generation failed:", equippedItemsOutput);
+        throw new Error('Failed to generate initial equipped items.');
+    }
+
+    // Step 2c: Generate initial world facts
+    const worldFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
+        seriesName: mainInput.seriesName,
+        character: characterForContext,
+        sceneDescription: charSceneOutput.sceneDescription,
+        currentLocation: charSceneOutput.currentLocation,
+    };
+    const { output: worldFactsOutput } = await initialWorldFactsPrompt(worldFactsInput);
+    if (!worldFactsOutput || !worldFactsOutput.worldFacts) {
+        console.error("Initial world facts generation failed:", worldFactsOutput);
+        throw new Error('Failed to generate initial world facts.');
+    }
+
 
     // Step 3: Generate initial quests
     const questsInput: z.infer<typeof InitialQuestsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: charSceneOutput.character,
+        character: charSceneOutput.character, // Pass full character for quest context
         sceneDescription: charSceneOutput.sceneDescription,
         currentLocation: charSceneOutput.currentLocation,
     };
     const { output: questsOutput } = await initialQuestsPrompt(questsInput);
-    if (!questsOutput) {
+    if (!questsOutput || !questsOutput.quests) {
         console.error("Initial quests generation failed:", questsOutput);
         throw new Error('Failed to generate initial quests.');
     }
@@ -370,12 +443,12 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     // Step 4: Generate initial tracked NPCs
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: charSceneOutput.character,
+        character: charSceneOutput.character, // Pass full character for NPC context
         sceneDescription: charSceneOutput.sceneDescription,
         currentLocation: charSceneOutput.currentLocation,
     };
     const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
-    if (!npcsOutput) {
+    if (!npcsOutput || !npcsOutput.trackedNPCs) {
         console.error("Initial tracked NPCs generation failed:", npcsOutput);
         throw new Error('Failed to generate initial tracked NPCs.');
     }
@@ -384,10 +457,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
         character: charSceneOutput.character,
         currentLocation: charSceneOutput.currentLocation,
-        inventory: itemsFactsOutput.inventory || [],
-        equippedItems: itemsFactsOutput.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null },
+        inventory: inventoryOutput.inventory || [],
+        equippedItems: equippedItemsOutput.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null },
         quests: questsOutput.quests || [],
-        worldFacts: itemsFactsOutput.worldFacts || [],
+        worldFacts: worldFactsOutput.worldFacts || [],
         trackedNPCs: npcsOutput.trackedNPCs || [],
     };
 
@@ -421,7 +494,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       char.dexterity = char.dexterity ?? 10;
       char.constitution = char.constitution ?? 10;
       char.intelligence = char.intelligence ?? 10;
-      char.wisdom = typeof char.wisdom === 'number' ? Math.round(char.wisdom) : 10; // Round wisdom
+      char.wisdom = typeof char.wisdom === 'number' ? Math.round(char.wisdom) : 10;
       char.charisma = char.charisma ?? 10;
       char.level = char.level ?? 1;
       char.experiencePoints = char.experiencePoints ?? 0;
@@ -429,10 +502,16 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       if (char.experienceToNextLevel <= 0) char.experienceToNextLevel = 100;
       
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
+      const skillIdSet = new Set<string>();
       char.skillsAndAbilities.forEach((skill, index) => {
-        if (!skill.id) {
-            skill.id = `skill_generated_scenario_${Date.now()}_${index}`;
+        let baseId = skill.id || `skill_generated_scenario_${skill.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+        let newId = baseId;
+        let counter = 0;
+        while(skillIdSet.has(newId)){
+            newId = `${baseId}_u${counter++}`;
         }
+        skill.id = newId;
+        skillIdSet.add(skill.id);
         skill.name = skill.name || "Unnamed Skill";
         skill.description = skill.description || "No description provided.";
         skill.type = skill.type || "Generic";
@@ -441,10 +520,17 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
     if (finalOutput.storyState) {
       finalOutput.storyState.inventory = finalOutput.storyState.inventory ?? [];
-      finalOutput.storyState.inventory.forEach(item => {
-        if (!item.id) {
-            item.id = `item_generated_inv_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const itemInvIdSet = new Set<string>();
+      finalOutput.storyState.inventory.forEach((item, index) => {
+        let baseId = item.id || `item_generated_inv_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}_${index}`;
+        let newId = baseId;
+        let counter = 0;
+        while(itemInvIdSet.has(newId)){
+            newId = `${baseId}_u${counter++}`;
         }
+        item.id = newId;
+        itemInvIdSet.add(item.id);
+
         if (item.equipSlot === null || (item.equipSlot as unknown) === '') {
           delete (item as Partial<ItemType>).equipSlot;
         }
@@ -455,10 +541,17 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       });
 
       finalOutput.storyState.quests = finalOutput.storyState.quests ?? [];
+      const questIdSet = new Set<string>();
       finalOutput.storyState.quests.forEach((quest, index) => {
-        if (!quest.id) {
-          quest.id = `quest_series_generated_scenario_${Date.now()}_${index}`;
+        let baseId = quest.id || `quest_series_generated_scenario_${Date.now()}_${index}`;
+        let newId = baseId;
+        let counter = 0;
+        while(questIdSet.has(newId)){
+            newId = `${baseId}_u${counter++}`;
         }
+        quest.id = newId;
+        questIdSet.add(quest.id);
+
         if (!quest.status) {
           quest.status = 'active';
         }
@@ -477,10 +570,17 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         
         if (quest.rewards) {
             quest.rewards.items = quest.rewards.items ?? [];
-            quest.rewards.items.forEach(rewardItem => {
-              if (!rewardItem.id) {
-                rewardItem.id = `item_reward_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+            const questRewardItemIdSet = new Set<string>();
+            quest.rewards.items.forEach((rewardItem, rIndex) => {
+              let baseRId = rewardItem.id || `item_reward_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}_${rIndex}`;
+              let newRId = baseRId;
+              let rCounter = 0;
+              while(questRewardItemIdSet.has(newRId) || itemInvIdSet.has(newRId)) { // Check against inventory IDs too
+                 newRId = `${baseRId}_u${rCounter++}`;
               }
+              rewardItem.id = newRId;
+              questRewardItemIdSet.add(rewardItem.id);
+
               if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') {
                 delete (rewardItem as Partial<ItemType>).equipSlot;
               }
@@ -506,15 +606,28 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       };
       const aiEquipped = finalOutput.storyState.equippedItems || {};
       const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
+      const equippedItemIdSet = new Set<string>();
+
       for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
           newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
           if (newEquippedItems[slotKey]) {
-             if (!newEquippedItems[slotKey]!.id) {
-                newEquippedItems[slotKey]!.id = `item_generated_equip_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-            }
+             let baseEqId = newEquippedItems[slotKey]!.id || `item_generated_equip_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}_${slotKey}`;
+             let newEqId = baseEqId;
+             let eqCounter = 0;
+             while(equippedItemIdSet.has(newEqId) || itemInvIdSet.has(newEqId)) { // Check against inventory IDs too
+                newEqId = `${baseEqId}_u${eqCounter++}`;
+             }
+            newEquippedItems[slotKey]!.id = newEqId;
+            equippedItemIdSet.add(newEqId);
+            
             if (newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '') {
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
+              // This should not happen if AI respects the schema, but as a fallback.
+              // An equipped item should have an equipSlot matching its key or be 'ring' for ring slots.
+              // For simplicity, the schema requires an equipSlot, so this delete might be redundant if AI adheres.
+              // If an item *in* an equip slot doesn't have an equipSlot property, that's a schema violation from AI.
+              // We assume the AI provides the 'equipSlot' property for items it places in equipment.
             }
+            // These fields are not relevant for already equipped items in terms of their base definition for that slot.
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
             delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
@@ -526,29 +639,18 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       finalOutput.storyState.trackedNPCs = finalOutput.storyState.trackedNPCs ?? [];
       const npcIdSet = new Set<string>();
       finalOutput.storyState.trackedNPCs.forEach((npc, index) => {
-          if (!npc.id) {
-              let baseId = `npc_scenario_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
-              let newId = baseId;
-              let counter = 0;
-              while(npcIdSet.has(newId)) {
-                 newId = `${baseId}_u${counter++}`;
-              }
-              npc.id = newId;
+          let baseId = npc.id || `npc_scenario_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+          let newId = baseId;
+          let counter = 0;
+          while(npcIdSet.has(newId)) {
+             newId = `${baseId}_u${counter++}`;
           }
-           while(npcIdSet.has(npc.id)){
-             let baseId = npc.id;
-             let counter = 0;
-             let tempNewId = npc.id;
-             while(npcIdSet.has(tempNewId)) { 
-                tempNewId = `${baseId}_u${counter++}`;
-             }
-             npc.id = tempNewId;
-          }
+          npc.id = newId;
           npcIdSet.add(npc.id);
 
           npc.name = npc.name || "Unnamed NPC";
           npc.description = npc.description || "No description provided.";
-          npc.relationshipStatus = typeof npc.relationshipStatus === 'number' ? npc.relationshipStatus : 0; // Default to 0 (Neutral)
+          npc.relationshipStatus = typeof npc.relationshipStatus === 'number' ? Math.max(-100, Math.min(100, npc.relationshipStatus)) : 0;
           npc.knownFacts = npc.knownFacts ?? [];
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
@@ -579,5 +681,3 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
-
-    
