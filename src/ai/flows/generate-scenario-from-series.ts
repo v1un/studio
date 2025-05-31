@@ -6,6 +6,7 @@
  * This includes the starting scene, character state (potentially based on user input for name/class),
  * initial inventory, quests (with objectives, categories, but no rewards initially), world facts,
  * a set of pre-populated lorebook entries relevant to the series, and a brief series style guide.
+ * This flow uses a multi-step generation process.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
  * - GenerateScenarioFromSeriesInput - Input type (series name, optional character name/class).
@@ -16,6 +17,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType } from '@/types/story';
 
+// --- Schemas for AI communication (Internal, consistent with types/story.ts) ---
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body').");
 
@@ -73,7 +75,7 @@ const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_series_main_001'."),
   description: z.string().describe("A clear description of the quest's overall objective, fitting the series."),
   status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests."),
-  category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Introduction', 'Personal Goal'). Omit if not clearly classifiable."),
+  category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Introduction', 'Personal Goal'). Omit if not clearly classifiable or if not applicable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'."),
   rewards: QuestRewardsSchemaInternal.optional().describe("Optional rewards. For initial quests with 'active' status, this field MUST be omitted.")
 });
@@ -93,6 +95,7 @@ const RawLoreEntrySchemaInternal = z.object({
   category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
 });
 
+// --- Input/Output Schemas for the main exported flow ---
 const GenerateScenarioFromSeriesInputSchema = z.object({
   seriesName: z.string().describe('The name of the real-life series (e.g., "Naruto", "Re:Zero", "Death Note", "RWBY").'),
   characterNameInput: z.string().optional().describe("Optional user-suggested character name (can be an existing character from the series or a new one)."),
@@ -108,45 +111,86 @@ const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
 });
 export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFromSeriesOutputSchemaInternal>;
 
-export async function generateScenarioFromSeries(input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> {
-  return generateScenarioFromSeriesFlow(input);
-}
 
-const prompt = ai.definePrompt({
-  name: 'generateScenarioFromSeriesPrompt',
-  input: {schema: GenerateScenarioFromSeriesInputSchema},
-  output: {schema: GenerateScenarioFromSeriesOutputSchemaInternal},
+// --- Prompts for Multi-Step Generation ---
+
+// STEP 1: Generate Core Scenario (scene, story state excluding lore/style guide)
+const coreScenarioPrompt = ai.definePrompt({
+  name: 'generateCoreScenarioPrompt',
+  input: { schema: GenerateScenarioFromSeriesInputSchema },
+  output: {
+    schema: z.object({
+      sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
+      storyState: StructuredStoryStateSchemaInternal,
+    }),
+  },
   prompt: `You are a master storyteller and game designer, tasked with creating an immersive and detailed starting scenario for an interactive text adventure based on the series: "{{seriesName}}".
 User's character preferences:
 - Preferred Character Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}
 - Preferred Character Class/Role: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}
 
-Your goal is to generate:
+Your goal is to generate ONLY the following two things:
 1.  An engaging, vivid, and detailed initial 'sceneDescription' that drops the player right into the world of "{{seriesName}}". This scene should be tailored to the character being generated.
-2.  A complete 'storyState' object, meticulously tailored to the "{{seriesName}}" universe and the character:
+2.  A complete 'storyState' object, meticulously tailored to the "{{seriesName}}" universe and the character. This 'storyState' object MUST contain:
     *   'character':
         - If 'characterNameInput' is provided and you recognize it as an existing character from "{{seriesName}}", generate the profile for *that specific character*. Their class, description, stats, and starting items should be authentic to them at a plausible starting point in their story.
         - If 'characterNameInput' suggests an Original Character (OC), or if only 'characterClassInput' is provided, create a new character fitting that name/class. Their 'description' must explain their place or origin within the "{{seriesName}}" universe and how they fit into the initial scene.
         - If no character preferences are given, create a compelling character (existing or new) suitable for "{{seriesName}}".
-        - Ensure all character stats are set, mana fields are numbers (0 if not applicable), level is 1, XP is 0, and experienceToNextLevel is a reasonable starting value (e.g., 100).
+        - Ensure all character stats are set (strength, dexterity, constitution, intelligence, wisdom, charisma, typically 5-15), mana fields are numbers (0 if not applicable), level is 1, XP is 0, and experienceToNextLevel is a reasonable starting value (e.g., 100).
     *   'currentLocation': A specific, recognizable, and richly described starting location from "{{seriesName}}" relevant to the character and scene.
     *   'inventory': An array of 0-3 initial unequipped 'Item' objects. Each item must have a unique 'id', 'name', and 'description'. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its 'equipSlot'. If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Items should be logical for the character.
-    *   'equippedItems': An object explicitly mapping all 10 equipment slots to an 'Item' object or null. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.** This should be consistent with the scene description (e.g., if the character is described holding a weapon, it should be equipped).
-    *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore and character, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest", "Personal Goal") – if no category is clear, omit the 'category' field. For added depth, if a quest is complex, provide an array of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. **The 'rewards' field for these initial 'active' quests must be omitted.** These quests should provide clear initial direction.
+    *   'equippedItems': An object explicitly mapping all 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') to an 'Item' object or null. **If an item is placed in an equipment slot, it must be an inherently equippable type of item and have its 'equipSlot' property correctly defined.** This should be consistent with the scene description (e.g., if the character is described holding a weapon, it should be equipped).
+    *   'quests': An array containing one or two initial quest objects. Each quest object must have a unique 'id' (e.g., 'quest_{{seriesName}}_start_01'), a 'description' (string) that is compelling and fits the series lore and character, and 'status' set to 'active'. Optionally, assign a 'category' (e.g., "Main Story", "Introduction", "Side Quest", "Personal Goal") – if no category is clear or applicable, omit the 'category' field. For added depth, if a quest is complex, provide an array of 'objectives', each with a 'description' and 'isCompleted: false'. If objectives are not needed, omit the 'objectives' array. **The 'rewards' field for these initial 'active' quests MUST be omitted.** These quests should provide clear initial direction.
     *   'worldFacts': An array of 3-5 key 'worldFacts' (strings) about the "{{seriesName}}" universe, particularly those relevant to the character's starting situation or the immediate environment.
-3.  A list of 6-8 'initialLoreEntries'. Each entry an object with 'keyword', 'content', and optional 'category'. **If 'category' is not applicable for a lore entry, omit the field.** Ensure entries are accurate and relevant to the character and starting scenario.
-4.  A 'seriesStyleGuide' field: Provide a very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the "{{seriesName}}" series (e.g., for "Naruto": 'Ninja world, themes of friendship, perseverance, and overcoming adversity, with mystical martial arts (jutsu) and powerful tailed beasts.' or for "Death Note": 'Psychological thriller, themes of justice, morality, and the corrupting nature of power, featuring a supernatural notebook that kills anyone whose name is written in it.'). This guide will help maintain consistency in future scene generation. If the series is very generic or a distinct style is hard to summarize concisely, this field can be omitted.
 
-**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties (id, name, description, and 'equipSlot' if it's equippable gear, otherwise 'equipSlot' omitted).
+**Crucially:** Ensure absolute consistency between the 'sceneDescription' and the 'storyState'. If the narrative mentions the character holding, wearing, or finding an item, it MUST be reflected in 'storyState.equippedItems' or 'storyState.inventory' with all required properties.
 
-The entire response must strictly follow the JSON schema for the output.
-Make sure all IDs for items and quests are unique.
-The 'equippedItems' object in 'storyState' must include all 10 slots, with 'null' for empty slots.
-The 'quests' array in 'storyState' must contain quest objects, each with 'id', 'description', and 'status'. Optional fields are 'category' and 'objectives'. The 'rewards' field must be omitted for initial 'active' quests.
-Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable) if provided, or omitted if appropriate and allowed by the schema. For optional string fields like 'Item.equipSlot' or 'RawLoreEntry.category' or 'Quest.category', omit the field if not applicable.
-If 'seriesStyleGuide' is not generated (e.g., for very obscure series where a concise guide is hard to form), omit the field.
+DO NOT generate 'initialLoreEntries' or 'seriesStyleGuide' in THIS step.
+The entire response for this step must strictly follow the JSON schema for the 'sceneDescription' and 'storyState' output. Make sure all IDs for items and quests are unique.
+Optional fields like 'mana', 'maxMana', or character stats should be numbers (e.g., 0 for mana if not applicable). For optional string fields like 'Item.equipSlot' or 'Quest.category', omit the field if not applicable.
 `,
 });
+
+// STEP 2: Generate Lore Entries
+const LoreGenerationInputSchema = z.object({
+  seriesName: z.string(),
+  characterName: z.string(),
+  characterClass: z.string(),
+  sceneDescription: z.string(),
+  characterDescription: z.string(),
+});
+const loreEntriesPrompt = ai.definePrompt({
+  name: 'generateLoreEntriesPrompt',
+  input: { schema: LoreGenerationInputSchema },
+  output: { schema: z.array(RawLoreEntrySchemaInternal) },
+  prompt: `You are a lore master for the series "{{seriesName}}".
+Context: The story begins with a character named "{{characterName}}", a "{{characterClass}}".
+Initial Scene: {{sceneDescription}}
+Character Background: {{characterDescription}}
+
+Based on this, generate 6-8 key lore entries. Each entry should be an object with 'keyword', 'content', and an optional 'category'. If 'category' is not applicable for a lore entry, omit the field.
+The lore should be highly relevant to the character's starting situation and the "{{seriesName}}" universe.
+Output ONLY the JSON array of lore entries, strictly adhering to the schema.
+Example: [{"keyword": "Magic Wand", "content": "A basic tool for beginner mages.", "category": "Item"}]`,
+});
+
+// STEP 3: Generate Series Style Guide
+const StyleGuideInputSchema = z.object({
+  seriesName: z.string(),
+});
+const styleGuidePrompt = ai.definePrompt({
+  name: 'generateSeriesStyleGuidePrompt',
+  input: { schema: StyleGuideInputSchema },
+  output: { schema: z.string().optional() },
+  prompt: `You are a literary analyst. For the series "{{seriesName}}", provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
+If the series is very obscure or a distinct style is hard to summarize concisely, you may output nothing, or an empty string.
+Output ONLY the style guide string.`,
+});
+
+// --- Main Exported Flow ---
+export async function generateScenarioFromSeries(input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> {
+  return generateScenarioFromSeriesFlow(input);
+}
 
 const generateScenarioFromSeriesFlow = ai.defineFlow(
   {
@@ -155,10 +199,37 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal,
   },
   async (input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
-    const {output} = await prompt(input);
+    // Step 1: Generate core scenario and character
+    const { output: coreOutput } = await coreScenarioPrompt(input);
+    if (!coreOutput || !coreOutput.sceneDescription || !coreOutput.storyState) {
+      console.error("Core scenario generation failed or returned unexpected structure:", coreOutput);
+      throw new Error('Failed to generate core scenario data.');
+    }
 
-    if (output?.storyState.character) {
-      const char = output.storyState.character;
+    // Step 2: Generate lore entries
+    const loreInput: z.infer<typeof LoreGenerationInputSchema> = {
+      seriesName: input.seriesName,
+      characterName: coreOutput.storyState.character.name,
+      characterClass: coreOutput.storyState.character.class,
+      sceneDescription: coreOutput.sceneDescription,
+      characterDescription: coreOutput.storyState.character.description,
+    };
+    const { output: loreEntries } = await loreEntriesPrompt(loreInput);
+
+    // Step 3: Generate series style guide
+    const { output: styleGuide } = await styleGuidePrompt({ seriesName: input.seriesName });
+
+    // Assemble the final output
+    let finalOutput: GenerateScenarioFromSeriesOutput = {
+      sceneDescription: coreOutput.sceneDescription,
+      storyState: coreOutput.storyState,
+      initialLoreEntries: loreEntries || [],
+      seriesStyleGuide: styleGuide,
+    };
+
+    // --- Post-processing --- (copied and adapted from original single-step flow)
+    if (finalOutput.storyState.character) {
+      const char = finalOutput.storyState.character;
       char.mana = char.mana ?? 0;
       char.maxMana = char.maxMana ?? 0;
       char.strength = char.strength ?? 10;
@@ -173,9 +244,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
       if (char.experienceToNextLevel <= 0) char.experienceToNextLevel = 100;
     }
 
-    if (output?.storyState) {
-      output.storyState.inventory = output.storyState.inventory ?? [];
-      output.storyState.inventory.forEach(item => {
+    if (finalOutput.storyState) {
+      finalOutput.storyState.inventory = finalOutput.storyState.inventory ?? [];
+      finalOutput.storyState.inventory.forEach(item => {
         if (!item.id) {
             item.id = `item_generated_inv_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         }
@@ -184,8 +255,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         }
       });
 
-      output.storyState.quests = output.storyState.quests ?? [];
-      output.storyState.quests.forEach((quest, index) => {
+      finalOutput.storyState.quests = finalOutput.storyState.quests ?? [];
+      finalOutput.storyState.quests.forEach((quest, index) => {
         if (!quest.id) {
           quest.id = `quest_series_generated_${Date.now()}_${index}`;
         }
@@ -204,17 +275,16 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
              obj.description = "Objective details missing";
           }
         });
-        delete (quest as Partial<QuestType>).rewards;
+        delete (quest as Partial<QuestType>).rewards; // Initial quests should not have rewards
       });
 
-      output.storyState.worldFacts = output.storyState.worldFacts ?? [];
-      output.storyState.worldFacts = output.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
-
+      finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts ?? [];
+      finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
       const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {
           weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null
       };
-      const aiEquipped = output.storyState.equippedItems || {};
+      const aiEquipped = finalOutput.storyState.equippedItems || {};
       const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
       for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
           newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
@@ -227,24 +297,23 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
             }
           }
       }
-      output.storyState.equippedItems = newEquippedItems as any;
+      finalOutput.storyState.equippedItems = newEquippedItems as any;
     }
 
-    if (output?.initialLoreEntries) {
-        output.initialLoreEntries = output.initialLoreEntries ?? [];
-        output.initialLoreEntries.forEach(entry => {
+    if (finalOutput.initialLoreEntries) {
+        finalOutput.initialLoreEntries.forEach(entry => {
             if (entry.category === null || (entry.category as unknown) === '') {
                 delete (entry as Partial<RawLoreEntry>).category;
             }
         });
-    } else if (output) {
-        output.initialLoreEntries = [];
     }
     
-    if (output && (output.seriesStyleGuide === null || output.seriesStyleGuide === '')) {
-        delete output.seriesStyleGuide;
+    if (finalOutput.seriesStyleGuide === null || finalOutput.seriesStyleGuide === '') {
+        delete finalOutput.seriesStyleGuide;
     }
 
-    return output!;
+    return finalOutput;
   }
 );
+
+    
