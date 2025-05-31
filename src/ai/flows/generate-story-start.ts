@@ -11,7 +11,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z} from 'zod';
 import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType } from '@/types/story';
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
@@ -190,7 +190,7 @@ Based on the theme and any user suggestions, generate the following:
 Your entire response must strictly follow the JSON schema defined for the output.
 The 'storyState' must be a JSON object with 'character', 'currentLocation', 'inventory', 'equippedItems', 'quests', 'worldFacts', 'trackedNPCs', and 'storySummary'.
 Ensure all IDs (items, quests, NPCs, skills) are unique.
-Item `basePrice` should be set for all items. Merchant items for sale must have a `price`.
+Item \`basePrice\` should be set for all items. Merchant items for sale must have a \`price\`.
 `,
 });
 
@@ -359,7 +359,7 @@ const generateStoryStartFlow = ai.defineFlow(
             npc.dialogueHistory = npc.dialogueHistory ?? [];
             
             npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-            npc.updatedAt = npc.updatedAt || new Date().toISOString();
+            npc.updatedAt = new Date().toISOString(); // Ensure correct timestamp at creation
             npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
             npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
 

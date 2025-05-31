@@ -16,7 +16,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z} from 'zod';
 import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType } from '@/types/story';
 
 // --- Schemas for AI communication (Internal, consistent with types/story.ts) ---
@@ -224,7 +224,7 @@ Description: {{characterDescription}}
 
 Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills, unique abilities, or passive traits.
 - Each skill object in this array MUST have a unique 'id' (e.g., "skill_teleport_001"), 'name', 'description' (detailing its effect/narrative impact), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Series-Specific Power").
-- **Crucially for "Return by Death" or similar abilities**: If the character is known for a signature, fate-altering ability (e.g., for "Re:Zero" and Subaru, this would be "Return by Death"; for other series, it might be a unique power), ensure this ability is included.
+- **Crucially for "Return by Death" or similar abilities**: If the character is known for a signature, fate-altering ability (e.g., for "Re:Zero" and Subaru, this would be "Return by Death"; for other series, it might be a unique power), ensure this ability is included if appropriate for the specified character name/class and series.
 Adhere strictly to the JSON schema. Output ONLY the object: { "skillsAndAbilities": [...] }. If no specific skills are appropriate, output { "skillsAndAbilities": [] }.`,
 });
 
@@ -775,7 +775,7 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
           npc.dialogueHistory = npc.dialogueHistory ?? [];
           
           npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-          npc.updatedAt = npc.updatedAt || new Date().toISOString(); 
+          npc.updatedAt = new Date().toISOString(); // Ensure correct timestamp at creation
           npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation; 
           npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId; 
           
