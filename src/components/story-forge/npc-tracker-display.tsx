@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { NPCProfile, NPCDialogueEntry } from "@/types/story";
+import type { NPCProfile, NPCDialogueEntry, Item } from "@/types/story";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +10,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { 
     Users2Icon, MapPinIcon, HistoryIcon, FileTextIcon, HeartHandshakeIcon, 
-    UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus, IdCardIcon 
+    UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus, IdCardIcon, StoreIcon, PackageIcon
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 interface NPCTrackerDisplayProps {
   trackedNPCs: NPCProfile[];
@@ -29,7 +31,7 @@ const getRelationshipInfo = (score: number): RelationshipInfo => {
   if (score <= -25) return { label: "Hostile", variant: "destructive", icon: TrendingDown };
   if (score < 25) return { label: "Neutral", variant: "secondary", icon: Minus };
   if (score < 75) return { label: "Friendly", variant: "default", icon: TrendingUp };
-  return { label: "Staunch Ally", variant: "default", icon: TrendingUp }; // Consider a different primary/accent color for very high scores
+  return { label: "Staunch Ally", variant: "default", icon: TrendingUp }; 
 };
 
 
@@ -46,6 +48,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                 <Users2Icon className="w-5 h-5 mr-3 text-primary shrink-0"/>
                 <span className="text-lg font-semibold">{npc.name}</span>
                 {npc.classOrRole && <Badge variant="secondary" className="ml-2 text-xs flex items-center"><IdCardIcon className="w-3 h-3 mr-1"/>{npc.classOrRole}</Badge>}
+                {npc.isMerchant && <Badge variant="outline" className="ml-2 text-xs text-green-600 border-green-500 flex items-center"><StoreIcon className="w-3 h-3 mr-1"/>Merchant</Badge>}
             </div>
             <Badge variant={relationshipInfo.variant} className="text-xs">
                 <RelationshipIcon className="w-3 h-3 mr-1"/>
@@ -79,6 +82,40 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
             )}
         </div>
 
+        {npc.isMerchant && (
+            <div>
+                <h4 className="font-semibold mb-1 flex items-center text-sm">
+                    <PackageIcon className="w-4 h-4 mr-1.5 text-accent"/>Merchant Wares
+                </h4>
+                {npc.merchantInventory && npc.merchantInventory.length > 0 ? (
+                    <ScrollArea className="h-24 rounded-md border p-2 bg-background/50">
+                        <ul className="list-disc list-inside pl-2 space-y-1 text-xs">
+                            {npc.merchantInventory.map((item: Item) => ( // Explicitly type item
+                                <li key={item.id} className="text-muted-foreground">
+                                    <TooltipProvider delayDuration={100}>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <span className="cursor-help font-medium text-foreground/90 hover:text-primary transition-colors">
+                                                    {item.name} - Price: {(item as any).price ?? item.basePrice ?? 0}
+                                                </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" align="start">
+                                                <p className="text-sm font-medium">{item.name}</p>
+                                                <p className="text-xs text-muted-foreground max-w-xs">{item.description}</p>
+                                                <p className="text-xs text-muted-foreground">Base Value: {item.basePrice ?? 'N/A'}</p>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                </li>
+                            ))}
+                        </ul>
+                    </ScrollArea>
+                ) : (
+                     <p className="text-xs text-muted-foreground italic p-2 border rounded-md bg-background/50">No items currently for sale.</p>
+                )}
+            </div>
+        )}
+
         {npc.knownFacts && npc.knownFacts.length > 0 && (
           <div>
             <h4 className="font-semibold mb-1 flex items-center text-sm">
@@ -101,7 +138,7 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
             </h4>
             <ScrollArea className="h-24 rounded-md border p-2 bg-background/50">
               <ul className="space-y-2 text-xs">
-                {npc.dialogueHistory.slice(-5).map((entry, index) => ( // Show last 5 entries
+                {npc.dialogueHistory.slice(-5).map((entry, index) => ( 
                   <li key={index} className="border-b border-border/50 pb-1 last:border-b-0 last:pb-0">
                     {entry.playerInput && <p><span className="font-medium text-primary/80">You:</span> <span className="text-muted-foreground italic">"{entry.playerInput}"</span></p>}
                     <p><span className="font-medium text-accent">{npc.name}:</span> <span className="text-muted-foreground">"{entry.npcResponse}"</span></p>

@@ -14,15 +14,15 @@ import {
     PackageIcon, HeartIcon, ZapIcon, 
     DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon, 
     GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
-    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon
-} from "lucide-react"; // Renamed SparklesIcon to CharismaIcon for clarity
+    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon
+} from "lucide-react";
 
 interface CharacterSheetProps {
   character: CharacterProfile;
   storyState: StructuredStoryState;
 }
 
-const StatDisplay: React.FC<{ icon: React.ElementType, label: string, value?: number, colorClass?: string }> = ({ icon: Icon, label, value, colorClass }) => (
+const StatDisplay: React.FC<{ icon: React.ElementType, label: string, value?: number | string, colorClass?: string }> = ({ icon: Icon, label, value, colorClass }) => (
   <div className="flex items-center justify-between">
     <div className="flex items-center">
       <Icon className={`w-4 h-4 mr-1.5 ${colorClass || 'text-primary'}`} />
@@ -119,6 +119,9 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
         </div>
 
         <Separator />
+         <StatDisplay icon={CoinsIcon} label="Currency" value={character.currency ?? 0} colorClass="text-yellow-600" />
+        <Separator />
+
 
         <div>
           <h4 className="font-semibold mb-2 text-md">Core Stats</h4>
@@ -155,8 +158,8 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                           </div>
                         </TooltipTrigger>
                         <TooltipContent side="top" align="start" className="max-w-xs w-auto">
-                          <div className="text-sm"> {/* Changed p to div */}
-                            <span className="font-medium">{skill.name}</span> {/* Wrapped name in span */}
+                          <div className="text-sm">
+                            <span className="font-medium">{skill.name}</span>
                             <Badge variant="secondary" className="ml-1 text-xs">{skill.type}</Badge>
                           </div>
                           <p className="text-xs whitespace-pre-line">{skill.description}</p>
@@ -191,7 +194,9 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                           <span className="text-foreground cursor-help hover:text-primary transition-colors truncate">{equippedItem.name}</span>
                         </TooltipTrigger>
                         <TooltipContent side="top" align="start">
-                          <p className="text-sm max-w-xs">{equippedItem.description}</p>
+                           <p className="text-sm font-medium">{equippedItem.name}</p>
+                           <p className="text-xs text-muted-foreground max-w-xs">{equippedItem.description}</p>
+                           {equippedItem.basePrice !== undefined && <p className="text-xs text-muted-foreground">Value: {equippedItem.basePrice}</p>}
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -223,7 +228,10 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="top" align="start">
-                            <p className="text-sm max-w-xs">{item.description}</p>
+                             <p className="text-sm font-medium">{item.name}</p>
+                             <p className="text-xs text-muted-foreground max-w-xs">{item.description}</p>
+                             {item.basePrice !== undefined && <p className="text-xs text-muted-foreground">Value: {item.basePrice}</p>}
+                             {item.isConsumable && <p className="text-xs text-muted-foreground">Consumable: {item.effectDescription}</p>}
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

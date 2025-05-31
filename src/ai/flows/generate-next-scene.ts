@@ -2,9 +2,9 @@
 'use server';
 
 /**
- * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs, skills/abilities, and series-specific context. It also allows the AI to propose new lore entries, updates a running story summary, and handles character leveling.
+ * @fileOverview This file defines the Genkit flow for generating the next scene in a story based on user input and structured story state, including core character stats, mana, level, XP, currency, inventory, equipped items, quests (with objectives, categories, and rewards), world facts, tracked NPCs (with merchant capabilities), skills/abilities, and series-specific context. It also allows the AI to propose new lore entries, updates a running story summary, and handles character leveling and trading.
  *
- * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, potentially new lore, an updated story summary, and handles character progression.
+ * - generateNextScene - A function that takes the current story state and user input, and returns the next scene, updated state, potentially new lore, an updated story summary, and handles character progression and trading.
  * - GenerateNextSceneInput - The input type for the generateNextScene function.
  * - GenerateNextSceneOutput - The return type for the generateNextScene function.
  */
@@ -28,6 +28,7 @@ const ItemSchemaInternal = z.object({
   effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect."),
   isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
+  basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. Should be a positive number or zero."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -55,6 +56,7 @@ const CharacterProfileSchemaInternal = z.object({
   experiencePoints: z.number().describe('Current experience points of the character.'),
   experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of the character's current skills and abilities. Each includes an id, name, description, and type."),
+  currency: z.number().optional().describe("Character's current currency (e.g., gold). Default to 0 if not set."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -78,7 +80,8 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable for reward items.")
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice', and optional 'equipSlot' (omit if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable for reward items."),
+  currency: z.number().optional().describe("Amount of currency awarded."),
 }).describe("Rewards defined when the quest is created, to be given upon quest completion. Omit if no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
@@ -96,6 +99,11 @@ const NPCDialogueEntrySchemaInternal = z.object({
     turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
 });
 
+// Schema for items in a merchant's inventory, including their specific selling price
+const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
+  price: z.number().optional().describe("The price this merchant sells the item for. If not specified, can be derived from basePrice or context."),
+});
+
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC. If creating a new NPC profile, make this unique (e.g., npc_[name]_[unique_suffix]). If updating, use existing ID."),
     name: z.string().describe("NPC's name."),
@@ -111,16 +119,20 @@ const NPCProfileSchemaInternal = z.object({
     seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player). Set once if applicable."),
     shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing, influencing their actions or comments. Can be set or updated by the AI based on events."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile. Update with current time."),
+    isMerchant: z.boolean().optional().describe("Set to true if this NPC is a merchant and can buy/sell items."),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice', and a 'price' they sell it for. New items added to their stock should also have these details."),
+    buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Potions', 'Old Books'). Influences AI decision on what they might buy."),
+    sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they typically sell (e.g., 'Adventuring Gear', 'Herbs')."),
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, and skills/abilities.'),
+  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, and skills/abilities.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
+  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency and items with basePrice), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to world facts if the character would perceive them.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, include 'isMerchant', 'merchantInventory', 'buysItemTypes', 'sellsItemTypes'."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments so far. This summary will be updated each turn."),
 });
 
@@ -129,7 +141,7 @@ export type StructuredStoryState = z.infer<typeof StructuredStoryStateSchemaInte
 const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string().describe('The current scene text.'),
   userInput: z.string().describe('The user input (action or dialogue).'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, quests, worldFacts, trackedNPCs, skills/abilities, storySummary etc.).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The current structured state of the story (character, location, inventory, equipped items, XP, currency, quests, worldFacts, trackedNPCs, skills/abilities, storySummary etc.).'),
   seriesName: z.string().describe('The name of the series this story is based on, for contextual awareness.'),
   seriesStyleGuide: z.string().optional().describe('A brief style guide for the series to maintain tone and themes.'),
   currentTurnId: z.string().describe('The ID of the current story turn, for logging in NPC dialogue history etc.'),
@@ -138,8 +150,8 @@ export type GenerateNextSceneInput = z.infer<typeof GenerateNextSceneInputSchema
 
 const PromptInternalInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
-  formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, objectives, and potential rewards."),
-  formattedTrackedNPCsString: z.string().describe("Pre-formatted string summarizing tracked NPCs, including their short-term goals if any."),
+  formattedQuestsString: z.string().describe("Pre-formatted string of quests with their statuses, categories, objectives, and potential rewards (including currency)."),
+  formattedTrackedNPCsString: z.string().describe("Pre-formatted string summarizing tracked NPCs, including their short-term goals and merchant status/wares if any."),
   formattedSkillsString: z.string().describe("Pre-formatted string of character's skills and abilities."),
 });
 
@@ -157,7 +169,7 @@ const RawLoreEntrySchemaInternal = z.object({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   nextScene: z.string().describe('The generated text for the next scene, clearly attributing dialogue and actions to NPCs if present.'),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, level changes (including potential stat/skill grant from level up), inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including potential short-term goal changes), new skills, or stat increases. Rewards for completed quests are applied automatically based on pre-defined rewards in the quest object. New skills/abilities might be added to character.skillsAndAbilities.'),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene. This includes any character stat changes, XP, currency, level changes (including potential stat/skill grant from level up), inventory changes, equipment changes, quest updates (status, objective completion, potential branching), world fact updates, NPC profile updates/additions in trackedNPCs (including merchant status, inventory changes, potential short-term goal changes), new skills, or stat increases. Rewards for completed quests (including currency) are applied automatically. Items should always include a basePrice.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
   newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'."),
   updatedStorySummary: z.string().describe("The new running summary of the story, concisely incorporating key events, decisions, and consequences from this scene, building upon the previous summary."),
@@ -176,7 +188,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
     const item = equippedItems[slot];
-    output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${item ? item.name : 'Empty'}\n`;
+    output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${item ? `${item.name} (Value: ${item.basePrice ?? 0})` : 'Empty'}\n`;
   }
   return output.trim();
 }
@@ -202,9 +214,12 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
         if (q.rewards.experiencePoints) {
             questStr += `    - XP: ${q.rewards.experiencePoints}\n`;
         }
+        if (q.rewards.currency) {
+            questStr += `    - Currency: ${q.rewards.currency}\n`;
+        }
         if (q.rewards.items && q.rewards.items.length > 0) {
             q.rewards.items.forEach(item => {
-            questStr += `    - Item: ${item.name}\n`;
+            questStr += `    - Item: ${item.name} (Value: ${item.basePrice ?? 0})\n`;
             });
         }
     }
@@ -226,9 +241,16 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
 
         let npcStr = `- ${npc.name} (ID: ${npc.id}, Relationship: ${relationshipLabel} [${npc.relationshipStatus}])`;
         if (npc.classOrRole) npcStr += ` [${npc.classOrRole}]`;
+        if (npc.isMerchant) npcStr += ` [Merchant]`;
         if (npc.lastKnownLocation) npcStr += ` (Last seen: ${npc.lastKnownLocation})`;
         if (npc.shortTermGoal) npcStr += `\n  Current Goal: ${npc.shortTermGoal}`;
         npcStr += `\n  Description: ${npc.description}`;
+        if (npc.isMerchant && npc.merchantInventory && npc.merchantInventory.length > 0) {
+            npcStr += "\n  Wares for Sale:\n";
+            npc.merchantInventory.forEach(item => {
+                npcStr += `    - ${item.name} (Price: ${(item as any).price ?? item.basePrice ?? 0}, ID: ${item.id})\n`; // Cast to any to access price
+            });
+        }
         if (npc.knownFacts && npc.knownFacts.length > 0) {
             npcStr += "\n  Known Facts:\n";
             npc.knownFacts.forEach(fact => npcStr += `    - ${fact}\n`);
@@ -275,6 +297,7 @@ Current Player Character:
 - Name: {{storyState.character.name}}, the {{storyState.character.class}} (Level: {{storyState.character.level}})
 - Health: {{storyState.character.health}}/{{storyState.character.maxHealth}}
 - Mana: {{#if storyState.character.mana}}{{storyState.character.mana}}/{{storyState.character.maxMana}}{{else}}N/A{{/if}}
+- Currency: {{storyState.character.currency}}
 - XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 - Stats:
   - Strength: {{storyState.character.strength}}
@@ -294,13 +317,13 @@ Current Location: {{storyState.currentLocation}}
 Current Inventory (Unequipped Items - includes potential consumables or quest items):
 {{#if storyState.inventory.length}}
 {{#each storyState.inventory}}
-- {{this.name}} (ID: {{this.id}}): {{this.description}} {{#if this.equipSlot}}(Equippable Gear: {{this.equipSlot}}){{/if}}{{#if this.isConsumable}} (Consumable: {{this.effectDescription}}){{/if}}{{#if this.isQuestItem}} (Quest Item{{#if this.relevantQuestId}} for {{this.relevantQuestId}}){{/if}}){{/if}}
+- {{this.name}} (ID: {{this.id}}, Value: {{this.basePrice}}): {{this.description}} {{#if this.equipSlot}}(Equippable Gear: {{this.equipSlot}}){{/if}}{{#if this.isConsumable}} (Consumable: {{this.effectDescription}}){{/if}}{{#if this.isQuestItem}} (Quest Item{{#if this.relevantQuestId}} for {{this.relevantQuestId}}){{/if}}){{/if}}
 {{/each}}
 {{else}}
 Empty
 {{/if}}
 
-Quests (Rewards are pre-defined; they are granted by the system upon completion):
+Quests (Rewards including currency and items are pre-defined; they are granted by the system upon completion):
 {{{formattedQuestsString}}}
 
 Known World Facts (Reflect immediate environment & character's current understanding, including presence/status of key NPCs):
@@ -310,11 +333,12 @@ Known World Facts (Reflect immediate environment & character's current understan
 - None known.
 {{/each}}
 
-Tracked NPCs (Summary - full details in storyState.trackedNPCs, including their shortTermGoal if any):
+Tracked NPCs (Summary - full details in storyState.trackedNPCs, including their shortTermGoal and merchant status/wares if any):
 {{{formattedTrackedNPCsString}}}
 
 
 Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. An item's 'equipSlot' property determines where it can go. 'ring' items can go in 'ring1' or 'ring2'.
+All items must have a 'basePrice'. When a merchant sells an item, it will have a 'price' in their merchantInventory.
 
 If the player's input or the unfolding scene mentions a specific named entity (like a famous person, a unique location, a magical artifact, or a special concept) that seems like it might have established lore *within the "{{seriesName}}" universe*, use the 'lookupLoreTool' (providing the current 'seriesName' to it) to get more information about it. Integrate this information naturally into your response if relevant.
 
@@ -349,133 +373,81 @@ While respecting player choices is paramount, ensure the story remains coherent 
 **NPC Management & Tracking:**
 - If new, significant NPCs are introduced (named, have dialogue, clear role):
   - Create a new profile in 'updatedStoryState.trackedNPCs'.
-  - Assign a unique 'id' (e.g., "npc_[name in lowercase with underscores]_[timestamp/random suffix]").
-  - Set 'name', 'description', 'classOrRole' (if applicable).
+  - Assign a unique 'id'. Set 'name', 'description', 'classOrRole'.
   - Set 'firstEncounteredLocation' to 'storyState.currentLocation' and 'firstEncounteredTurnId' to '{{currentTurnId}}'.
-  - Set initial 'relationshipStatus' (numerical score, e.g., 0 for Neutral, or a specific starting value like -10 if they are initially wary).
-  - 'knownFacts' can start empty or with 1-2 initial series-based facts.
-  - 'seriesContextNotes' can be a brief note on their canon role if applicable.
-  - Optionally set a 'shortTermGoal' if their initial appearance or dialogue implies one.
-  - Set 'lastKnownLocation' to 'storyState.currentLocation' and 'lastSeenTurnId' to '{{currentTurnId}}'.
-  - Set 'updatedAt' to the current time (system will handle actual timestamp).
-- If interacting with an existing NPC from 'storyState.trackedNPCs' (match by name):
-  - Update their profile in 'updatedStoryState.trackedNPCs' with their existing ID.
-  - If new details about their appearance or demeanor are revealed, update 'description'.
-  - **Relationship Dynamics:** NPC \\\`relationshipStatus\\\` is a numerical score (e.g., -100 Hostile, 0 Neutral, 100 Allied). Based on the player's interactions, you should propose an update to this numerical score in \`updatedStoryState.trackedNPCs\`. For example, completing a quest for an NPC might increase it by +20 or +30. Betraying them might decrease it by -40. Narrate significant shifts in perceived relationship if the score crosses a major threshold (e.g., from Neutral to Friendly).
-  - **NPC Memory & Consistency:** NPCs should demonstrate memory. Refer to their \`knownFacts\` about the player/world and their \`dialogueHistory\` (if available and relevant) to inform their current dialogue and reactions. An NPC who was previously helped should be more welcoming. NPCs should not contradict previously established information about themselves or the world, as recorded in their \`knownFacts\` or past \`dialogueHistory\`.
-  - **NPC Proactivity & Goals:** Consider each NPC's 'shortTermGoal' from their profile. If the current scene provides an opportunity, an NPC might take a minor action or make a comment that aligns with their goal. Their goals can also influence their reactions to player actions or ongoing events. If events in the \`nextScene\` logically suggest a new 'shortTermGoal' for an NPC, or an update to an existing one, reflect this in their profile within \`updatedStoryState.trackedNPCs\`. If a significant \`worldFact\` changes that an NPC (especially one present or nearby) would be aware of, their behavior, dialogue, or even their 'shortTermGoal' in the \`updatedStoryState.trackedNPCs\` should reflect this awareness, even if the player hasn't directly informed them.
-  - If the player learns new, distinct information directly about the NPC, add it to 'knownFacts' (avoid duplicates).
-  - If there's key dialogue, consider adding an entry to 'dialogueHistory': { playerInput: "{{userInput}}", npcResponse: "Relevant NPC quote", turnId: "{{currentTurnId}}" }.
-  - If their location changes, update 'lastKnownLocation'.
-  - Always update 'lastSeenTurnId' to '{{currentTurnId}}' and 'updatedAt'.
-- Do not create duplicate NPC profiles. If an NPC with the same name exists, update their record.
-- For the 'nextScene' narrative:
-  - Clearly attribute dialogue (e.g., Guard Captain: "Halt!") and actions.
-  - Make NPCs react to the player's actions and dialogue in character. Narrate when significant NPCs enter or leave.
-  - Consider giving NPCs distinct mannerisms or ways of speaking, fitting the "{{seriesName}}" context.
-- If distinct NPCs were active in the scene you generate, populate 'activeNPCsInScene' array in the output.
+  - Set initial 'relationshipStatus' (numerical score, e.g., 0 for Neutral).
+  - 'knownFacts' can start empty or with initial details.
+  - Optionally set a 'shortTermGoal'.
+  - **If the new NPC is a merchant**: Set \`isMerchant: true\`. Populate their \`merchantInventory\` with 2-4 thematic items for sale. Each item in \`merchantInventory\` needs a unique \`id\`, \`name\`, \`description\`, its \`basePrice\`, and a specific \`price\` the merchant sells it for. Optionally define \`buysItemTypes\` or \`sellsItemTypes\`.
+  - Set 'lastKnownLocation' to 'storyState.currentLocation' and 'lastSeenTurnId' to '{{currentTurnId}}'. Set 'updatedAt'.
+- If interacting with an existing NPC:
+  - Update their profile in 'updatedStoryState.trackedNPCs'.
+  - **Relationship Dynamics:** Update numerical \\\`relationshipStatus\\\` based on interactions.
+  - **NPC Memory & Consistency:** Refer to \`knownFacts\` and \`dialogueHistory\`.
+  - **NPC Proactivity & Goals:** Consider 'shortTermGoal'. Update it if logical. NPCs should react to changes in \`worldFacts\`.
+  - If new info about NPC is learned, add to 'knownFacts'.
+  - If key dialogue, add to 'dialogueHistory'.
+  - If location changes, update 'lastKnownLocation'. Always update 'lastSeenTurnId' and 'updatedAt'.
+- Do not create duplicate NPC profiles.
+- For 'nextScene' narrative: Attribute dialogue/actions. NPCs react in character.
+- If distinct NPCs were active, populate 'activeNPCsInScene'.
+
+**NPC Merchants & Trading:**
+- If the player interacts with an NPC where \`isMerchant: true\`:
+  - **Viewing Wares:** If the player asks to see wares (e.g., "What do you have for sale?", "Show me your goods"), narrate a list of items from the NPC's \`merchantInventory\`, including their \`name\` and \`price\` in the \`nextScene\`.
+  - **Buying Items:** If the player expresses intent to buy an item from the merchant's \`merchantInventory\` (e.g., "I want to buy the Health Potion"):
+    1. Find the item by name or ID in the merchant's \`merchantInventory\`. Let's assume the player mentions the item by name.
+    2. Check if the merchant has the item and if the player character has enough \`currency\` (use the item's \`price\` from \`merchantInventory\`).
+    3. If yes: In \`updatedStoryState\`, deduct the \`price\` from \`character.currency\`. Remove ONE instance of the item from \`trackedNPCs[merchantIndex].merchantInventory\`. Add a new instance of the item (with its own unique ID, but copied properties like name, description, basePrice, equipSlot etc.) to \`character.inventory\`. Narrate the transaction successfully (e.g., "You hand over 50 gold and receive the Health Potion.").
+    4. If no (not enough currency, item not found, or merchant inventory empty): Narrate why the transaction cannot occur (e.g., "Sorry, I'm fresh out of those," or "You don't have enough gold for that.").
+  - **Selling Items:** If the player expresses intent to sell an item from their \`character.inventory\` (e.g., "I want to sell my Rusty Dagger"):
+    1. Identify the item in \`character.inventory\` by name or player's description.
+    2. Determine a fair \`buyPrice\` for the item. This price should generally be less than the item's \`basePrice\` (e.g., 50-70% of \`basePrice\`, rounded). Consider the merchant's \`buysItemTypes\` (if defined) – they might offer less or refuse if it's not their specialty. Player's charisma can have a small narrative influence on the offered price but no mechanical roll.
+    3. If the merchant agrees to buy and a \`buyPrice\` is determined: In \`updatedStoryState\`, add \`buyPrice\` to \`character.currency\`. Remove the item from \`character.inventory\`. Optionally, you can add the bought item to the merchant's \`merchantInventory\` (if it's something they might resell, give it a new ID and set a new \`price\` for resale, higher than \`buyPrice\`). Narrate the transaction (e.g., "The merchant offers you 10 gold for the Rusty Dagger. You accept.").
+    4. If the merchant refuses to buy (e.g., "I have no use for that."): Narrate the refusal.
+  - **Important:** All changes to currency, player inventory, and merchant inventory MUST be reflected in \`updatedStoryState\`. Ensure item IDs remain unique when moving/copying items. Newly generated items should have a \`basePrice\`.
 
 **Environmental Interaction & Item Use:**
 - If the player's input suggests interacting with specific objects in the environment (e.g., 'search the desk', 'examine the painting', 'open the chest', 'read the book', 'climb the tree', 'hide behind the rock'), narrate the outcome of this action in the 'nextScene'.
-- If an item is found as a result of such interaction, add it to \`updatedStoryState.inventory\`.
+- If an item is found as a result of such interaction, add it to \`updatedStoryState.inventory\` (ensure it has a unique ID and a \`basePrice\`).
 - If a new piece of information is discovered, add it to \`updatedStoryState.worldFacts\`.
 - If the interaction directly progresses or completes a quest objective, update the relevant quest in \`updatedStoryState.quests\`.
-- **Using Consumable Items:** If the player's input indicates they are using an item from their \`inventory\` and that item has \`isConsumable: true\`:
-  - Narrate the item being consumed.
-  - Remove one instance of the item from the \`updatedStoryState.inventory\`.
-  - Apply its effects based on its \`effectDescription\`. This might involve updating \`character.health\`, \`character.mana\`, adding a temporary \`worldFact\` (e.g., "Character is invisible for a short while"), or other described outcomes. **Ensure these state changes are reflected in \`updatedStoryState\`**.
-- **Using Key/Quest Items:** If the player uses an item from \`inventory\` that has \`isQuestItem: true\` (and potentially a \`relevantQuestId\`):
-  - Evaluate if the context of usage is appropriate for the item's purpose (e.g., using a specific key on the correct door mentioned in a quest).
-  - If the usage is correct and relevant to a quest: Narrate the outcome, update the relevant quest \`objectives\` (e.g., mark as completed), and/or add/modify \`worldFacts\`.
-  - If the usage is incorrect or out of context, narrate that nothing happens or describe a minor consequence.
+- **Using Consumable Items:** If the player uses an item from \`inventory\` with \`isConsumable: true\`: Narrate consumption, remove one instance from \`inventory\`, apply effects to \`character\` or \`worldFacts\`.
+- **Using Key/Quest Items:** If player uses an \`isQuestItem\` appropriately: Narrate outcome, update quest objectives/worldFacts.
 
 **Quests & World State:**
-- Describe any quest-related developments (new quests, progress, completion) clearly in the 'nextScene' text.
-- When a quest is completed, the system will automatically handle granting the pre-defined rewards. You should narrate that the quest is complete and the rewards are received.
-- **Branching Quest Objectives:** When a player completes an objective or takes a significant action related to a quest:
-  - You may modify the \`description\` of subsequent objectives in that quest to reflect the new situation.
-  - You may add new, logical objectives to the quest if the player's actions open up a new path or complication. If a player's actions create a new logical path or sub-goal for an existing quest, you can add a new objective to that quest's \`objectives\` array.
-  - If a player's actions make a current objective impossible or failed, update its status or description and potentially offer an alternative objective or path for the quest.
-- **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences. If a significant \`worldFact\` is added or changed (e.g., 'The ancient artifact is recovered,' 'The bandit leader is defeated'), describe how this impacts the \`currentLocation\`, NPC behaviors, or available dialogue and actions. The world should feel responsive. Describe tangible consequences or changes in the environment or NPC behavior due to significant \`worldFacts\` updates.
+- Describe quest developments. When a quest is completed, narrate rewards (XP, currency, items) being received.
+- **Branching/Updating Quest Objectives:** Modify or add objectives based on player actions.
+- **World Reactivity:** Changes to \`worldFacts\` should have noticeable consequences.
 
 **Character Progression:**
-- **Learning New Skills (General):** As a reward for completing significant quests, achieving major story milestones, or through specific interactions (e.g., finding a rare tome, being taught by a master NPC), you can award the character a new skill. Add this new skill object (with a unique \`id\`, \`name\`, \`description\`, and series-appropriate \`type\`) to \`updatedStoryState.character.skillsAndAbilities\`. Narrate how the character learned or acquired this new skill.
-- **Stat Increases (Rare, General):** For exceptionally impactful achievements or the use of powerful, unique artifacts, you may grant a small, permanent increase (e.g., +1) to one of the character's core stats (Strength, Dexterity, etc.). This should be rare. Clearly state the stat and the increase in your narration and update it in \`updatedStoryState.character\`.
+- **Learning New Skills (General):** Award new skills for quests/milestones. Add to \`character.skillsAndAbilities\`.
+- **Stat Increases (Rare, General):** Rare permanent stat increases. Update \`character\` stats.
 - **Leveling Up:**
     - When \`character.experiencePoints\` meets or exceeds \`character.experienceToNextLevel\`, a level up occurs.
     - In \`updatedStoryState.character\`, you MUST:
         1. Increment \`level\` by 1.
-        2. Update \`experiencePoints\` by subtracting the \`experienceToNextLevel\` value of the *previous* level (e.g., \`newXP = currentXP - oldXpToNextLevel\`). This means excess XP carries over.
-        3. Calculate and set a new, higher \`experienceToNextLevel\` (e.g., multiply the old \`experienceToNextLevel\` by 1.5 or a similar scaling factor, then round it. Ensure it's always greater than current \`experiencePoints\`).
+        2. Update \`experiencePoints\` by subtracting the \`experienceToNextLevel\` value of the *previous* level.
+        3. Calculate and set a new, higher \`experienceToNextLevel\`.
     - As a reward for leveling up, you MUST also grant ONE of the following:
-        A. A small, permanent increase (typically +1) to one of the character's core stats (Strength, Dexterity, Constitution, Intelligence, Wisdom, or Charisma).
+        A. A small, permanent increase (typically +1) to one of the character's core stats.
         OR
-        B. Award the character one new skill (add a new skill object to \`character.skillsAndAbilities\` with a unique ID, name, description, and type).
+        B. Award the character one new skill (add a new skill object to \`character.skillsAndAbilities\`).
     - Clearly narrate the level up event, the stat increase (if any), or the new skill learned (if any) in the \`nextScene\` text.
 
 **Lore Discovery & Generation:**
-- If the 'nextScene' reveals significant new information about a character, location, item, concept, or event that is not already common knowledge (you can use \`lookupLoreTool\` for very common terms if unsure), and this information feels like it should be recorded for long-term reference, you can propose a new lore entry.
-- Add these new entries to the \`newLoreEntries\` array in the output. Each entry needs a \`keyword\`, \`content\` (a concise description of the new information), and an optional \`category\` (e.g., 'Character Detail', 'Historical Event', 'Location Secret').
-- Do not add trivial information. Focus on facts that deepen the understanding of the '{{seriesName}}' world as it unfolds in *this* story.
-- The system will handle adding these to the main lorebook.
+- If the 'nextScene' reveals significant new information, propose new entries for the \`newLoreEntries\` array (keyword, content, optional category).
 
 Crucially, you must also update the story state. This includes:
-- Character: Update all character fields as necessary, **including effects from skills, items, and progression (especially level ups).**
-  - **Important for 'mana' and 'maxMana'**: These fields MUST be numbers. If a character does not use mana or has no mana, set both 'mana' and 'maxMana' to 0. Do NOT use 'null' or omit these fields if the character profile is being updated; always provide a numeric value (e.g., 0). Similarly for other optional numeric stats.
-  - **Skills & Abilities**: The character's \`skillsAndAbilities\` array should be updated if they learn a new skill or an existing one changes. New skills should have a unique \`id\`, \`name\`, \`description\`, and \`type\`.
-- Location: Update if the character moved.
-- Inventory:
-  - If new items are found (excluding pre-defined quest rewards, which are handled by the system): Add them as objects to the \`inventory\` array. Each item object **must** have a unique \`id\`, a \`name\`, a \`description\`. **If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an 'equipSlot' (e.g. 'weapon', 'head'). If it's not an equippable type of item (e.g., a potion, a key, a generic diary/book), the 'equipSlot' field MUST BE OMITTED ENTIRELY.** Also include \`isConsumable\`, \`effectDescription\`, \`isQuestItem\`, \`relevantQuestId\` if applicable. Describe these new items clearly in the \`nextScene\` text.
-  - If items are used, consumed, or lost: Remove them from \`inventory\` or \`equippedItems\` as appropriate.
-- Equipped Items:
-  - If the player tries to equip an item:
-    1. Find the item in \`inventory\`.
-    2. Check if it's equippable and has an \`equipSlot\`. If not, state it (e.g., "You cannot equip the diary."). Only items that are actual gear (weapons, armor, equippable accessories) should have an \`equipSlot\`. Items like books or potions are not equippable and should not have an \`equipSlot\` field.
-    3. If the target slot is occupied, move the existing item from \`equippedItems[slot]\` to \`inventory\`.
-    4. Move the new item from \`inventory\` to \`equippedItems[slot]\`.
-    5. Narrate the action.
-  - If the player tries to unequip an item:
-    1. Find it in \`equippedItems\`.
-    2. Move it to \`inventory\`.
-    3. Set \`equippedItems[slot]\` to null.
-    4. Narrate the action.
-  - Ensure an item is either in \`inventory\` OR \`equippedItems\`, never both.
-  - The 'updatedStoryState.equippedItems' object must include all 10 slots, with 'null' for empty ones.
-- Quests:
-  - The \`quests\` array in \`updatedStoryState\` should contain all current quests as objects. Each quest object must include \`id: string\`, \`description: string\`, and \`status: 'active' | 'completed'\`. It will also include its pre-defined \`rewards\` if any.
-  - If a new quest is started: Add a new quest object to the \`quests\` array. It must have a unique \`id\`. Assign a suitable \`category\` (e.g., "Main Story", "Side Quest", "Personal Goal", "Exploration") fitting for "{{seriesName}}"; if no category is clear, omit the \`category\` field. If the quest is complex enough, you can break it down into an array of \`objectives\`, where each objective has a \`description\` and \`isCompleted: false\`.
-    - **Pre-defined Quest Rewards**: When creating a new quest, you MUST also define a 'rewards' object for it. This object should specify the 'experiencePoints' (number, optional) and/or 'items' (array of Item objects, optional) that the player will receive upon completing this quest. For 'items' in rewards, each item needs a unique 'id', 'name', 'description', an optional 'equipSlot' (omitting 'equipSlot' if not inherently equippable gear), and other item properties like \`isConsumable\`, \`effectDescription\` if applicable. If a quest has no specific material rewards, you can omit the 'rewards' field or provide an empty object {} for it.
-  - If an existing quest in \`quests\` is progressed:
-    - If it has \`objectives\`, update the \`isCompleted\` status of relevant objectives to \`true\`.
-    - You can update the main quest \`description\` if needed.
-    - Narrate the progress in \`nextScene\`. The quest status remains \`'active'\` until fully completed (all essential objectives are done).
-  - **VERY IMPORTANT for quest completion**: When updating objectives: if ALL objectives for a given quest are marked as \`isCompleted: true\`, you MUST then update the parent quest's \`status\` to \`'completed'\`.
-  - If an existing quest from \`quests\` is completed: Find the quest object in the \`quests\` array. Update its \`status\` to \`'completed'\`. If it has \`objectives\`, ensure all relevant ones are marked \`isCompleted: true\`. Do NOT remove it from the array. Clearly state the completion in \`nextScene\`.
-    - **Quest Rewards are Pre-defined**: The system will automatically apply the rewards (XP and items) associated with this quest from its existing \`rewards\` field. You do not need to redefine or specify rewards again here. Your narration should reflect that the quest is done and rewards are obtained.
-  - Ensure quest IDs are unique.
-  - If a quest's \`category\` is not applicable, omit the field. If objectives are not needed, omit the \`objectives\` array.
-- World Facts:
-  - You should actively manage the \`worldFacts\` array. These facts should reflect the character's current understanding and immediate environment within the "{{seriesName}}" context. Use world facts to track the presence and key status of significant NPCs in the scene.
-  - **Adding Facts**: If the character makes a new, significant observation or learns a piece of information relevant to the immediate situation that isn't broad enough for the lorebook, add it as a string to \`worldFacts\`.
-  - **Modifying Facts**: If an existing fact needs refinement based on new developments, you can suggest replacing the old fact with a new one (effectively removing the old and adding the new).
-  - **Removing Facts**: If a fact becomes outdated or irrelevant due to story progression (e.g., a temporary condition is resolved, an immediate danger passes, an NPC leaves the scene), you can remove it from the \`worldFacts\` array.
-  - **Narrate Changes**: If you add, modify, or remove a world fact in a way that the character would perceive or that's significant for the player to know, briefly mention this in the \`nextScene\` (e.g., "You now realize the guard captain is missing," or "The strange humming sound from the basement has stopped.").
-- Tracked NPCs:
-  - Ensure 'updatedStoryState.trackedNPCs' contains all previously tracked NPCs, plus any new ones, with their profiles updated as described above (including 'relationshipStatus' and potentially 'shortTermGoal').
-  - All fields in each NPCProfile must adhere to their schema definitions. 'id' must be unique for new NPCs.
-  - For existing NPCs, ensure their 'id' is preserved from the input 'storyState.trackedNPCs'.
-  - **Ensure \\\`relationshipStatus\\\` is a number reflecting the cumulative interactions.**
+- Character: Update all character fields (health, mana, XP, level, currency, skills, stats).
+- Inventory: Add/remove items. All items must have a unique \`id\` and \`basePrice\`.
+- Equipped Items: Handle equipping/unequipping. All items must have a \`basePrice\`.
+- Quests: Update status, objectives. Rewards can include currency.
+- Tracked NPCs: Update profiles, including merchant details (\`isMerchant\`, \`merchantInventory\` with item \`price\` and \`basePrice\`, \`buysItemTypes\`, \`sellsItemTypes\`).
+- World Facts: Add, modify, or remove facts.
 
-The next scene should logically follow the player's input and advance the narrative, respecting the style and lore of {{seriesName}}.
-Ensure your entire response strictly adheres to the JSON schema for the output.
-The 'updatedStoryState.character' must include all fields required by its schema, including 'skillsAndAbilities'.
-The 'updatedStoryState.inventory' must be an array of item objects. For items, if 'equipSlot' is not applicable (because the item is not inherently equippable gear), it must be omitted.
-The 'updatedStoryState.equippedItems' must be an object mapping all 10 slot names to either an item object or null.
-The 'updatedStoryState.quests' must be an array of quest objects, each with 'id', 'description', and 'status', and potentially 'rewards', 'category', and 'objectives'.
-The 'updatedStoryState.trackedNPCs' array must contain full NPCProfile objects, with 'relationshipStatus' as a number and an optional 'shortTermGoal'.
-The 'activeNPCsInScene' array (if provided) should contain objects with 'name', and optional 'description' and 'keyDialogueOrAction'.
-The \`newLoreEntries\` array should contain newly discovered lore for the lorebook.
-The \`updatedStorySummary\` field MUST be provided and should be a concise summary of the key events of the generated scene, appended to or refining the previous summary.
+The next scene should logically follow. Ensure adherence to JSON schema.
+The \`updatedStorySummary\` field MUST be provided.
 `,
 });
 
@@ -521,12 +493,11 @@ const generateNextSceneFlow = ai.defineFlow(
       }
     }
 
-    // Character post-processing, including Level Up mechanics
+    // Character post-processing, including Level Up mechanics and currency
     if (output.updatedStoryState.character && input.storyState.character) {
       const updatedChar = output.updatedStoryState.character;
       const originalChar = input.storyState.character;
 
-      // Default values for optional stats
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
@@ -535,28 +506,29 @@ const generateNextSceneFlow = ai.defineFlow(
       updatedChar.intelligence = updatedChar.intelligence ?? originalChar.intelligence ?? 10;
       updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
       updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
+      updatedChar.currency = updatedChar.currency ?? originalChar.currency ?? 0;
+      if (updatedChar.currency < 0) updatedChar.currency = 0;
       
-      // Level up check and mechanics - AI is instructed to handle this, but we ensure mechanics are sound.
       let originalXpToNextLevel = originalChar.experienceToNextLevel;
-      if (originalXpToNextLevel <=0) originalXpToNextLevel = 100; // Fallback if somehow invalid
+      if (originalXpToNextLevel <=0) originalXpToNextLevel = 100; 
 
-      // The AI should set the new level, new XP, and new XPToNextLevel.
-      // We will validate and adjust experienceToNextLevel if AI's calculation is problematic.
       updatedChar.level = updatedChar.level ?? originalChar.level ?? 1;
       updatedChar.experiencePoints = updatedChar.experiencePoints ?? originalChar.experiencePoints ?? 0;
       updatedChar.experienceToNextLevel = updatedChar.experienceToNextLevel ?? originalChar.experienceToNextLevel ?? 100;
 
-      // If AI indicates a level up by increasing the level number, or if XP threshold was met
       const didLevelUp = updatedChar.level > originalChar.level || 
                          (originalChar.experiencePoints >= originalXpToNextLevel && updatedChar.level === originalChar.level +1);
 
-      if (didLevelUp && updatedChar.level === originalChar.level + 1) { // Confirmed level up by one level
-        // Ensure XP is correctly adjusted if AI didn't do it or did it differently
-        if(updatedChar.experiencePoints >= originalXpToNextLevel) { // If AI gave XP that also crosses the threshold
+      if (didLevelUp && updatedChar.level === originalChar.level + 1) { 
+        if(updatedChar.experiencePoints >= originalXpToNextLevel && originalChar.experiencePoints >= originalXpToNextLevel) {
             updatedChar.experiencePoints = originalChar.experiencePoints - originalXpToNextLevel;
+        } else if (updatedChar.experiencePoints < originalXpToNextLevel && originalChar.experiencePoints >= originalXpToNextLevel ) {
+            // AI might have already subtracted XP, keep its value if it's positive and less than new threshold
+            // This path implies AI handled XP subtraction.
+        } else {
+             updatedChar.experiencePoints = originalChar.experiencePoints; // Fallback if AI's XP doesn't make sense
         }
-        // Ensure new XPToNextLevel is reasonable.
-        // AI is instructed to set this, but we can override if it's nonsensical.
+
         const expectedNewXpToNextLevel = Math.floor(originalXpToNextLevel * 1.5);
         if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints || updatedChar.experienceToNextLevel < originalXpToNextLevel) {
            updatedChar.experienceToNextLevel = expectedNewXpToNextLevel > updatedChar.experiencePoints 
@@ -564,7 +536,6 @@ const generateNextSceneFlow = ai.defineFlow(
                                               : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevel * 0.5));
         }
       } else {
-         // If no level up, ensure experienceToNextLevel is at least the original or a sane default if it got messed up
          if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel < updatedChar.experiencePoints) {
             updatedChar.experienceToNextLevel = originalXpToNextLevel > updatedChar.experiencePoints ? originalXpToNextLevel : updatedChar.experiencePoints + 50;
          }
@@ -609,6 +580,8 @@ const generateNextSceneFlow = ai.defineFlow(
           if (item.effectDescription === undefined || item.effectDescription === '') delete item.effectDescription;
           if (item.isQuestItem === undefined) delete item.isQuestItem;
           if (item.relevantQuestId === undefined || item.relevantQuestId === '') delete item.relevantQuestId;
+          item.basePrice = item.basePrice ?? 0;
+          if (item.basePrice < 0) item.basePrice = 0;
         });
 
         output.updatedStoryState.quests = output.updatedStoryState.quests ?? [];
@@ -644,6 +617,10 @@ const generateNextSceneFlow = ai.defineFlow(
             if (typeof quest.rewards.experiencePoints === 'number') {
               output.updatedStoryState.character.experiencePoints += quest.rewards.experiencePoints;
             }
+             if (typeof quest.rewards.currency === 'number' && output.updatedStoryState.character.currency !== undefined) {
+              output.updatedStoryState.character.currency += quest.rewards.currency;
+              if (output.updatedStoryState.character.currency < 0) output.updatedStoryState.character.currency = 0;
+            }
             if (quest.rewards.items && Array.isArray(quest.rewards.items)) {
               quest.rewards.items.forEach(rewardItem => {
                 const cleanedRewardItem = { ...rewardItem };
@@ -656,7 +633,7 @@ const generateNextSceneFlow = ai.defineFlow(
                     cleanedRewardItem.id = newId;
                 }
                 rewardItemIds.add(cleanedRewardItem.id);
-                invItemIds.add(cleanedRewardItem.id); // Also add to main inventory ID set
+                invItemIds.add(cleanedRewardItem.id); 
 
                 if (cleanedRewardItem.equipSlot === null || (cleanedRewardItem.equipSlot as unknown) === '') {
                   delete (cleanedRewardItem as Partial<ItemType>).equipSlot;
@@ -665,6 +642,8 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (cleanedRewardItem.effectDescription === undefined || cleanedRewardItem.effectDescription === '') delete cleanedRewardItem.effectDescription;
                 if (cleanedRewardItem.isQuestItem === undefined) delete cleanedRewardItem.isQuestItem;
                 if (cleanedRewardItem.relevantQuestId === undefined || cleanedRewardItem.relevantQuestId === '') delete cleanedRewardItem.relevantQuestId;
+                cleanedRewardItem.basePrice = cleanedRewardItem.basePrice ?? 0;
+                 if (cleanedRewardItem.basePrice < 0) cleanedRewardItem.basePrice = 0;
 
                 output.updatedStoryState.inventory.push(cleanedRewardItem);
               });
@@ -691,12 +670,18 @@ const generateNextSceneFlow = ai.defineFlow(
                 if (rewardItem.effectDescription === undefined || rewardItem.effectDescription === '') delete rewardItem.effectDescription;
                 if (rewardItem.isQuestItem === undefined) delete rewardItem.isQuestItem;
                 if (rewardItem.relevantQuestId === undefined || rewardItem.relevantQuestId === '') delete rewardItem.relevantQuestId;
+                rewardItem.basePrice = rewardItem.basePrice ?? 0;
+                if (rewardItem.basePrice < 0) rewardItem.basePrice = 0;
             });
-            if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0) {
+            quest.rewards.currency = quest.rewards.currency ?? undefined;
+            if (quest.rewards.currency !== undefined && quest.rewards.currency < 0) quest.rewards.currency = 0;
+
+            if (quest.rewards.experiencePoints === undefined && quest.rewards.items.length === 0 && quest.rewards.currency === undefined) {
               delete quest.rewards;
             } else {
                 if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
                 if (quest.rewards.items.length === 0) delete quest.rewards.items;
+                if (quest.rewards.currency === undefined) delete quest.rewards.currency;
             }
           }
         });
@@ -732,6 +717,8 @@ const generateNextSceneFlow = ai.defineFlow(
                 delete (item as Partial<ItemType>)!.effectDescription;
                 delete (item as Partial<ItemType>)!.isQuestItem;
                 delete (item as Partial<ItemType>)!.relevantQuestId;
+                item.basePrice = item.basePrice ?? 0;
+                if (item.basePrice < 0) item.basePrice = 0;
             }
         }
         output.updatedStoryState.equippedItems = newEquippedItems as any;
@@ -795,6 +782,31 @@ const generateNextSceneFlow = ai.defineFlow(
             if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
             if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
             if (npc.shortTermGoal === null || (npc.shortTermGoal as unknown) === '') delete npc.shortTermGoal;
+
+            // Merchant specific post-processing
+            npc.isMerchant = npc.isMerchant ?? originalNpc?.isMerchant ?? false;
+            npc.merchantInventory = npc.merchantInventory ?? originalNpc?.merchantInventory ?? [];
+            const merchantItemIds = new Set<string>();
+            npc.merchantInventory.forEach((item, mIndex) => {
+                if (!item.id || item.id.trim() === "" || merchantItemIds.has(item.id) || invItemIds.has(item.id) || equippedItemIds.has(item.id) ) {
+                    let baseId = `item_merchant_next_${Date.now()}_${Math.random().toString(36).substring(7)}_${mIndex}`;
+                    let newId = baseId;
+                    let counter = 0;
+                    while(merchantItemIds.has(newId) || invItemIds.has(newId) || equippedItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+                    item.id = newId;
+                }
+                merchantItemIds.add(item.id);
+                item.basePrice = item.basePrice ?? 0;
+                 if (item.basePrice < 0) item.basePrice = 0;
+                (item as any).price = (item as any).price ?? item.basePrice; // Ensure merchant items have a sale price
+                if ((item as any).price < 0) (item as any).price = 0;
+
+                if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
+
+            });
+             npc.buysItemTypes = npc.buysItemTypes ?? originalNpc?.buysItemTypes ?? undefined;
+             npc.sellsItemTypes = npc.sellsItemTypes ?? originalNpc?.sellsItemTypes ?? undefined;
+
         });
          output.updatedStoryState.trackedNPCs = Array.from(npcIdMap.values());
          output.updatedStoryState.storySummary = output.updatedStorySummary || input.storyState.storySummary || "";

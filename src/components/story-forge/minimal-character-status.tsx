@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserCircleIcon } from "lucide-react";
+import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserCircleIcon, CoinsIcon } from "lucide-react";
 
 interface MinimalCharacterStatusProps {
   character: CharacterProfile;
@@ -30,10 +30,18 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
               <UserCircleIcon className="w-3.5 h-3.5 mr-1 text-purple-400 shrink-0"/> {character.class}
             </p>
           </div>
-          <Badge variant="outline" className="text-md">
-            <AwardIcon className="w-3.5 h-3.5 mr-1 text-yellow-500 shrink-0" />
-            Lvl {character.level}
-          </Badge>
+          <div className="flex flex-col items-end space-y-1">
+            <Badge variant="outline" className="text-md">
+              <AwardIcon className="w-3.5 h-3.5 mr-1 text-yellow-500 shrink-0" />
+              Lvl {character.level}
+            </Badge>
+            {character.currency !== undefined && (
+                <Badge variant="secondary" className="text-xs">
+                    <CoinsIcon className="w-3 h-3 mr-1 text-yellow-600 shrink-0" />
+                    {character.currency}
+                </Badge>
+            )}
+          </div>
         </div>
         
         <div>
@@ -63,7 +71,7 @@ export default function MinimalCharacterStatus({ character, storyState }: Minima
         <div>
           <div className="flex justify-between items-center mb-0.5">
             <Label className="text-xs font-medium flex items-center">
-              <GaugeIcon className="w-3 h-3 mr-1 text-green-500 shrink-0" /> {/* Changed w-3.5 h-3.5 to w-3 h-3 */}
+              <GaugeIcon className="w-3 h-3 mr-1 text-green-500 shrink-0" />
               XP
             </Label>
             <span className="text-xs text-muted-foreground">{character.experiencePoints} / {character.experienceToNextLevel}</span>

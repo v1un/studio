@@ -15,6 +15,7 @@ export interface Item {
   effectDescription?: string; // E.g., "Restores 20 HP", "Grants temporary invisibility"
   isQuestItem?: boolean;
   relevantQuestId?: string;
+  basePrice?: number; // Base value of the item
 }
 
 export interface CharacterProfile {
@@ -35,6 +36,7 @@ export interface CharacterProfile {
   experiencePoints: number;
   experienceToNextLevel: number;
   skillsAndAbilities: Skill[];
+  currency?: number; // Player's currency
 }
 
 export type EquipmentSlot =
@@ -57,6 +59,7 @@ export interface QuestObjective {
 export interface QuestRewards {
   experiencePoints?: number;
   items?: Item[]; // Items to be awarded
+  currency?: number; // Currency awarded
 }
 
 export interface Quest {
@@ -90,6 +93,10 @@ export interface NPCProfile {
   seriesContextNotes?: string; // AI-internal note about their role if from a known series
   shortTermGoal?: string; // A simple, immediate goal this NPC might be pursuing.
   updatedAt?: string; // Timestamp of the last update to this profile
+  isMerchant?: boolean;
+  merchantInventory?: Item[]; // Items the merchant sells (item should include its specific sale price)
+  buysItemTypes?: string[]; // Optional: Categories of items they buy
+  sellsItemTypes?: string[]; // Optional: Categories of items they sell
 }
 
 export interface StructuredStoryState {
