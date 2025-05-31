@@ -54,7 +54,7 @@ const CharacterProfileSchemaInternal = z.object({
   level: z.number().describe('Initialize to 1.'),
   experiencePoints: z.number().describe('Initialize to 0.'),
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100.'),
-  skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 2-3 starting skills, unique abilities, or passive traits appropriate for the character's class and the series. These should be thematically fitting and provide a starting flavor for the character's capabilities. Each skill requires an id, name, description, and type."),
+  skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 2-3 starting skills, unique abilities, or passive traits appropriate for the character's class and the series. These should be thematically fitting and provide a starting flavor for the character's capabilities. Each skill requires an id, name, description, and type. For characters known for signature, fate-altering abilities (e.g., Subaru's 'Return by Death' in Re:Zero), ensure such an ability is included if appropriate for the specified character name/class and series."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -171,6 +171,7 @@ Generate ONLY:
     - If no input, create a compelling character for "{{seriesName}}".
     - Ensure stats (5-15), mana (0 if not applicable), level 1, 0 XP, XPToNextLevel (e.g., 100).
     - Include 'skillsAndAbilities': an array of 2-3 starting skills, unique abilities, or passive traits. Each skill needs an 'id' (unique, e.g., "skill_[name]_001"), 'name', 'description' (what it does narratively/mechanically), and a 'type' (e.g., "Combat Ability", "Utility Skill", "Passive Trait", or a series-specific type like "Ninjutsu Technique" or "Semblance") appropriate for the character's class and "{{seriesName}}".
+    - **Crucially**: If the series is "{{seriesName}}" and the character being generated is known for a signature, fate-altering ability (e.g., for "Re:Zero" and a character like Subaru, this would be "Return by Death"; for other series, it might be a unique superpower or prophetic vision), ensure this ability is included in 'skillsAndAbilities' with a fitting name, detailed description of its effects and narrative implications, and an appropriate type like "Unique Ability" or "Cursed Power".
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}" relevant to the character and scene.
 Adhere strictly to the JSON schema. Ensure skill IDs are unique.`,
 });
@@ -301,7 +302,7 @@ const StyleGuideInputSchema = z.object({
 const styleGuidePrompt = ai.definePrompt({
   name: 'generateSeriesStyleGuidePrompt',
   input: { schema: StyleGuideInputSchema },
-  output: { schema: z.string().nullable() }, // AI might return null, JS handles it
+  output: { schema: z.string().nullable() },
   prompt: `You are a literary analyst. For the series "{{seriesName}}", your task is to provide a very brief (2-3 sentences) summary of its key themes, tone, or unique narrative aspects. This will serve as a style guide.
 
 - If you can generate a suitable, concise summary for "{{seriesName}}", please provide it as a string.
@@ -555,3 +556,4 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     return finalOutput;
   }
 );
+

@@ -289,6 +289,17 @@ If the player's input or the unfolding scene mentions a specific named entity (l
 
 Based on the current scene, player's input, and detailed story state, generate the 'nextScene' text.
 
+**Special Abilities Awareness:** Be mindful of unique, potent character abilities listed in their profile, such as those involving fate, time, or death (e.g., 'Return by Death').
+
+**Narrating Character Failure with such Skills:** If a character possesses an ability like 'Return by Death' and the narrative leads to a situation that would typically be a permanent character death or an irreversible, catastrophic failure for others:
+- Do not abruptly end the story or declare a definitive 'game over' for that character.
+- Instead, your narrative should:
+    1. Describe the 'fatal' event or failure vividly.
+    2. Then, transition the narrative to describe the character's experience of 'returning' or time rewinding. They should explicitly retain memories and knowledge from the 'failed' timeline.
+    3. The story should then resume from a narratively coherent 'checkpoint' or a point just before the critical failure, with the character now possessing this foreknowledge.
+- Subtly reflect any emotional toll or consequences of such a return in the character's state or your descriptive text (e.g., 'Subaru awoke with a gasp, the phantom pain still fresh, the events of the last hour seared into his mind. He was back at the market stall, moments before...').
+- The 'updatedStoryState' you provide should reflect the character *after* the return (e.g., memories are part of their current understanding, potentially reflected in new \`worldFacts\`; health/mana might be reset to the checkpoint's values, but XP/level from the failed timeline could be retained if it makes sense).
+
 NPC Management & Tracking:
 - If new, significant NPCs are introduced (named, have dialogue, clear role):
   - Create a new profile in 'updatedStoryState.trackedNPCs'.
