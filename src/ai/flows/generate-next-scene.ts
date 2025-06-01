@@ -228,8 +228,8 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
 });
 const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string(), quantity: z.number().optional().default(1) });
 const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string().describe("The ID or name of the item consumed. REQUIRED.") });
-const ItemEquippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemEquipped'), itemIdOrName: z.string(), slot: EquipSlotEnumInternal });
-const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUnequipped'), itemIdOrName: z.string(), slot: EquipSlotEnumInternal });
+const ItemEquippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemEquipped'), itemIdOrName: z.string().describe("REQUIRED."), slot: EquipSlotEnumInternal.describe("REQUIRED.") });
+const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUnequipped'), itemIdOrName: z.string().describe("REQUIRED."), slot: EquipSlotEnumInternal.describe("REQUIRED.") });
 
 const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('questAccepted'),
@@ -340,7 +340,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
     const item = equippedItems[slot as EquipmentSlot];
-    let itemDesc = item ? `${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})` : 'Empty';
+    let itemDesc = item ? `${item.name} (ID: ${item.id}, Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})` : 'Empty';
     output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${itemDesc}\n`;
   }
   return output.trim();
@@ -453,9 +453,11 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
 2.  **Describe Events (describedEvents):** Identify key game events. Use 'DescribedEvent' structure. ALL numeric fields MUST be numbers.
     - 'itemFound': Include 'itemName' (REQUIRED), 'itemDescription' (REQUIRED), 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
     - 'itemUsed': If the player consumes or uses an item from their inventory, generate this event. Include 'itemIdOrName' (REQUIRED), which should be the ID or name of the item consumed from the player's inventory.
+    - 'itemEquipped': If the player equips an item from inventory, generate this event. Include 'itemIdOrName' (REQUIRED) of the item from inventory and 'slot' (REQUIRED) it's equipped to.
+    - 'itemUnequipped': If the player unequips an item, generate this event. Include 'itemIdOrName' (REQUIRED) of the equipped item and the 'slot' (REQUIRED) it was in.
     - 'questAccepted': 'questDescription' is REQUIRED. If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers'). 'objectives' MUST have 'description' (REQUIRED) and 'isCompleted: false' (REQUIRED).
     - 'newNPCIntroduced': 'npcName' and 'npcDescription' are REQUIRED. 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
-    Examples: HealthChange, LanguageSkillChange (amount 1-20, number), ItemEquipped, QuestObjectiveUpdate, NPCRelationshipChange.
+    Examples: HealthChange, LanguageSkillChange (amount 1-20, number), QuestObjectiveUpdate, NPCRelationshipChange.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name' if array is provided.
 4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Each MUST have 'keyword' and 'content' if array is provided. Use 'lookupLoreTool' for context.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** Required. VERY brief (1-2 sentences) summary of ONLY events in THIS scene. (REQUIRED)
@@ -551,4 +553,3 @@ Ensure your ENTIRE output is a single JSON object.
     return finalOutput;
   }
 );
-

@@ -554,6 +554,39 @@ export default function StoryForgePage() {
                         }
                         break;
                     }
+                     case 'itemEquipped': {
+                        const e = event as ItemEquippedEvent;
+                        const itemIndex = draftState.inventory.findIndex(item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase());
+                        if (itemIndex > -1) {
+                            const itemToEquip = draftState.inventory[itemIndex];
+                            if (draftState.equippedItems[e.slot]) { // If slot is already occupied, unequip first
+                                const currentlyEquipped = draftState.equippedItems[e.slot];
+                                if (currentlyEquipped) draftState.inventory.push(currentlyEquipped);
+                            }
+                            draftState.equippedItems[e.slot] = itemToEquip;
+                            draftState.inventory.splice(itemIndex, 1);
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Equipped ${itemToEquip.name} to ${e.slot}. ${e.reason || ''}`.trim()
+                            ));
+                        } else {
+                            clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was equipped, but it was not found in player's inventory.`);
+                        }
+                        break;
+                    }
+                    case 'itemUnequipped': {
+                        const e = event as ItemUnequippedEvent;
+                        const itemToUnequip = draftState.equippedItems[e.slot];
+                        if (itemToUnequip && (itemToUnequip.id === e.itemIdOrName || itemToUnequip.name.toLowerCase() === e.itemIdOrName.toLowerCase())) {
+                            draftState.inventory.push(itemToUnequip);
+                            draftState.equippedItems[e.slot] = null;
+                             systemMessagesForTurn.push(createSystemMessage(
+                                `Unequipped ${itemToUnequip.name} from ${e.slot}. ${e.reason || ''}`.trim()
+                            ));
+                        } else {
+                             clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was unequipped from ${e.slot}, but it was not found there or name/ID mismatch.`);
+                        }
+                        break;
+                    }
                     case 'questAccepted': {
                         const e = event as QuestAcceptedEvent;
                         const newQuest: Quest = {
@@ -1197,4 +1230,3 @@ export default function StoryForgePage() {
     </div>
   );
 }
-
