@@ -430,7 +430,6 @@ export interface FleshOutStoryArcQuestsOutput {
   fleshedOutQuests: Quest[];
 }
 
-// Input/Output for the DiscoverNextStoryArcFlow
 export interface DiscoverNextStoryArcInput {
   seriesName: string;
   seriesPlotSummary: string;
@@ -440,7 +439,19 @@ export interface DiscoverNextStoryArcInput {
 }
 
 export interface DiscoverNextStoryArcOutput {
-  nextStoryArcOutline: StoryArc | null; // null if no more arcs found
+  nextStoryArcOutline: StoryArc | null;
+}
+
+export interface UpdateCharacterDescriptionInput {
+    currentProfile: CharacterProfile;
+    completedArc: StoryArc; // Or just completedArcDescription: string;
+    overallStorySummarySoFar: string;
+    seriesName: string;
+    usePremiumAI?: boolean;
+}
+
+export interface UpdateCharacterDescriptionOutput {
+    updatedCharacterDescription: string;
 }
 
 

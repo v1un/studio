@@ -5,12 +5,15 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@/ai/flows/generate-scenario-from-series";
 import { fleshOutStoryArcQuests as callFleshOutStoryArcQuests } from "@/ai/flows/flesh-out-chapter-quests";
 import { discoverNextStoryArc as callDiscoverNextStoryArc } from "@/ai/flows/discover-next-story-arc-flow";
+import { updateCharacterDescription as callUpdateCharacterDescription } from "@/ai/flows/update-character-description-flow";
+
 import type {
     GenerateScenarioFoundationInput, GenerateScenarioFoundationOutput,
     GenerateScenarioNarrativeElementsInput, GenerateScenarioNarrativeElementsOutput,
     AIMessageSegment, DisplayMessage,
     FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput,
     DiscoverNextStoryArcInput, DiscoverNextStoryArcOutput,
+    UpdateCharacterDescriptionInput, UpdateCharacterDescriptionOutput,
     CombatHelperInfo, CombatEventLogEntry,
     DescribedEvent, // Generic DescribedEvent
     HealthChangeEvent, ManaChangeEvent, XPChangeEvent, LevelUpEvent, CurrencyChangeEvent, LanguageSkillChangeEvent, ItemFoundEvent, ItemLostEvent, ItemUsedEvent, ItemEquippedEvent, ItemUnequippedEvent, QuestAcceptedEvent, QuestObjectiveUpdateEvent, QuestCompletedEvent, QuestFailedEvent, NPCRelationshipChangeEvent, NPCStateChangeEvent, NewNPCIntroducedEvent, WorldFactAddedEvent, WorldFactRemovedEvent, WorldFactUpdatedEvent, SkillLearnedEvent, // Specific event types
@@ -33,7 +36,7 @@ import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-l
 import { simpleTestAction } from '@/ai/actions/simple-test-action';
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -143,7 +146,7 @@ export default function StoryForgePage() {
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | null>(null);
+  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | 'updatingProfile' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
@@ -158,6 +161,8 @@ export default function StoryForgePage() {
         setLoadingMessage("The next story arc of your saga is unfolding...");
     } else if (isLoadingInteraction && loadingType === 'discoveringArc') {
         setLoadingMessage("AI is searching for the next chapter in your destiny...");
+    } else if (isLoadingInteraction && loadingType === 'updatingProfile') {
+        setLoadingMessage("Reflecting on your journey to update your character profile...");
     } else {
       setLoadingMessage(null);
     }
@@ -429,7 +434,6 @@ export default function StoryForgePage() {
          if (result.updatedStorySummary) draftState.storySummary = result.updatedStorySummary;
          if (result.describedEvents && Array.isArray(result.describedEvents)) {
             result.describedEvents.forEach(event => {
-                // Handle specific events and generate system messages
                 switch (event.type) {
                     case 'healthChange': {
                         const e = event as HealthChangeEvent;
@@ -466,7 +470,6 @@ export default function StoryForgePage() {
                     case 'levelUp': {
                         const e = event as LevelUpEvent;
                         draftState.character.level = e.newLevel;
-                        // XP reset and new experienceToNextLevel should be handled by AI if not part of event
                         systemMessagesForTurn.push(createSystemMessage(
                             `Level Up! Reached Level ${e.newLevel}. ${e.rewardSuggestion || ''} ${e.reason || ''}`.trim()
                         ));
@@ -521,7 +524,7 @@ export default function StoryForgePage() {
                         const itemIndex = draftState.inventory.findIndex(item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase());
                         if (itemIndex > -1) {
                             const lostItemName = draftState.inventory[itemIndex].name;
-                            draftState.inventory.splice(itemIndex, 1); // Assuming quantity 1 for now
+                            draftState.inventory.splice(itemIndex, 1); 
                             systemMessagesForTurn.push(createSystemMessage(
                                 `Item Lost: ${lostItemName}. ${e.reason || ''}`.trim()
                             ));
@@ -540,7 +543,7 @@ export default function StoryForgePage() {
                             systemMessagesForTurn.push(createSystemMessage(
                                 `Item Consumed: ${consumedItem.name}. ${e.reason || consumedItem.effectDescription || "No immediate effect described."}`.trim()
                             ));
-                            if(consumedItem.isConsumable) { // Only remove if consumable
+                            if(consumedItem.isConsumable) { 
                                 draftState.inventory.splice(itemIndex, 1);
                                 toast({ title: "Item Used", description: `${consumedItem.name} consumed.`});
                                 console.log(`CLIENT: Item "${e.itemIdOrName}" used and removed from inventory.`);
@@ -559,7 +562,7 @@ export default function StoryForgePage() {
                         const itemIndex = draftState.inventory.findIndex(item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase());
                         if (itemIndex > -1) {
                             const itemToEquip = draftState.inventory[itemIndex];
-                            if (draftState.equippedItems[e.slot]) { // If slot is already occupied, unequip first
+                            if (draftState.equippedItems[e.slot]) { 
                                 const currentlyEquipped = draftState.equippedItems[e.slot];
                                 if (currentlyEquipped) draftState.inventory.push(currentlyEquipped);
                             }
@@ -672,7 +675,7 @@ export default function StoryForgePage() {
                             classOrRole: e.classOrRole,
                             relationshipStatus: e.initialRelationship || 0,
                             health: e.initialHealth,
-                            maxHealth: e.initialHealth, // Assuming max health is same as initial if provided
+                            maxHealth: e.initialHealth, 
                             knownFacts: [],
                             firstEncounteredLocation: draftState.currentLocation,
                             firstEncounteredTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
@@ -681,7 +684,7 @@ export default function StoryForgePage() {
                             isMerchant: e.isMerchant,
                             buysItemTypes: e.merchantBuysItemTypes,
                             sellsItemTypes: e.merchantSellsItemTypes,
-                            merchantInventory: [], // AI needs to generate inventory separately if merchant
+                            merchantInventory: [], 
                         };
                         draftState.trackedNPCs.push(newNPC);
                         systemMessagesForTurn.push(createSystemMessage(
@@ -716,13 +719,10 @@ export default function StoryForgePage() {
                         }
                         break;
                     }
-                    // Add more cases here for other event types as needed
                 }
             });
          }
-         // Ensure current character state from AI (potentially with effective stats) is applied to base
          if (result.updatedStoryState.character) {
-             // Only update base stats, not overwrite entire skills/inventory etc. which are handled by events
              const aiChar = result.updatedStoryState.character;
              draftState.character.health = aiChar.health;
              draftState.character.maxHealth = aiChar.maxHealth;
@@ -743,7 +743,7 @@ export default function StoryForgePage() {
          }
          if (result.updatedStoryState.currentLocation) draftState.currentLocation = result.updatedStoryState.currentLocation;
          if (result.updatedStoryState.worldFacts) draftState.worldFacts = result.updatedStoryState.worldFacts;
-         if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs; // AI might update NPC states directly too
+         if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs; 
          if (result.updatedStoryState.storyArcs) draftState.storyArcs = result.updatedStoryState.storyArcs;
          if (result.updatedStoryState.currentStoryArcId) draftState.currentStoryArcId = result.updatedStoryState.currentStoryArcId;
 
@@ -761,11 +761,47 @@ export default function StoryForgePage() {
             description: (
               <div className="flex items-start">
                 <Milestone className="w-5 h-5 mr-2 mt-0.5 text-accent shrink-0" />
-                <span>{currentStoryArcInNewBaseState.title} finished. Checking for next arc...</span>
+                <span>{currentStoryArcInNewBaseState.title} finished.</span>
               </div>
             ),
             duration: 6000,
           });
+        
+        setLoadingType('updatingProfile');
+        try {
+            const updateDescInput: UpdateCharacterDescriptionInput = {
+                currentProfile: finalUpdatedBaseStoryState.character,
+                completedArc: currentStoryArcInNewBaseState,
+                overallStorySummarySoFar: finalUpdatedBaseStoryState.storySummary || "",
+                seriesName: currentSession.seriesName,
+                usePremiumAI: currentSession.isPremiumSession,
+            };
+            console.log("CLIENT: Calling updateCharacterDescription with input:", updateDescInput);
+            const descUpdateResult: UpdateCharacterDescriptionOutput = await callUpdateCharacterDescription(updateDescInput);
+            console.log("CLIENT: updateCharacterDescription successful. New Description:", descUpdateResult.updatedCharacterDescription);
+            finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                draftState.character.description = descUpdateResult.updatedCharacterDescription;
+            });
+            systemMessagesForTurn.push(createSystemMessage(`You reflect on the events of the "${currentStoryArcInNewBaseState.title}" arc. Your understanding of yourself and your place in this world has subtly shifted.`));
+            toast({
+                title: "Character Reflection",
+                description: (
+                    <div className="flex items-start">
+                        <EditIcon className="w-5 h-5 mr-2 mt-0.5 text-primary shrink-0" />
+                        <span>Your character description has been updated based on recent events.</span>
+                    </div>
+                ),
+                duration: 7000
+            });
+        } catch (descError: any) {
+            console.error("CLIENT: Failed to update character description:", descError);
+            toast({
+                title: "Error Updating Character Profile",
+                description: `Could not update character description. ${descError.message || ""}`,
+                variant: "destructive",
+            });
+        }
+        setLoadingType('nextScene'); // Revert loading type
         
         const nextStoryArcOrder = currentStoryArcInNewBaseState.order + 1;
         let nextStoryArcToFleshOut = finalUpdatedBaseStoryState.storyArcs.find(
@@ -848,7 +884,7 @@ export default function StoryForgePage() {
               if (arcIndex !== -1) {
                 draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
               }
-              draftState.currentStoryArcId = nextStoryArcToFleshOut!.id; // Ensure current arc is set
+              draftState.currentStoryArcId = nextStoryArcToFleshOut!.id; 
             });
             systemMessagesForTurn.push(createSystemMessage(`Story Arc Started: ${nextStoryArcToFleshOut.title}. New main quests available.`));
             toast({
@@ -962,7 +998,7 @@ export default function StoryForgePage() {
           speakerNameLabel: 'COMBAT LOG',
           isPlayer: false,
           combatHelperInfo: combatHelperData,
-          avatarHint: "system combat", // Specific hint
+          avatarHint: "system combat", 
         };
         turnMessages.push(combatHelperMessage);
       }
