@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -20,7 +21,7 @@ import type {
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
     DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent
 } from '@/types/story';
-import { EquipSlotEnumInternal } from '@/types/zod-schemas'; // Assuming you might centralize this
+import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
 import { produce } from 'immer';
@@ -178,7 +179,7 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   itemName: z.string(),
   itemDescription: z.string(),
   quantity: z.number().optional().default(1),
-  suggestedBasePrice: z.number().optional().describe("AI's estimate for base value (must be a number). Omit if unknown, will default to 0."),
+  suggestedBasePrice: z.number().optional().describe("AI's estimate for base value (must be a number, can be 0). Omit if unknown, will default to 0."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If equippable gear, specify slot. OMIT field if not equippable (e.g. potion, key)."),
   isConsumable: z.boolean().optional(),
   effectDescription: z.string().optional(),
@@ -200,7 +201,7 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   rewards: z.object({
     experiencePoints: z.number().optional(),
     currency: z.number().optional().describe("Amount of currency, must be a number."),
-    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be a number if provided.")})).optional().describe("Details of items to be rewarded, including their properties and 'basePrice' (as a number). TypeScript will ensure unique IDs.")
+    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be a number if provided, can be 0.")})).optional().describe("Details of items to be rewarded, including their properties and 'basePrice' (as a number). TypeScript will ensure unique IDs.")
   }).optional(),
 });
 const QuestObjectiveUpdateEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questObjectiveUpdate'), questIdOrDescription: z.string().describe("ID or distinguishing description of the quest."), objectiveDescription: z.string().describe("Description of the objective being updated."), objectiveCompleted: z.boolean() });
@@ -427,14 +428,18 @@ Tracked NPCs:
 
 **Your Task:**
 1.  **Generate Narrative (generatedMessages):** Write the story's continuation, including GM narration and any NPC dialogue. Ensure NPC speaker names match those in 'Tracked NPCs' if they are speaking.
-2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Ensure all numeric fields (amounts, prices, levels, stats) are actual numbers. Examples:
-    - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageImprovement\\", \\"amount\\": 5, \\"reason\\": \\"studied local script\\" \\}, \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
-    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5, \\"equipSlot\\": \\"hands\\" \\} (Omit 'equipSlot' if not equippable gear, like a potion or a generic book.), \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
+2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. ALL numeric fields (amounts, prices, levels, stats, etc.) MUST be actual numbers. ALL required fields for each event type MUST be present and correctly typed.
+    - For 'itemFound' events, ensure 'suggestedBasePrice' (a number, can be 0) is always included. 'equipSlot' should ONLY be present if the item is inherently equippable gear (e.g., a sword); for items like potions or keys, 'equipSlot' MUST BE OMITTED.
+    - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0). 'objectives' MUST have 'isCompleted: false'.
+    - For 'newNPCIntroduced' events, 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
+    Examples:
+    - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageImprovement\\", \\"amount\\": 5, \\"reason\\": \\"studied local script\\" \\} (amount is a number, 1-20), \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
+    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\} (omit 'equipSlot'), \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\} (omit 'equipSlot'), \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
     - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
     - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\", \\"initialRelationship\\": 0, \\"initialHealth\\": 75, \\"isMerchant\\": false \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
     - Skills: \\{\\"type\\": \\"skillLearned\\", \\"skillName\\": \\"Fireball\\", \\"skillDescription\\": \\"Hurls a ball of fire.\\", \\"skillType\\": \\"Magic\\" \\}
-    Be specific and ensure all required fields for each event type are present and correctly typed. If an item is found, describe it and its properties. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts). If a level up occurs, indicate the new level. If an NPC's state changes (e.g. becomes hostile, flees), describe it.
+    Be specific. If an item is found, describe it and its properties. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts, a number). If a level up occurs, indicate the new level (a number). If an NPC's state changes (e.g. becomes hostile, flees), describe it.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action.
 4.  **New Lore (newLoreProposals):** If relevant new lore for "{{seriesName}}" is revealed, propose entries. Use 'lookupLoreTool' if more info on existing lore is needed for the narrative.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** A VERY brief (1-2 sentences) summary of ONLY what happened in THIS scene/turn.
@@ -1060,7 +1065,8 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
             item.name = item.name || "Unnamed Item";
             item.description = item.description || "No description.";
             if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
-            if (item.basePrice === undefined || item.basePrice === null || item.basePrice < 0) item.basePrice = 0;
+            item.basePrice = item.basePrice ?? 0;
+            if (item.basePrice < 0) item.basePrice = 0;
         });
 
         // Quests
@@ -1088,7 +1094,8 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                     if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${index}`;
                     rItem.name = rItem.name || "Unnamed Reward Item";
                     rItem.description = rItem.description || "No description.";
-                    if (rItem.basePrice === undefined || rItem.basePrice === null || rItem.basePrice < 0) rItem.basePrice = 0;
+                    rItem.basePrice = rItem.basePrice ?? 0;
+                    if (rItem.basePrice < 0) rItem.basePrice = 0;
                 });
                 if (quest.rewards.currency !== undefined && quest.rewards.currency < 0) quest.rewards.currency = 0;
                 if (!quest.rewards.experiencePoints && (!quest.rewards.items || quest.rewards.items.length === 0) && quest.rewards.currency === undefined) {
@@ -1122,7 +1129,8 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                 item.name = item.name || "Unnamed Equipped Item";
                 item.description = item.description || "No description.";
                 if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>)!.equipSlot;
-                if (item.basePrice === undefined || item.basePrice === null || item.basePrice < 0) item.basePrice = 0;
+                item.basePrice = item.basePrice ?? 0;
+                if (item.basePrice < 0) item.basePrice = 0;
                 newEquippedItemsInternal[slotKey] = item;
             } else {
                 if (item !== null && item !== undefined) localCorrectionWarnings.push(`Item in slot ${slotKey} was invalid; set to empty.`);
@@ -1249,3 +1257,5 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
     return finalOutput;
   }
 );
+
+    
