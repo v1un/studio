@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -21,15 +20,13 @@ import type {
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
     DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent
 } from '@/types/story';
+import { EquipSlotEnumInternal } from '@/types/zod-schemas'; // Assuming you might centralize this
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
 import { produce } from 'immer';
 
 // --- SCHEMAS FOR AI COMMUNICATION (INTERNAL, MOSTLY FROM types/story.ts) ---
 // These are verbose but necessary for the AI to understand the structure it should partially fill or describe.
-
-const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
-  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
@@ -114,7 +111,7 @@ const NPCDialogueEntrySchemaInternal = z.object({
 });
 
 const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
-  price: z.number().optional().describe("The price this merchant sells the item for. If not specified, can be derived from basePrice or context."),
+  price: z.number().optional().describe("The price this merchant sells the item for. If not specified, can be derived from basePrice or context. Must be a number if provided."),
 });
 
 const NPCProfileSchemaInternal = z.object({
@@ -122,13 +119,13 @@ const NPCProfileSchemaInternal = z.object({
     name: z.string().describe("NPC's name."),
     description: z.string().describe("Physical appearance, general demeanor, key characteristics. Update if new details are learned."),
     classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain', 'Mysterious Stranger'."),
-    health: z.number().optional().describe("Current health points if applicable (e.g., for a combatant). Default to a reasonable value like 50-100 if setting."),
-    maxHealth: z.number().optional().describe("Maximum health points if applicable."),
-    mana: z.number().optional().describe("Current mana/energy if applicable (e.g., for a magic user). Default to a reasonable value like 20-50 if setting."),
-    maxMana: z.number().optional().describe("Maximum mana/energy if applicable."),
+    health: z.number().optional().describe("Current health points if applicable (e.g., for a combatant). Default to a reasonable value like 50-100 if setting. Must be a number."),
+    maxHealth: z.number().optional().describe("Maximum health points if applicable. Must be a number."),
+    mana: z.number().optional().describe("Current mana/energy if applicable (e.g., for a magic user). Default to a reasonable value like 20-50 if setting. Must be a number."),
+    maxMana: z.number().optional().describe("Maximum mana/energy if applicable. Must be a number."),
     firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met. Set only when creating new profile."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met. Set only when creating new profile."),
-    relationshipStatus: z.number().describe("Numerical score representing the player's relationship with the NPC (e.g., -100 Hostile, 0 Neutral, 100 Allied). Update based on interactions."),
+    relationshipStatus: z.number().describe("Numerical score representing the player's relationship with the NPC (e.g., -100 Hostile, 0 Neutral, 100 Allied). Update based on interactions. Must be a number."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Add new facts as they are discovered."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Add new significant dialogues."),
     lastKnownLocation: z.string().optional().describe("Last known location of the NPC. Update if they move or are seen elsewhere."),
@@ -137,7 +134,7 @@ const NPCProfileSchemaInternal = z.object({
     shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing, influencing their actions or comments. Can be set or updated by the AI based on events."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile. Update with current time."),
     isMerchant: z.boolean().optional().describe("Set to true if this NPC is a merchant and can buy/sell items."),
-    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice', and a 'price' they sell it for. New items added to their stock should also have these details."),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice' (as a number), and a 'price' (as a number) they sell it for. New items added to their stock should also have these details."),
     buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Potions', 'Old Books'). Influences AI decision on what they might buy."),
     sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically sell (e.g., 'Adventuring Gear', 'Herbs')."),
 });
@@ -145,11 +142,11 @@ const NPCProfileSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, and languageUnderstanding (0-100).'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice (as a number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency and items with basePrice), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
+  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency (number) and items with 'basePrice' (number)), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to worldFacts if the character would perceive them. A worldFact like "Language barrier makes communication difficult" should be present if languageUnderstanding is low, and removed if it improves significantly.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, set 'isMerchant', 'merchantInventory', 'buysItemTypes', 'sellsItemTypes'. Include NPC 'health'/'maxHealth'/'mana'/'maxMana' if applicable (e.g. for combatants)."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, set 'isMerchant', 'merchantInventory' (with items having 'basePrice' and 'price' as numbers), 'buysItemTypes', 'sellsItemTypes'. Include NPC 'health'/'maxHealth'/'mana'/'maxMana' as numbers if applicable (e.g. for combatants)."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments so far. This summary will be updated each turn."),
 });
 
@@ -181,14 +178,14 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   itemName: z.string(),
   itemDescription: z.string(),
   quantity: z.number().optional().default(1),
-  suggestedBasePrice: z.number().optional().describe("AI's estimate for base value."),
-  equipSlot: EquipSlotEnumInternal.optional(),
+  suggestedBasePrice: z.number().optional().describe("AI's estimate for base value (must be a number). Omit if unknown, will default to 0."),
+  equipSlot: EquipSlotEnumInternal.optional().describe("If equippable gear, specify slot. OMIT field if not equippable (e.g. potion, key)."),
   isConsumable: z.boolean().optional(),
   effectDescription: z.string().optional(),
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
 });
-const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string().describe("ID if known, otherwise name."), quantity: z.number().optional().default(1) });
+const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string().describe("ID if known, otherwise name. Avoid 'Empty' or blank names."), quantity: z.number().optional().default(1) });
 const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string().describe("ID if known, otherwise name of item consumed/used.") });
 const ItemEquippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemEquipped'), itemIdOrName: z.string().describe("ID or name of the item from inventory."), slot: EquipSlotEnumInternal.describe("The equipment slot to equip the item to.") });
 const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUnequipped'), itemIdOrName: z.string().describe("ID or name of the item currently equipped."), slot: EquipSlotEnumInternal.describe("The equipment slot to unequip from.") });
@@ -199,11 +196,11 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   questIdSuggestion: z.string().optional().describe("AI suggested unique ID for the quest."),
   questDescription: z.string(),
   category: z.string().optional(),
-  objectives: z.array(z.object({ description: z.string() })).optional().describe("Descriptions for new objectives."),
+  objectives: z.array(z.object({ description: z.string(), isCompleted: z.literal(false) })).optional().describe("Descriptions for new objectives. 'isCompleted' MUST be false for new objectives."),
   rewards: z.object({
     experiencePoints: z.number().optional(),
-    currency: z.number().optional(),
-    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true }).deepPartial()).optional().describe("Details of items to be rewarded, including their properties. TypeScript will ensure unique IDs and base prices.")
+    currency: z.number().optional().describe("Amount of currency, must be a number."),
+    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be a number if provided.")})).optional().describe("Details of items to be rewarded, including their properties and 'basePrice' (as a number). TypeScript will ensure unique IDs.")
   }).optional(),
 });
 const QuestObjectiveUpdateEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questObjectiveUpdate'), questIdOrDescription: z.string().describe("ID or distinguishing description of the quest."), objectiveDescription: z.string().describe("Description of the objective being updated."), objectiveCompleted: z.boolean() });
@@ -216,10 +213,10 @@ const NewNPCIntroducedEventSchemaInternal = z.object({
   npcName: z.string(),
   npcDescription: z.string().describe("Brief description of appearance and demeanor."),
   classOrRole: z.string().optional(),
-  initialRelationship: z.number().optional().default(0).describe("Initial relationship score."),
+  initialRelationship: z.number().optional().default(0).describe("Initial relationship score (number)."),
   isMerchant: z.boolean().optional().default(false),
-  initialHealth: z.number().optional().describe("If a combatant or relevant, their starting health."),
-  initialMana: z.number().optional().describe("If a magic user or relevant, their starting mana."),
+  initialHealth: z.number().optional().describe("If a combatant or relevant, their starting health (number)."),
+  initialMana: z.number().optional().describe("If a magic user or relevant, their starting mana (number)."),
   merchantSellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically sell (e.g., 'General Goods', 'Magic Scrolls')."),
   merchantBuysItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically buy (e.g., 'Herbs', 'Old Books')."),
   reason: z.string().optional().describe("Optional narrative reason for the event."),
@@ -244,7 +241,7 @@ const DescribedEventSchema = z.discriminatedUnion("type", [
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
   WorldFactAddedEventSchema, WorldFactRemovedEventSchema, WorldFactUpdatedEventSchema,
   SkillLearnedEventSchema
-]).describe("A described game event resulting from player action or narrative progression.");
+]).describe("A described game event resulting from player action or narrative progression. Ensure all fields are correctly typed, especially numbers for prices, amounts, stats.");
 
 // Schema for AIMessageSegment from types/story.ts, but internal to this flow for clarity
 const AIMessageSegmentSchemaInternal = z.object({
@@ -269,7 +266,7 @@ const RawLoreEntrySchemaInternal = z.object({
 
 const NarrativeAndEventsOutputSchema = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("The narrative text and NPC dialogue for the current scene/turn."),
-  describedEvents: z.array(DescribedEventSchema).optional().describe("An array of structured events that occurred in the scene, described by the AI. TypeScript will use these to update the game state."),
+  describedEvents: z.array(DescribedEventSchema).optional().describe("An array of structured events that occurred in the scene, described by the AI. TypeScript will use these to update the game state. Ensure all numeric fields like prices, amounts, stats are actual numbers."),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("NPCs active in this scene."),
   newLoreProposals: z.array(RawLoreEntrySchemaInternal).optional().describe("New lore entries suggested by the AI."),
   sceneSummaryFragment: z.string().describe("A very brief summary of ONLY the key events that transpired in THIS generated scene/turn."),
@@ -430,14 +427,14 @@ Tracked NPCs:
 
 **Your Task:**
 1.  **Generate Narrative (generatedMessages):** Write the story's continuation, including GM narration and any NPC dialogue. Ensure NPC speaker names match those in 'Tracked NPCs' if they are speaking.
-2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Examples:
+2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Ensure all numeric fields (amounts, prices, levels, stats) are actual numbers. Examples:
     - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageImprovement\\", \\"amount\\": 5, \\"reason\\": \\"studied local script\\" \\}, \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
-    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Old Key\\", \\"slot\\": \\"weapon\\" \\}
-    - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\"}], \\"rewards\\": {\\"experiencePoints\\": 100} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
-    - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\" \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
+    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5, \\"equipSlot\\": \\"hands\\" \\} (Omit 'equipSlot' if not equippable gear, like a potion or a generic book.), \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
+    - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
+    - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\", \\"initialRelationship\\": 0, \\"initialHealth\\": 75, \\"isMerchant\\": false \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
     - Skills: \\{\\"type\\": \\"skillLearned\\", \\"skillName\\": \\"Fireball\\", \\"skillDescription\\": \\"Hurls a ball of fire.\\", \\"skillType\\": \\"Magic\\" \\}
-    Be specific. If an item is found, describe it. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts). If a level up occurs, indicate the new level. If an NPC's state changes (e.g. becomes hostile, flees), describe it.
+    Be specific and ensure all required fields for each event type are present and correctly typed. If an item is found, describe it and its properties. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts). If a level up occurs, indicate the new level. If an NPC's state changes (e.g. becomes hostile, flees), describe it.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action.
 4.  **New Lore (newLoreProposals):** If relevant new lore for "{{seriesName}}" is revealed, propose entries. Use 'lookupLoreTool' if more info on existing lore is needed for the narrative.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** A VERY brief (1-2 sentences) summary of ONLY what happened in THIS scene/turn.
@@ -445,8 +442,8 @@ Tracked NPCs:
 **Language Understanding Mechanic:**
 - Player's 'languageUnderstanding' (0-100) affects comprehension.
 - If low (0-40), GM narration in 'generatedMessages' MUST reflect this (e.g., indecipherable speech/text). Actual foreign dialogue can be in NPC segments for player OOC knowledge.
-- If player actions lead to language improvement (e.g., "I study the signs", "ask for translation"), describe this as a 'languageImprovement' event with a small 'amount' (e.g., 5-15).
-- If language understanding is very low, the AI can also describe events such as 'currencyChange' by a certain amount without the player knowing exactly how much until their understanding improves or they find a way to verify.
+- If player actions lead to language improvement (e.g., "I study the signs", "ask for translation"), describe this as a 'languageImprovement' event with a small 'amount' (e.g., 5-15, a number).
+- If language understanding is very low, the AI can also describe events such as 'currencyChange' by a certain amount (a number) without the player knowing exactly how much until their understanding improves or they find a way to verify.
 
 Adhere to the 'NarrativeAndEventsOutputSchema' (partially, as it's deepPartial). Prioritize clear narrative and accurate event descriptions.
 DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on describing the events that TypeScript will use to update the state.
@@ -1088,7 +1085,7 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
             if (quest.rewards) {
                 quest.rewards.items = quest.rewards.items ?? [];
                 quest.rewards.items.forEach((rItem, rIndex) => {
-                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(2,8)}_${rIndex}`;
+                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${index}`;
                     rItem.name = rItem.name || "Unnamed Reward Item";
                     rItem.description = rItem.description || "No description.";
                     if (rItem.basePrice === undefined || rItem.basePrice === null || rItem.basePrice < 0) rItem.basePrice = 0;

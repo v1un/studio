@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -13,9 +12,7 @@
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z} from 'zod';
 import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType } from '@/types/story'; // Use exported types
-
-const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
-  .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
+import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
@@ -26,7 +23,7 @@ const ItemSchemaInternal = z.object({
   effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect."),
   isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
-  basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading."),
+  basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. Must be a number if provided."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -40,22 +37,22 @@ const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character.'),
   class: z.string().describe('The class or archetype of the character.'),
   description: z.string().describe('A brief backstory or description of the character.'),
-  health: z.number().describe('Current health points of the character.'),
-  maxHealth: z.number().describe('Maximum health points of the character.'),
-  mana: z.number().optional().describe('Current mana or magic points of the character. Assign 0 if not applicable to the class, or omit.'),
-  maxMana: z.number().optional().describe('Maximum mana or magic points. Assign 0 if not applicable, or omit.'),
-  strength: z.number().optional().describe('Character\'s physical power. Assign a value between 5 and 15, or omit.'),
-  dexterity: z.number().optional().describe('Character\'s agility and reflexes. Assign a value between 5 and 15, or omit.'),
-  constitution: z.number().optional().describe('Character\'s endurance and toughness. Affects health. Assign a value between 5 and 15, or omit.'),
-  intelligence: z.number().optional().describe('Character\'s reasoning and memory. Affects mana for magic users. Assign a value between 5 and 15, or omit.'),
-  wisdom: z.number().optional().describe('Character\'s perception and intuition. Affects mana regeneration or spell effectiveness. Assign a value between 5 and 15, or omit.'),
-  charisma: z.number().optional().describe('Character\'s social skills and influence. Assign a value between 5 and 15, or omit.'),
-  level: z.number().describe('The current level of the character. Initialize to 1.'),
-  experiencePoints: z.number().describe('Current experience points. Initialize to 0.'),
-  experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100.'),
+  health: z.number().describe('Current health points of the character. Must be a number.'),
+  maxHealth: z.number().describe('Maximum health points of the character. Must be a number.'),
+  mana: z.number().optional().describe('Current mana or magic points of the character. Assign 0 if not applicable to the class, or omit. Must be a number if provided.'),
+  maxMana: z.number().optional().describe('Maximum mana or magic points. Assign 0 if not applicable, or omit. Must be a number if provided.'),
+  strength: z.number().optional().describe('Character\'s physical power. Assign a value between 5 and 15, or omit. Must be a number if provided.'),
+  dexterity: z.number().optional().describe('Character\'s agility and reflexes. Assign a value between 5 and 15, or omit. Must be a number if provided.'),
+  constitution: z.number().optional().describe('Character\'s endurance and toughness. Affects health. Assign a value between 5 and 15, or omit. Must be a number if provided.'),
+  intelligence: z.number().optional().describe('Character\'s reasoning and memory. Affects mana for magic users. Assign a value between 5 and 15, or omit. Must be a number if provided.'),
+  wisdom: z.number().optional().describe('Character\'s perception and intuition. Affects mana regeneration or spell effectiveness. Assign a value between 5 and 15, or omit. Must be a number if provided.'),
+  charisma: z.number().optional().describe('Character\'s social skills and influence. Assign a value between 5 and 15, or omit. Must be a number if provided.'),
+  level: z.number().describe('The current level of the character. Initialize to 1. Must be a number.'),
+  experiencePoints: z.number().describe('Current experience points. Initialize to 0. Must be a number.'),
+  experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100. Must be a number.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 1-2 starting skills or abilities appropriate for the character's class. Each skill requires an id, name, description, and type."),
-  currency: z.number().optional().describe("Character's starting currency (e.g., gold). Initialize to a small amount like 50, or 0."),
-  languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and can't understand anyone'), then set to a low value like 0-10."),
+  currency: z.number().optional().describe("Character's starting currency (e.g., gold). Initialize to a small amount like 50, or 0. Must be a number if provided."),
+  languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and can't understand anyone'), then set to a low value like 0-10. Must be a number if provided."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -69,7 +66,7 @@ const EquipmentSlotsSchemaInternal = z.object({
   neck: ItemSchemaInternal.nullable(),
   ring1: ItemSchemaInternal.nullable(),
   ring2: ItemSchemaInternal.nullable(),
-}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'basePrice' as a number, and 'equipSlot' if applicable, otherwise OMIT 'equipSlot') or 'null' if the slot is empty.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed']);
 const QuestObjectiveSchemaInternal = z.object({
@@ -78,9 +75,9 @@ const QuestObjectiveSchemaInternal = z.object({
 });
 
 const QuestRewardsSchemaInternal = z.object({
-  experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, and optional 'equipSlot' (omit if not inherently equippable gear), and other item properties like `isConsumable` if applicable."),
-  currency: z.number().optional().describe("Amount of currency awarded."),
+  experiencePoints: z.number().optional().describe("Amount of experience points awarded. Must be a number if provided."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice' (as a number), and optional 'equipSlot' (omit if not inherently equippable gear), and other item properties like `isConsumable` if applicable."),
+  currency: z.number().optional().describe("Amount of currency awarded. Must be a number if provided."),
 }).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
@@ -99,7 +96,7 @@ const NPCDialogueEntrySchemaInternal = z.object({
 });
 
 const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
-  price: z.number().optional().describe("The price this merchant sells the item for. If not specified, can be derived from basePrice or context."),
+  price: z.number().optional().describe("The price this merchant sells the item for. If not specified, can be derived from basePrice or context. Must be a number if provided."),
 });
 
 const NPCProfileSchemaInternal = z.object({
@@ -109,7 +106,7 @@ const NPCProfileSchemaInternal = z.object({
     classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain'."),
     firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
-    relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value, typically 0 for Neutral start."),
+    relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value, typically 0 for Neutral start. Must be a number."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Should be empty or reflect general world knowledge if pre-populated and not yet met."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Should be empty or omitted for initial scenario."),
     lastKnownLocation: z.string().optional().describe("Last known location of the NPC. If pre-populated and not met, this could be their canonical location."),
@@ -118,19 +115,19 @@ const NPCProfileSchemaInternal = z.object({
     shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing. Can be set or updated by the AI based on events."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile."),
     isMerchant: z.boolean().optional().describe("Set to true if this NPC is a merchant and can buy/sell items."),
-    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', and a 'price' they sell it for. Items should also have a 'basePrice' for general valuation."),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice' (number), and a 'price' (number) they sell it for. OMIT 'equipSlot' for non-equippable items."),
     buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Potions', 'Old Books')."),
     sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they typically sell (e.g., 'Adventuring Gear', 'Herbs')."),
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, and languageUnderstanding (0-100).'),
+  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, and languageUnderstanding (0-100). Ensure all numeric fields are numbers.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an \'equipSlot\' (e.g. \'weapon\', \'head\', \'body\'). If it\'s not an equippable type of item (e.g., a potion, a key, a generic diary/book), the \'equipSlot\' field MUST BE OMITTED ENTIRELY.** Consider adding `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId`, and `basePrice`.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description, and basePrice (number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an \'equipSlot\' (e.g. \'weapon\', \'head\', \'body\'). If it\'s not an equippable type of item (e.g., a potion, a key, a generic diary/book), the \'equipSlot\' field MUST BE OMITTED ENTIRELY.** Consider adding `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId`.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion, including items and currency).'),
+  quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion, including items with basePrice (number) and currency (number)).'),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts. If languageUnderstanding is low, a fact should describe this.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene. If an NPC is a merchant, set 'isMerchant' and populate 'merchantInventory' with priced items."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene. If an NPC is a merchant, set 'isMerchant' and populate 'merchantInventory' with priced items (basePrice and price as numbers). Ensure all numeric fields are numbers."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro."),
 });
 
@@ -143,7 +140,7 @@ const GenerateStoryStartInputSchemaInternal = z.object({
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details (with languageUnderstanding), stats, level, XP, currency, empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards including currency), starting skills/abilities, and profiles for any NPCs introduced (including merchant details if applicable).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details (with languageUnderstanding), stats, level, XP, currency (all as numbers), empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards including currency (number) and items with basePrice (number)), starting skills/abilities, and profiles for any NPCs introduced (including merchant details if applicable, with item prices as numbers).'),
 });
 
 export async function generateStoryStart(input: GenerateStoryStartInputType): Promise<GenerateStoryStartOutputType> {
@@ -171,19 +168,19 @@ Generate:
 1.  Initial scene description.
 2.  Character profile:
     - Name, class (invent if needed). Backstory.
-    - Health/MaxHealth (e.g., 100). Mana/MaxMana (0 if non-magic). Core stats (5-15).
-    - Level 1, 0 XP, XPToNextLevel (e.g., 100). Currency (e.g., 20-50).
-    - 'languageUnderstanding': (0-100). Default to 100 unless the prompt strongly implies a language barrier (e.g., "lost in a foreign land and can't understand anyone"), then set to an appropriate low value (e.g., 0-10).
+    - Health/MaxHealth (e.g., 100, numbers). Mana/MaxMana (0 if non-magic, numbers). Core stats (5-15, numbers).
+    - Level 1 (number), 0 XP (number), XPToNextLevel (e.g., 100, number). Currency (e.g., 20-50, number).
+    - 'languageUnderstanding' (number, 0-100). Default to 100 unless the prompt strongly implies a language barrier (e.g., "lost in a foreign land and can't understand anyone"), then set to an appropriate low value (e.g., 0-10).
     - 'skillsAndAbilities': 1-2 starting skills (unique 'id', 'name', 'description', 'type').
 3.  Initial story state:
     - Character profile. Starting location. Empty inventory array [].
-    - 'equippedItems': All 10 slots MUST be present and set to null.
-    - Optional: 1 simple starting quest (unique 'id', 'description', 'status: active', optional 'category', 'objectives', and 'rewards' with 'experiencePoints', 'currency', 'items' (each item: unique 'id', 'name', 'description', 'basePrice', optional 'equipSlot')).
+    - 'equippedItems': All 10 slots MUST be present and set to null. If an item is placed here by chance, it must have 'basePrice' (number) and correct 'equipSlot'.
+    - Optional: 1 simple starting quest (unique 'id', 'description', 'status: active', optional 'category', 'objectives' ('isCompleted: false'), and 'rewards' with 'experiencePoints' (number), 'currency' (number), 'items' (each item: unique 'id', 'name', 'description', 'basePrice' (number), optional 'equipSlot' - OMIT 'equipSlot' if not equippable gear)).
     - 1-2 'worldFacts'. If languageUnderstanding is low (0-10), one fact must state "The local language is currently incomprehensible."
-    - 'trackedNPCs': Empty or profiles for NPCs in scene. If merchant, set \`isMerchant: true\`, \`merchantInventory\` (items with \`id\`, \`name\`, \`description\`, \`basePrice\`, \`price\`).
+    - 'trackedNPCs': Empty or profiles for NPCs in scene. If merchant, set \`isMerchant: true\`, \`merchantInventory\` (items with \`id\`, \`name\`, \`description\`, \`basePrice\` (number), \`price\` (number). OMIT 'equipSlot' for non-equippable items.). Ensure NPC 'relationshipStatus' is a number.
     - 'storySummary': Empty or brief intro.
 
-Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchant 'price' required.
+Strictly follow JSON output schema. All IDs unique. All numeric fields (prices, stats, currency, etc.) MUST be numbers.
 `,
     });
 
@@ -292,7 +289,6 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
         output.storyState.equippedItems = newEquippedItems;
 
         output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
-        const npcIdSet = new Set<string>();
         output.storyState.trackedNPCs.forEach((npc, index) => {
             const processedNpc = {...npc} as Partial<NPCProfileType>;
 
@@ -355,4 +351,3 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
     return output!;
   }
 );
-
