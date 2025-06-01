@@ -263,7 +263,11 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal,
   },
   async (mainInput: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
+    const flowStartTime = Date.now();
+    console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFromSeriesFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}`);
+
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Using model: ${modelName}`);
     const modelConfig = { maxOutputTokens: 8000 };
 
     const characterAndScenePrompt = ai.definePrompt({
@@ -488,25 +492,30 @@ For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unab
 Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     });
 
+    let stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Calling characterAndScenePrompt.`);
     const { output: charSceneOutput } = await characterAndScenePrompt({
         seriesName: mainInput.seriesName,
         characterNameInput: mainInput.characterNameInput,
         characterClassInput: mainInput.characterClassInput,
         usePremiumAI: mainInput.usePremiumAI,
     });
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - characterAndScenePrompt completed in ${Date.now() - stepStartTime}ms.`);
+    
     if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.characterCore || !charSceneOutput.currentLocation) {
-      console.error("Character/Scene generation failed:", charSceneOutput);
+      console.error("Character/Scene generation failed or returned invalid structure:", charSceneOutput);
       throw new Error('Failed to generate character core, scene, or location.');
     }
     
     let { characterCore, sceneDescription, currentLocation } = charSceneOutput;
 
-    // Apply defaults to characterCore early
     characterCore.mana = characterCore.mana ?? 0;
     characterCore.maxMana = characterCore.maxMana ?? 0;
     characterCore.currency = characterCore.currency ?? 0;
-    characterCore.languageUnderstanding = characterCore.languageUnderstanding ?? 100; // Default to fluent if AI omits (unless prompt specifically sets it to 0)
+    characterCore.languageUnderstanding = characterCore.languageUnderstanding ?? 100;
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
     const skillsInput: z.infer<typeof InitialCharacterSkillsInputSchema> = {
         seriesName: mainInput.seriesName,
         characterName: characterCore.name,
@@ -514,6 +523,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         characterDescription: characterCore.description,
     };
     const { output: skillsOutput } = await initialCharacterSkillsPrompt(skillsInput);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - initialCharacterSkillsPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
 
     const fullCharacterProfile: z.infer<typeof CharacterProfileSchemaInternal> = {
@@ -528,18 +538,32 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         currentLocation: currentLocation,
     };
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Calling initialInventoryPrompt.`);
     const { output: inventoryOutput } = await initialInventoryPrompt(minimalContextForItemsFactsInput);
-    if (!inventoryOutput || !inventoryOutput.inventory) throw new Error('Failed to generate initial inventory.');
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - initialInventoryPrompt completed in ${Date.now() - stepStartTime}ms.`);
+    if (!inventoryOutput || !inventoryOutput.inventory) {
+        console.error("Inventory generation failed or returned invalid structure:", inventoryOutput);
+        throw new Error('Failed to generate initial inventory.');
+    }
     const inventory = inventoryOutput.inventory;
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 4 - Calling initialMainGearPrompt.`);
     const { output: mainGearRaw } = await initialMainGearPrompt(minimalContextForItemsFactsInput);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 4 - initialMainGearPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const mainGearOutput = mainGearRaw || { weapon: null, shield: null, body: null };
 
-
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 5 - Calling initialSecondaryGearPrompt.`);
     const { output: secondaryGearRaw } = await initialSecondaryGearPrompt(minimalContextForItemsFactsInput);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 5 - initialSecondaryGearPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const secondaryGearOutput = secondaryGearRaw || { head: null, legs: null, feet: null, hands: null };
     
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 6 - Calling initialAccessoryGearPrompt.`);
     const { output: accessoryGearRaw } = await initialAccessoryGearPrompt(minimalContextForItemsFactsInput);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 6 - initialAccessoryGearPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const accessoryGearOutput = accessoryGearRaw || { neck: null, ring1: null, ring2: null };
 
     const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
@@ -555,10 +579,18 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         ring2: accessoryGearOutput.ring2 ?? null,
     };
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 7 - Calling initialWorldFactsPrompt.`);
     const { output: worldFactsOutput } = await initialWorldFactsPrompt(minimalContextForItemsFactsInput);
-    if (!worldFactsOutput || !worldFactsOutput.worldFacts) throw new Error('Failed to generate initial world facts.');
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 7 - initialWorldFactsPrompt completed in ${Date.now() - stepStartTime}ms.`);
+    if (!worldFactsOutput || !worldFactsOutput.worldFacts) {
+        console.error("World facts generation failed or returned invalid structure:", worldFactsOutput);
+        throw new Error('Failed to generate initial world facts.');
+    }
     const worldFacts = worldFactsOutput.worldFacts;
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 8 - Calling initialQuestsPrompt.`);
     const questsInput: z.infer<typeof InitialQuestsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: fullCharacterProfile, 
@@ -567,9 +599,15 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         characterNameInput: mainInput.characterNameInput,
     };
     const { output: questsOutput } = await initialQuestsPrompt(questsInput);
-    if (!questsOutput || !questsOutput.quests) throw new Error('Failed to generate initial quests.');
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 8 - initialQuestsPrompt completed in ${Date.now() - stepStartTime}ms.`);
+    if (!questsOutput || !questsOutput.quests) {
+        console.error("Quests generation failed or returned invalid structure:", questsOutput);
+        throw new Error('Failed to generate initial quests.');
+    }
     const quests = questsOutput.quests;
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 9 - Calling initialTrackedNPCsPrompt.`);
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: fullCharacterProfile, 
@@ -578,7 +616,11 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         characterNameInput: mainInput.characterNameInput,
     };
     const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
-    if (!npcsOutput || !npcsOutput.trackedNPCs) throw new Error('Failed to generate initial tracked NPCs.');
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 9 - initialTrackedNPCsPrompt completed in ${Date.now() - stepStartTime}ms.`);
+    if (!npcsOutput || !npcsOutput.trackedNPCs) {
+        console.error("NPCs generation failed or returned invalid structure:", npcsOutput);
+        throw new Error('Failed to generate initial tracked NPCs.');
+    }
     const trackedNPCs = npcsOutput.trackedNPCs;
 
     const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
@@ -592,6 +634,8 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         storySummary: `The adventure begins for ${fullCharacterProfile.name} in ${mainInput.seriesName}, at ${currentLocation}. Initial scene: ${sceneDescription.substring(0,100)}...`,
     };
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 10 - Calling loreEntriesPrompt.`);
     const loreInput: z.infer<typeof LoreGenerationInputSchema> = {
       seriesName: mainInput.seriesName,
       characterName: storyState.character.name,
@@ -600,9 +644,13 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       characterDescription: storyState.character.description,
     };
     const { output: loreEntries } = await loreEntriesPrompt(loreInput);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 10 - loreEntriesPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const initialLoreEntries = loreEntries || [];
 
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 11 - Calling styleGuidePrompt.`);
     const { output: styleGuideRaw } = await styleGuidePrompt({ seriesName: mainInput.seriesName });
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 11 - styleGuidePrompt completed in ${Date.now() - stepStartTime}ms.`);
     const seriesStyleGuide = styleGuideRaw === null ? undefined : styleGuideRaw;
 
     let finalOutput: GenerateScenarioFromSeriesOutput = {
@@ -613,6 +661,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     };
     
     // Final sanitation pass AFTER all AI calls and initial object assembly
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Performing final data sanitation.`);
     if (finalOutput.storyState.character) {
       const char = finalOutput.storyState.character;
       char.name = char.name || "Unnamed Character";
@@ -746,7 +795,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
                 if (!mItem.id || mItem.id.trim() === "" || invItemIds.has(mItem.id) || equippedItemIdSet.has(mItem.id)) {
                   mItem.id = `item_merchant_series_${Date.now()}_${mIndex}_${Math.random().toString(36).substring(2,7)}`;
                 }
-                invItemIds.add(mItem.id); // Add merchant items to invItemIds to ensure overall uniqueness for newly generated equipped/inv items
+                invItemIds.add(mItem.id); 
                 mItem.name = mItem.name || "Unnamed Merchant Item";
                 mItem.description = mItem.description || "No description.";
                 mItem.basePrice = mItem.basePrice ?? 0;
@@ -762,6 +811,8 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     
     if (finalOutput.seriesStyleGuide === '' || finalOutput.seriesStyleGuide === undefined || finalOutput.seriesStyleGuide === null) delete finalOutput.seriesStyleGuide;
 
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
     return finalOutput;
   }
 );
+
