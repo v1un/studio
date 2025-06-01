@@ -12,7 +12,8 @@ import type {
     FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput,
     DiscoverNextStoryArcInput, DiscoverNextStoryArcOutput,
     CombatHelperInfo, CombatEventLogEntry,
-    HealthChangeEvent, NPCStateChangeEvent, DescribedEvent, ItemUsedEvent,
+    DescribedEvent, // Generic DescribedEvent
+    HealthChangeEvent, ManaChangeEvent, XPChangeEvent, LevelUpEvent, CurrencyChangeEvent, LanguageSkillChangeEvent, ItemFoundEvent, ItemLostEvent, ItemUsedEvent, ItemEquippedEvent, ItemUnequippedEvent, QuestAcceptedEvent, QuestObjectiveUpdateEvent, QuestCompletedEvent, QuestFailedEvent, NPCRelationshipChangeEvent, NPCStateChangeEvent, NewNPCIntroducedEvent, WorldFactAddedEvent, WorldFactRemovedEvent, WorldFactUpdatedEvent, SkillLearnedEvent, // Specific event types
     CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc,
     StatModifier, RawLoreEntry
 } from "@/types/story";
@@ -32,7 +33,7 @@ import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-l
 import { simpleTestAction } from '@/ai/actions/simple-test-action';
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,6 +55,19 @@ const scenarioGenerationSteps = [
   "Compiling a rich tapestry of lore entries...",
   "Finalizing scenario details..."
 ];
+
+// Helper function to create system messages
+function createSystemMessage(content: string): DisplayMessage {
+  return {
+    id: crypto.randomUUID(),
+    speakerType: 'SystemHelper',
+    speakerNameLabel: 'SYSTEM EVENT',
+    content: content,
+    avatarSrc: undefined, // Will default to InfoIcon in ChatMessage
+    avatarHint: "system gear",
+    isPlayer: false,
+  };
+}
 
 
 // Helper function to calculate effective character stats including item bonuses
@@ -408,80 +422,295 @@ export default function StoryForgePage() {
       console.log("CLIENT: generateNextScene successful. Result:", result);
 
       let clientSideWarnings: string[] = [];
+      let systemMessagesForTurn: DisplayMessage[] = [];
+
 
       let finalUpdatedBaseStoryState = produce(currentStoryState, draftState => {
          if (result.updatedStorySummary) draftState.storySummary = result.updatedStorySummary;
          if (result.describedEvents && Array.isArray(result.describedEvents)) {
             result.describedEvents.forEach(event => {
-                if (event.type === 'healthChange' && event.characterTarget === 'player') {
-                    draftState.character.health += event.amount;
-                    if (draftState.character.health < 0) draftState.character.health = 0;
-                    if (draftState.character.health > draftState.character.maxHealth) draftState.character.health = draftState.character.maxHealth;
-                }
-                 if (event.type === 'itemFound') {
-                     const newItem: ItemType = {
-                        id: `item_${event.itemName.replace(/\s+/g, '_')}_${Date.now()}`,
-                        name: event.itemName,
-                        description: event.itemDescription,
-                        basePrice: event.suggestedBasePrice || 0,
-                        rarity: event.rarity,
-                        equipSlot: event.equipSlot,
-                        isConsumable: event.isConsumable,
-                        effectDescription: event.effectDescription,
-                        isQuestItem: event.isQuestItem,
-                        relevantQuestId: event.relevantQuestId,
-                        activeEffects: event.activeEffects || [],
-                    };
-                    draftState.inventory.push(newItem);
-                 }
-                 if (event.type === 'itemUsed') {
-                    const e = event as ItemUsedEvent;
-                    const itemIndex = draftState.inventory.findIndex(
-                        item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase()
-                    );
-                    if (itemIndex > -1) {
-                        const consumedItemName = draftState.inventory[itemIndex].name;
-                        draftState.inventory.splice(itemIndex, 1);
-                        toast({ title: "Item Used", description: `${consumedItemName} consumed.`});
-                        console.log(`CLIENT: Item "${e.itemIdOrName}" used and removed from inventory.`);
-                    } else {
-                        console.warn(`CLIENT: ItemUsedEvent for "${e.itemIdOrName}", but item not found in inventory.`);
-                        clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was used, but it was not found in player's inventory.`);
+                // Handle specific events and generate system messages
+                switch (event.type) {
+                    case 'healthChange': {
+                        const e = event as HealthChangeEvent;
+                        if (e.characterTarget === 'player') {
+                            draftState.character.health += e.amount;
+                            if (draftState.character.health < 0) draftState.character.health = 0;
+                            if (draftState.character.health > draftState.character.maxHealth) draftState.character.health = draftState.character.maxHealth;
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Health ${e.amount > 0 ? 'restored' : 'lost'}: ${Math.abs(e.amount)}. Current HP: ${draftState.character.health}/${draftState.character.maxHealth}. ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
                     }
-                 }
-                 if (event.type === 'questAccepted') {
-                     const newQuest: Quest = {
-                        id: event.questIdSuggestion || `quest_${event.questTitle?.replace(/\s+/g, '_')}_${Date.now()}`,
-                        title: event.questTitle || "New Quest",
-                        description: event.questDescription,
-                        type: event.questType || 'dynamic',
-                        status: 'active',
-                        storyArcId: event.storyArcId,
-                        orderInStoryArc: event.orderInStoryArc,
-                        category: event.category,
-                        objectives: event.objectives?.map(o => ({...o, description: o.description || "Unnamed Objective", isCompleted: false})) || [{description: event.questDescription, isCompleted:false}],
-                        rewards: event.rewards ? {
-                            experiencePoints: event.rewards.experiencePoints,
-                            currency: event.rewards.currency,
-                            items: event.rewards.items?.map(item => ({
-                                id: item.id || `reward_item_${Date.now()}`,
-                                name: item.name || "Reward Item",
-                                description: item.description || "A reward.",
-                                basePrice: item.basePrice || 0,
-                                rarity: item.rarity,
-                                equipSlot: item.equipSlot,
-                                activeEffects: item.activeEffects || [],
-                            }))
-                        } : undefined,
-                     };
-                     draftState.quests.push(newQuest);
-                 }
+                    case 'manaChange': {
+                        const e = event as ManaChangeEvent;
+                         if (e.characterTarget === 'player' && draftState.character.mana !== undefined && draftState.character.maxMana !== undefined) {
+                            draftState.character.mana += e.amount;
+                            if (draftState.character.mana < 0) draftState.character.mana = 0;
+                            if (draftState.character.mana > draftState.character.maxMana) draftState.character.mana = draftState.character.maxMana;
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Mana ${e.amount > 0 ? 'restored' : 'spent'}: ${Math.abs(e.amount)}. Current MP: ${draftState.character.mana}/${draftState.character.maxMana}. ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
+                    }
+                    case 'xpChange': {
+                        const e = event as XPChangeEvent;
+                        draftState.character.experiencePoints += e.amount;
+                        systemMessagesForTurn.push(createSystemMessage(
+                            `Gained ${e.amount} XP. Total XP: ${draftState.character.experiencePoints}/${draftState.character.experienceToNextLevel}. ${e.reason || ''}`.trim()
+                        ));
+                        break;
+                    }
+                    case 'levelUp': {
+                        const e = event as LevelUpEvent;
+                        draftState.character.level = e.newLevel;
+                        // XP reset and new experienceToNextLevel should be handled by AI if not part of event
+                        systemMessagesForTurn.push(createSystemMessage(
+                            `Level Up! Reached Level ${e.newLevel}. ${e.rewardSuggestion || ''} ${e.reason || ''}`.trim()
+                        ));
+                        break;
+                    }
+                    case 'currencyChange': {
+                        const e = event as CurrencyChangeEvent;
+                        draftState.character.currency = (draftState.character.currency || 0) + e.amount;
+                        systemMessagesForTurn.push(createSystemMessage(
+                            `${e.amount >= 0 ? 'Gained' : 'Lost'} ${Math.abs(e.amount)} currency. Current: ${draftState.character.currency}. ${e.reason || ''}`.trim()
+                        ));
+                        break;
+                    }
+                    case 'languageSkillChange': {
+                        const e = event as LanguageSkillChangeEvent;
+                        if (e.skillTarget === 'reading') {
+                            draftState.character.languageReading = Math.min(100, Math.max(0, (draftState.character.languageReading || 0) + e.amount));
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Reading skill ${e.amount > 0 ? 'improved' : 'decreased'} by ${Math.abs(e.amount)}. Current: ${draftState.character.languageReading}/100. ${e.reason || ''}`.trim()
+                            ));
+                        } else if (e.skillTarget === 'speaking') {
+                            draftState.character.languageSpeaking = Math.min(100, Math.max(0, (draftState.character.languageSpeaking || 0) + e.amount));
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Speaking skill ${e.amount > 0 ? 'improved' : 'decreased'} by ${Math.abs(e.amount)}. Current: ${draftState.character.languageSpeaking}/100. ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
+                    }
+                    case 'itemFound': {
+                        const e = event as ItemFoundEvent;
+                        const newItem: ItemType = {
+                            id: `item_${e.itemName.replace(/\s+/g, '_')}_${Date.now()}`,
+                            name: e.itemName,
+                            description: e.itemDescription,
+                            basePrice: e.suggestedBasePrice || 0,
+                            rarity: e.rarity,
+                            equipSlot: e.equipSlot,
+                            isConsumable: e.isConsumable,
+                            effectDescription: e.effectDescription,
+                            isQuestItem: e.isQuestItem,
+                            relevantQuestId: e.relevantQuestId,
+                            activeEffects: e.activeEffects || [],
+                        };
+                        draftState.inventory.push(newItem);
+                        systemMessagesForTurn.push(createSystemMessage(
+                            `Item Found: ${e.itemName}${(e.quantity || 1) > 1 ? ` (x${e.quantity})` : ''}! ${e.reason || ''}`.trim()
+                        ));
+                        break;
+                    }
+                    case 'itemLost': {
+                        const e = event as ItemLostEvent;
+                        const itemIndex = draftState.inventory.findIndex(item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase());
+                        if (itemIndex > -1) {
+                            const lostItemName = draftState.inventory[itemIndex].name;
+                            draftState.inventory.splice(itemIndex, 1); // Assuming quantity 1 for now
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Item Lost: ${lostItemName}. ${e.reason || ''}`.trim()
+                            ));
+                        } else {
+                             clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was lost, but it was not found in player's inventory.`);
+                        }
+                        break;
+                    }
+                    case 'itemUsed': {
+                        const e = event as ItemUsedEvent;
+                        const itemIndex = draftState.inventory.findIndex(
+                            item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase()
+                        );
+                        if (itemIndex > -1) {
+                            const consumedItem = draftState.inventory[itemIndex];
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Item Consumed: ${consumedItem.name}. ${e.reason || consumedItem.effectDescription || "No immediate effect described."}`.trim()
+                            ));
+                            if(consumedItem.isConsumable) { // Only remove if consumable
+                                draftState.inventory.splice(itemIndex, 1);
+                                toast({ title: "Item Used", description: `${consumedItem.name} consumed.`});
+                                console.log(`CLIENT: Item "${e.itemIdOrName}" used and removed from inventory.`);
+                            } else {
+                                 toast({ title: "Item Used", description: `${consumedItem.name} used.`});
+                                 console.log(`CLIENT: Item "${e.itemIdOrName}" used (not consumable).`);
+                            }
+                        } else {
+                            console.warn(`CLIENT: ItemUsedEvent for "${e.itemIdOrName}", but item not found in inventory.`);
+                            clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was used, but it was not found in player's inventory.`);
+                        }
+                        break;
+                    }
+                    case 'questAccepted': {
+                        const e = event as QuestAcceptedEvent;
+                        const newQuest: Quest = {
+                            id: e.questIdSuggestion || `quest_${e.questTitle?.replace(/\s+/g, '_')}_${Date.now()}`,
+                            title: e.questTitle || "New Quest",
+                            description: e.questDescription,
+                            type: e.questType || 'dynamic',
+                            status: 'active',
+                            storyArcId: e.storyArcId,
+                            orderInStoryArc: e.orderInStoryArc,
+                            category: e.category,
+                            objectives: e.objectives?.map(o => ({...o, description: o.description || "Unnamed Objective", isCompleted: false})) || [{description: e.questDescription, isCompleted:false}],
+                            rewards: e.rewards ? {
+                                experiencePoints: e.rewards.experiencePoints,
+                                currency: e.rewards.currency,
+                                items: e.rewards.items?.map(item => ({
+                                    id: item.id || `reward_item_${Date.now()}`,
+                                    name: item.name || "Reward Item",
+                                    description: item.description || "A reward.",
+                                    basePrice: item.basePrice || 0,
+                                    rarity: item.rarity,
+                                    equipSlot: item.equipSlot,
+                                    activeEffects: item.activeEffects || [],
+                                }))
+                            } : undefined,
+                        };
+                        draftState.quests.push(newQuest);
+                        systemMessagesForTurn.push(createSystemMessage(
+                            `New Quest Accepted: "${newQuest.title}". ${e.reason || ''}`.trim()
+                        ));
+                        break;
+                    }
+                    case 'questObjectiveUpdate': {
+                        const e = event as QuestObjectiveUpdateEvent;
+                        const quest = draftState.quests.find(q => q.id === e.questIdOrDescription || q.title === e.questIdOrDescription || q.description === e.questIdOrDescription);
+                        if (quest) {
+                            const objective = quest.objectives?.find(o => o.description === e.objectiveDescription);
+                            if (objective) {
+                                objective.isCompleted = e.objectiveCompleted;
+                                systemMessagesForTurn.push(createSystemMessage(
+                                    `Quest "${quest.title || quest.id}": Objective "${objective.description}" ${e.objectiveCompleted ? 'completed' : 'updated'}. ${e.reason || ''}`.trim()
+                                ));
+                            }
+                        }
+                        break;
+                    }
+                    case 'questCompleted': {
+                        const e = event as QuestCompletedEvent;
+                        const quest = draftState.quests.find(q => q.id === e.questIdOrDescription || q.title === e.questIdOrDescription || q.description === e.questIdOrDescription);
+                        if (quest) {
+                            quest.status = 'completed';
+                            let rewardsText = "";
+                            if (quest.rewards) {
+                                const rewardsParts = [];
+                                if (quest.rewards.experiencePoints) rewardsParts.push(`${quest.rewards.experiencePoints} XP`);
+                                if (quest.rewards.currency) rewardsParts.push(`${quest.rewards.currency} currency`);
+                                if (quest.rewards.items && quest.rewards.items.length > 0) rewardsParts.push(`${quest.rewards.items.length} item(s)`);
+                                if (rewardsParts.length > 0) rewardsText = ` Rewards: ${rewardsParts.join(', ')}.`;
+                            }
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Quest "${quest.title || quest.id}" Completed!${rewardsText} ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
+                    }
+                     case 'questFailed': {
+                        const e = event as QuestFailedEvent;
+                        const quest = draftState.quests.find(q => q.id === e.questIdOrDescription || q.title === e.questIdOrDescription || q.description === e.questIdOrDescription);
+                        if (quest) {
+                            quest.status = 'failed';
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Quest "${quest.title || quest.id}" Failed. ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
+                    }
+                    case 'newNPCIntroduced': {
+                        const e = event as NewNPCIntroducedEvent;
+                        const newNPC: NPCProfile = {
+                            id: `npc_${e.npcName.replace(/\s+/g, '_')}_${Date.now()}`,
+                            name: e.npcName,
+                            description: e.npcDescription,
+                            classOrRole: e.classOrRole,
+                            relationshipStatus: e.initialRelationship || 0,
+                            health: e.initialHealth,
+                            maxHealth: e.initialHealth, // Assuming max health is same as initial if provided
+                            knownFacts: [],
+                            firstEncounteredLocation: draftState.currentLocation,
+                            firstEncounteredTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
+                            lastKnownLocation: draftState.currentLocation,
+                            lastSeenTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
+                            isMerchant: e.isMerchant,
+                            buysItemTypes: e.merchantBuysItemTypes,
+                            sellsItemTypes: e.merchantSellsItemTypes,
+                            merchantInventory: [], // AI needs to generate inventory separately if merchant
+                        };
+                        draftState.trackedNPCs.push(newNPC);
+                        systemMessagesForTurn.push(createSystemMessage(
+                            `Met ${e.npcName} (${e.classOrRole || 'Unknown Role'}). ${e.reason || ''}`.trim()
+                        ));
+                        break;
+                    }
+                    case 'npcRelationshipChange': {
+                        const e = event as NPCRelationshipChangeEvent;
+                        const npc = draftState.trackedNPCs.find(n => n.name === e.npcName);
+                        if (npc) {
+                            npc.relationshipStatus += e.changeAmount;
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Relationship with ${e.npcName} ${e.changeAmount > 0 ? 'improved' : 'worsened'} by ${Math.abs(e.changeAmount)}. New status: ${npc.relationshipStatus}. ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
+                    }
+                     case 'skillLearned': {
+                        const e = event as SkillLearnedEvent;
+                        const newSkill = {
+                            id: `skill_${e.skillName.replace(/\s+/g, '_')}_${Date.now()}`,
+                            name: e.skillName,
+                            description: e.skillDescription,
+                            type: e.skillType,
+                        };
+                        if (!draftState.character.skillsAndAbilities.find(s => s.name === newSkill.name)) {
+                             draftState.character.skillsAndAbilities.push(newSkill);
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `Skill Learned: ${e.skillName} (${e.skillType})! ${e.reason || ''}`.trim()
+                            ));
+                        }
+                        break;
+                    }
+                    // Add more cases here for other event types as needed
+                }
             });
          }
-         if (result.updatedStoryState.character) draftState.character = {...draftState.character, ...result.updatedStoryState.character};
+         // Ensure current character state from AI (potentially with effective stats) is applied to base
+         if (result.updatedStoryState.character) {
+             // Only update base stats, not overwrite entire skills/inventory etc. which are handled by events
+             const aiChar = result.updatedStoryState.character;
+             draftState.character.health = aiChar.health;
+             draftState.character.maxHealth = aiChar.maxHealth;
+             if(aiChar.mana !== undefined) draftState.character.mana = aiChar.mana;
+             if(aiChar.maxMana !== undefined) draftState.character.maxMana = aiChar.maxMana;
+             if(aiChar.strength !== undefined) draftState.character.strength = aiChar.strength;
+             if(aiChar.dexterity !== undefined) draftState.character.dexterity = aiChar.dexterity;
+             if(aiChar.constitution !== undefined) draftState.character.constitution = aiChar.constitution;
+             if(aiChar.intelligence !== undefined) draftState.character.intelligence = aiChar.intelligence;
+             if(aiChar.wisdom !== undefined) draftState.character.wisdom = aiChar.wisdom;
+             if(aiChar.charisma !== undefined) draftState.character.charisma = aiChar.charisma;
+             draftState.character.level = aiChar.level;
+             draftState.character.experiencePoints = aiChar.experiencePoints;
+             draftState.character.experienceToNextLevel = aiChar.experienceToNextLevel;
+             if(aiChar.currency !== undefined) draftState.character.currency = aiChar.currency;
+             if(aiChar.languageReading !== undefined) draftState.character.languageReading = aiChar.languageReading;
+             if(aiChar.languageSpeaking !== undefined) draftState.character.languageSpeaking = aiChar.languageSpeaking;
+         }
          if (result.updatedStoryState.currentLocation) draftState.currentLocation = result.updatedStoryState.currentLocation;
          if (result.updatedStoryState.worldFacts) draftState.worldFacts = result.updatedStoryState.worldFacts;
-         if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs;
+         if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs; // AI might update NPC states directly too
          if (result.updatedStoryState.storyArcs) draftState.storyArcs = result.updatedStoryState.storyArcs;
          if (result.updatedStoryState.currentStoryArcId) draftState.currentStoryArcId = result.updatedStoryState.currentStoryArcId;
 
@@ -493,6 +722,7 @@ export default function StoryForgePage() {
 
       if (previousStoryArcId && currentStoryArcInNewBaseState?.isCompleted) {
         console.log(`CLIENT: Story Arc "${currentStoryArcInNewBaseState.title}" (ID: ${previousStoryArcId}) completed.`);
+        systemMessagesForTurn.push(createSystemMessage(`Story Arc Completed: ${currentStoryArcInNewBaseState.title}!`));
         toast({
             title: "Story Arc Complete!",
             description: (
@@ -531,6 +761,7 @@ export default function StoryForgePage() {
                         draftState.currentStoryArcId = newArcOutline.id; 
                     });
                     nextStoryArcToFleshOut = newArcOutline; 
+                    systemMessagesForTurn.push(createSystemMessage(`New Story Arc Uncovered: ${newArcOutline.title}!`));
                      toast({
                         title: "New Story Arc Uncovered!",
                         description: (
@@ -542,6 +773,7 @@ export default function StoryForgePage() {
                         duration: 7000,
                     });
                 } else {
+                    systemMessagesForTurn.push(createSystemMessage("You've explored all major story arcs currently identifiable from the series plot."));
                     toast({ title: "End of Known Saga", description: `You've explored all major story arcs currently identifiable for ${currentSession.seriesName}!` });
                 }
             } catch (discoveryError: any) {
@@ -583,7 +815,9 @@ export default function StoryForgePage() {
               if (arcIndex !== -1) {
                 draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
               }
+              draftState.currentStoryArcId = nextStoryArcToFleshOut!.id; // Ensure current arc is set
             });
+            systemMessagesForTurn.push(createSystemMessage(`Story Arc Started: ${nextStoryArcToFleshOut.title}. New main quests available.`));
             toast({
               title: `Story Arc Started: ${nextStoryArcToFleshOut.title}`,
               description: `New main quests are available in your journal.`,
@@ -601,6 +835,7 @@ export default function StoryForgePage() {
         } else if (nextStoryArcToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next story arc is outlined, but no seriesPlotSummary found in session to flesh it out.");
         } else if (!nextStoryArcToFleshOut && currentStoryArcInNewBaseState?.isCompleted) {
+            console.log("CLIENT: All pre-defined/discoverable story arcs seem to be completed.");
         }
       }
 
@@ -655,6 +890,12 @@ export default function StoryForgePage() {
         });
       }
 
+      let turnMessages = [playerMessage, ...aiDisplayMessages];
+      if (systemMessagesForTurn.length > 0) {
+          turnMessages = [...turnMessages, ...systemMessagesForTurn];
+      }
+
+
       if (isCombatTurn) {
         console.log("CLIENT: Combat detected in turn.");
         const currentEffectivePlayerProfile = calculateEffectiveCharacterProfile(finalUpdatedBaseStoryState.character, finalUpdatedBaseStoryState.equippedItems);
@@ -688,13 +929,14 @@ export default function StoryForgePage() {
           speakerNameLabel: 'COMBAT LOG',
           isPlayer: false,
           combatHelperInfo: combatHelperData,
+          avatarHint: "system combat", // Specific hint
         };
-        aiDisplayMessages.push(combatHelperMessage);
+        turnMessages.push(combatHelperMessage);
       }
 
       const completedTurn: StoryTurn = {
         id: crypto.randomUUID(),
-        messages: [playerMessage, ...aiDisplayMessages],
+        messages: turnMessages,
         storyStateAfterScene: finalUpdatedBaseStoryState,
       };
 
@@ -730,7 +972,6 @@ export default function StoryForgePage() {
         setCurrentSession(prevSession => {
           if (!prevSession) return null;
           const updatedWarnings = [...(prevSession.allDataCorrectionWarnings || []), newWarningsEntry];
-          // This state update will also trigger the useEffect to save the session
           return { ...prevSession, allDataCorrectionWarnings: updatedWarnings };
         });
         allWarningsThisTurn.forEach(warning => {

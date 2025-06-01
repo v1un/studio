@@ -4,7 +4,7 @@
 import type { DisplayMessage } from "@/types/story";
 import { cn } from "@/lib/utils";
 import Image from 'next/image';
-import { Bot, UserCircle, ShieldAlertIcon } from "lucide-react";
+import { Bot, UserCircle, ShieldAlertIcon, InfoIcon } from "lucide-react"; // Added InfoIcon
 import CombatHelperDisplay from "./CombatHelperDisplay";
 
 interface ChatMessageProps {
@@ -33,13 +33,21 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     messageBgColor = "bg-secondary text-secondary-foreground"; 
     speakerLabelToDisplay = message.speakerNameLabel; 
     avatarHintToUse = message.avatarHint || "merchant friendly";
-  } else { // GM
+  } else if (message.speakerType === 'GM') { // GM
     nameLabelColor = "text-orange-600 dark:text-orange-400"; 
     speakerLabelToDisplay = message.speakerNameLabel; 
     avatarHintToUse = message.avatarHint || "wizard staff";
+  } else if (message.speakerType === 'SystemHelper') {
+    nameLabelColor = "text-purple-600 dark:text-purple-400";
+    messageBgColor = "bg-purple-100/80 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700/50";
+    speakerLabelToDisplay = message.speakerNameLabel;
+    avatarHintToUse = message.avatarHint || "system gear";
   }
   
   const AvatarComponent = () => {
+    if (message.speakerType === 'SystemHelper') {
+      return <InfoIcon className="w-10 h-10 text-purple-500 dark:text-purple-400" />; 
+    }
     if (message.avatarSrc) {
       return (
         <Image
@@ -58,37 +66,61 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     return <Bot className="w-10 h-10 text-muted-foreground" />;
   };
 
+  // For SystemHelper messages, align them to the center or left, but distinct from GM/NPC
+  const messageAlignmentClass = message.speakerType === 'SystemHelper' 
+    ? "justify-center" // Or "justify-start" if preferred for all non-player
+    : isPlayer ? "justify-end" : "justify-start";
+  
+  const systemMessageMaxWidth = message.speakerType === 'SystemHelper' ? "max-w-full sm:max-w-[90%]" : "max-w-[85%] sm:max-w-[75%]";
+
+
   return (
-    <div className={cn("flex w-full mb-4 animate-fade-in", isPlayer ? "justify-end" : "justify-start")}>
-      <div className={cn("flex items-end gap-2 max-w-[85%] sm:max-w-[75%]", isPlayer ? "flex-row-reverse" : "flex-row")}>
-        {!isPlayer && (
-          <div className="shrink-0">
-            <AvatarComponent />
-          </div>
-        )}
-        <div
+    <div className={cn("flex w-full mb-4 animate-fade-in", messageAlignmentClass)}>
+       {message.speakerType === 'SystemHelper' ? (
+         <div
           className={cn(
-            "rounded-lg px-4 py-2 shadow-md break-words",
+            "rounded-lg px-3 py-2 shadow-sm break-words text-xs italic",
             messageBgColor,
-            isPlayer ? "rounded-br-none" : "rounded-bl-none"
+            systemMessageMaxWidth 
           )}
         >
-          <div className={cn("font-bold text-sm mb-0.5", nameLabelColor, isPlayer ? 'text-right' : 'text-left')}>
-            {speakerLabelToDisplay}
-            {message.speakerType === 'GM' && message.speakerDisplayName && message.speakerDisplayName !== speakerLabelToDisplay && (
-                <span className="ml-2 text-xs text-muted-foreground/80 font-normal">
-                    ({message.speakerDisplayName})
-                </span>
-            )}
+           <div className={cn("font-semibold text-xs mb-0.5 flex items-center", nameLabelColor)}>
+            <InfoIcon className="w-3.5 h-3.5 mr-1.5 shrink-0"/> {speakerLabelToDisplay}
           </div>
-          <p className="text-base whitespace-pre-line">{message.content}</p>
+          <p className="whitespace-pre-line ml-1">{message.content}</p>
         </div>
-         {isPlayer && (
-          <div className="shrink-0">
-             <AvatarComponent />
+      ) : (
+        <div className={cn("flex items-end gap-2", systemMessageMaxWidth, isPlayer ? "flex-row-reverse" : "flex-row")}>
+          {!isPlayer && ( // Also excludes SystemHelper from this avatar placement
+            <div className="shrink-0">
+              <AvatarComponent />
+            </div>
+          )}
+          <div
+            className={cn(
+              "rounded-lg px-4 py-2 shadow-md break-words",
+              messageBgColor,
+              isPlayer ? "rounded-br-none" : "rounded-bl-none"
+            )}
+          >
+            <div className={cn("font-bold text-sm mb-0.5", nameLabelColor, isPlayer ? 'text-right' : 'text-left')}>
+              {speakerLabelToDisplay}
+              {message.speakerType === 'GM' && message.speakerDisplayName && message.speakerDisplayName !== speakerLabelToDisplay && (
+                  <span className="ml-2 text-xs text-muted-foreground/80 font-normal">
+                      ({message.speakerDisplayName})
+                  </span>
+              )}
+            </div>
+            <p className="text-base whitespace-pre-line">{message.content}</p>
           </div>
-        )}
-      </div>
+          {isPlayer && (
+            <div className="shrink-0">
+              <AvatarComponent />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
