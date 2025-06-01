@@ -12,7 +12,7 @@ import type {
     FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput,
     DiscoverNextStoryArcInput, DiscoverNextStoryArcOutput,
     CombatHelperInfo, CombatEventLogEntry,
-    HealthChangeEvent, NPCStateChangeEvent, DescribedEvent,
+    HealthChangeEvent, NPCStateChangeEvent, DescribedEvent, ItemUsedEvent,
     CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc,
     StatModifier, RawLoreEntry
 } from "@/types/story";
@@ -407,6 +407,8 @@ export default function StoryForgePage() {
       });
       console.log("CLIENT: generateNextScene successful. Result:", result);
 
+      let clientSideWarnings: string[] = [];
+
       let finalUpdatedBaseStoryState = produce(currentStoryState, draftState => {
          if (result.updatedStorySummary) draftState.storySummary = result.updatedStorySummary;
          if (result.describedEvents && Array.isArray(result.describedEvents)) {
@@ -431,6 +433,21 @@ export default function StoryForgePage() {
                         activeEffects: event.activeEffects || [],
                     };
                     draftState.inventory.push(newItem);
+                 }
+                 if (event.type === 'itemUsed') {
+                    const e = event as ItemUsedEvent;
+                    const itemIndex = draftState.inventory.findIndex(
+                        item => item.id === e.itemIdOrName || item.name.toLowerCase() === e.itemIdOrName.toLowerCase()
+                    );
+                    if (itemIndex > -1) {
+                        const consumedItemName = draftState.inventory[itemIndex].name;
+                        draftState.inventory.splice(itemIndex, 1);
+                        toast({ title: "Item Used", description: `${consumedItemName} consumed.`});
+                        console.log(`CLIENT: Item "${e.itemIdOrName}" used and removed from inventory.`);
+                    } else {
+                        console.warn(`CLIENT: ItemUsedEvent for "${e.itemIdOrName}", but item not found in inventory.`);
+                        clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was used, but it was not found in player's inventory.`);
+                    }
                  }
                  if (event.type === 'questAccepted') {
                      const newQuest: Quest = {
@@ -492,7 +509,7 @@ export default function StoryForgePage() {
           arc => arc.order === nextStoryArcOrder && !arc.isCompleted && (!arc.mainQuestIds || arc.mainQuestIds.length === 0)
         );
 
-        if (!nextStoryArcToFleshOut && currentSession.seriesPlotSummary) { // No pre-outlined arc, try to discover
+        if (!nextStoryArcToFleshOut && currentSession.seriesPlotSummary) { 
             console.log("CLIENT: No pre-outlined next arc. Attempting to discover a new major story arc.");
             setLoadingType('discoveringArc');
             try {
@@ -511,9 +528,9 @@ export default function StoryForgePage() {
                     const newArcOutline = discoveryResult.nextStoryArcOutline;
                     finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
                         draftState.storyArcs.push(newArcOutline);
-                        draftState.currentStoryArcId = newArcOutline.id; // Set current arc to the newly discovered one
+                        draftState.currentStoryArcId = newArcOutline.id; 
                     });
-                    nextStoryArcToFleshOut = newArcOutline; // This newly discovered arc now needs fleshing out
+                    nextStoryArcToFleshOut = newArcOutline; 
                      toast({
                         title: "New Story Arc Uncovered!",
                         description: (
@@ -535,7 +552,7 @@ export default function StoryForgePage() {
                     variant: "destructive",
                 });
             }
-            setLoadingType('nextScene'); // Revert loading type after discovery attempt
+            setLoadingType('nextScene'); 
         }
 
 
@@ -566,7 +583,6 @@ export default function StoryForgePage() {
               if (arcIndex !== -1) {
                 draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
               }
-              // currentStoryArcId would have been set if a new arc was discovered, or remains if it was pre-outlined
             });
             toast({
               title: `Story Arc Started: ${nextStoryArcToFleshOut.title}`,
@@ -585,7 +601,6 @@ export default function StoryForgePage() {
         } else if (nextStoryArcToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next story arc is outlined, but no seriesPlotSummary found in session to flesh it out.");
         } else if (!nextStoryArcToFleshOut && currentStoryArcInNewBaseState?.isCompleted) {
-             // This case is handled by the toast above if discovery also returned null
         }
       }
 
@@ -701,20 +716,26 @@ export default function StoryForgePage() {
           duration: 5000,
         });
       }
+      
+      const allWarningsThisTurn = [
+          ...(result.dataCorrectionWarnings || []),
+          ...clientSideWarnings
+      ];
 
-      if (result.dataCorrectionWarnings && result.dataCorrectionWarnings.length > 0) {
+      if (allWarningsThisTurn.length > 0) {
         const newWarningsEntry = {
           timestamp: new Date().toISOString(),
-          warnings: result.dataCorrectionWarnings,
+          warnings: allWarningsThisTurn,
         };
         setCurrentSession(prevSession => {
           if (!prevSession) return null;
           const updatedWarnings = [...(prevSession.allDataCorrectionWarnings || []), newWarningsEntry];
+          // This state update will also trigger the useEffect to save the session
           return { ...prevSession, allDataCorrectionWarnings: updatedWarnings };
         });
-        result.dataCorrectionWarnings.forEach(warning => {
+        allWarningsThisTurn.forEach(warning => {
           toast({
-            title: "AI Data Correction",
+            title: "AI Data Notice",
             description: (
               <div className="flex items-start">
                 <AlertTriangleIcon className="w-5 h-5 mr-2 mt-0.5 text-orange-500 shrink-0" />
@@ -935,3 +956,4 @@ export default function StoryForgePage() {
     </div>
   );
 }
+

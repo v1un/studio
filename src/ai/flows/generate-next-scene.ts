@@ -227,7 +227,7 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("Structured active effects, esp. for gear. If 'stat_modifier', include 'statModifiers' array."),
 });
 const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string(), quantity: z.number().optional().default(1) });
-const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string() });
+const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string().describe("The ID or name of the item consumed. REQUIRED.") });
 const ItemEquippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemEquipped'), itemIdOrName: z.string(), slot: EquipSlotEnumInternal });
 const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUnequipped'), itemIdOrName: z.string(), slot: EquipSlotEnumInternal });
 
@@ -419,7 +419,7 @@ const generateNextSceneFlow = ai.defineFlow(
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     const modelConfig = input.usePremiumAI
-        ? { maxOutputTokens: 32000 }
+        ? { maxOutputTokens: 32000 } 
         : { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
 
@@ -452,9 +452,10 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
 1.  **Generate Narrative (generatedMessages):** Continue the story. Each message in this array MUST have a 'speaker' (e.g., "GM", or an NPC name from 'Tracked NPCs') and 'content'. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification. (REQUIRED)
 2.  **Describe Events (describedEvents):** Identify key game events. Use 'DescribedEvent' structure. ALL numeric fields MUST be numbers.
     - 'itemFound': Include 'itemName' (REQUIRED), 'itemDescription' (REQUIRED), 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+    - 'itemUsed': If the player consumes or uses an item from their inventory, generate this event. Include 'itemIdOrName' (REQUIRED), which should be the ID or name of the item consumed from the player's inventory.
     - 'questAccepted': 'questDescription' is REQUIRED. If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers'). 'objectives' MUST have 'description' (REQUIRED) and 'isCompleted: false' (REQUIRED).
     - 'newNPCIntroduced': 'npcName' and 'npcDescription' are REQUIRED. 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
-    Examples: HealthChange, LanguageSkillChange (amount 1-20, number), ItemUsed, ItemEquipped, QuestObjectiveUpdate, NPCRelationshipChange.
+    Examples: HealthChange, LanguageSkillChange (amount 1-20, number), ItemEquipped, QuestObjectiveUpdate, NPCRelationshipChange.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name' if array is provided.
 4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Each MUST have 'keyword' and 'content' if array is provided. Use 'lookupLoreTool' for context.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** Required. VERY brief (1-2 sentences) summary of ONLY events in THIS scene. (REQUIRED)
@@ -498,7 +499,6 @@ Ensure your ENTIRE output is a single JSON object.
     if (!aiPartialOutput || !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0 || !aiPartialOutput.generatedMessages.every(msg => msg && msg.speaker && msg.content) || !aiPartialOutput.sceneSummaryFragment) {
         console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndEventsPrompt'. Missing generatedMessages, speaker/content in messages, or sceneSummaryFragment. Output:`, aiPartialOutput);
         localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure (missing messages, speaker, content, or summary).");
-        // Ensure generatedMessages is an array even in error case, with a default GM message
         const errorMessages: AIMessageSegment[] = (aiPartialOutput?.generatedMessages && Array.isArray(aiPartialOutput.generatedMessages) && aiPartialOutput.generatedMessages.length > 0)
             ? aiPartialOutput.generatedMessages.map(msg => ({ speaker: msg?.speaker || 'GM', content: msg?.content || '(AI error: missing content)' })) as AIMessageSegment[]
             : [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an incomplete structure for scene narrative. Messages, speaker/content, or scene summary might be missing. Please try again.)` }];
@@ -551,3 +551,4 @@ Ensure your ENTIRE output is a single JSON object.
     return finalOutput;
   }
 );
+
