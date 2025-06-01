@@ -292,10 +292,8 @@ export default function StoryForgePage() {
       console.log("CLIENT: Starting scenario generation - Step 2: Narrative Elements. Input:", narrativeElementsInput);
       narrativeElementsResult = await generateScenarioNarrativeElements(narrativeElementsInput);
       console.log("CLIENT: Scenario Narrative Elements generation successful. Result:", narrativeElementsResult);
-      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Crafting initial story arcs")) || 4);
-
-
       setLoadingStep(scenarioGenerationSteps.length - 1);
+
 
       clearLorebook();
       if (narrativeElementsResult.initialLoreEntries) {
@@ -1262,8 +1260,8 @@ export default function StoryForgePage() {
               </div>
               <div className="shrink-0">
                 <MinimalCharacterStatus
-                    character={baseCharacterProfile} // Display base profile here
-                    storyState={currentStoryState} // Pass full state for equipped items, etc.
+                    character={effectiveCharacterProfileForAI || baseCharacterProfile} 
+                    storyState={currentStoryState} 
                     isPremiumSession={currentSession.isPremiumSession}
                 />
               </div>
