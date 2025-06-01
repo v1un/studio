@@ -3,15 +3,17 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@/ai/flows/generate-scenario-from-series";
-import { fleshOutStoryArcQuests as callFleshOutStoryArcQuests } from "@/ai/flows/flesh-out-chapter-quests"; // Renamed exported function
+import { fleshOutStoryArcQuests as callFleshOutStoryArcQuests } from "@/ai/flows/flesh-out-chapter-quests";
+import { discoverNextStoryArc as callDiscoverNextStoryArc } from "@/ai/flows/discover-next-story-arc-flow";
 import type {
     GenerateScenarioFoundationInput, GenerateScenarioFoundationOutput,
     GenerateScenarioNarrativeElementsInput, GenerateScenarioNarrativeElementsOutput,
     AIMessageSegment, DisplayMessage,
-    FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput, // Renamed types
+    FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput,
+    DiscoverNextStoryArcInput, DiscoverNextStoryArcOutput,
     CombatHelperInfo, CombatEventLogEntry,
     HealthChangeEvent, NPCStateChangeEvent, DescribedEvent,
-    CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc, // Renamed Chapter to StoryArc
+    CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc,
     StatModifier, RawLoreEntry
 } from "@/types/story";
 import { produce } from "immer";
@@ -30,7 +32,7 @@ import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-l
 import { simpleTestAction } from '@/ai/actions/simple-test-action';
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -46,8 +48,8 @@ const scenarioGenerationSteps = [
   "Phase 1: Laying Scenario Foundation...",
   "Generating character concepts and opening scene...",
   "Establishing core world details and items...",
-  "Phase 2: Weaving Narrative Arcs & Elements...", // Updated
-  "Crafting initial story arcs and main quests...", // Updated
+  "Phase 2: Weaving Narrative Arcs & Elements...",
+  "Crafting initial story arcs and main quests...",
   "Populating the world with notable figures...",
   "Compiling a rich tapestry of lore entries...",
   "Finalizing scenario details..."
@@ -127,7 +129,7 @@ export default function StoryForgePage() {
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | null>(null); // Renamed chapterLoad to arcLoad
+  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
@@ -138,8 +140,10 @@ export default function StoryForgePage() {
         setLoadingMessage(scenarioGenerationSteps[loadingStep]);
     } else if (isLoadingInteraction && loadingType === 'nextScene') {
         setLoadingMessage("AI is crafting the next part of your tale...");
-    } else if (isLoadingInteraction && loadingType === 'arcLoad') { // Renamed
+    } else if (isLoadingInteraction && loadingType === 'arcLoad') {
         setLoadingMessage("The next story arc of your saga is unfolding...");
+    } else if (isLoadingInteraction && loadingType === 'discoveringArc') {
+        setLoadingMessage("AI is searching for the next chapter in your destiny...");
     } else {
       setLoadingMessage(null);
     }
@@ -261,7 +265,7 @@ export default function StoryForgePage() {
       console.log("CLIENT: Starting scenario generation - Step 2: Narrative Elements. Input:", narrativeElementsInput);
       narrativeElementsResult = await generateScenarioNarrativeElements(narrativeElementsInput);
       console.log("CLIENT: Scenario Narrative Elements generation successful. Result:", narrativeElementsResult);
-      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Crafting initial story arcs")) || 4); // Updated
+      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Crafting initial story arcs")) || 4);
 
 
       setLoadingStep(scenarioGenerationSteps.length - 1);
@@ -282,7 +286,7 @@ export default function StoryForgePage() {
         isPlayer: false,
       };
 
-      const firstStoryArcId = narrativeElementsResult.storyArcs.find(arc => arc.order === 1)?.id; // Renamed
+      const firstStoryArcId = narrativeElementsResult.storyArcs.find(arc => arc.order === 1)?.id;
 
       const finalStoryState: StructuredStoryState = {
         character: foundationResult.characterProfile,
@@ -292,8 +296,8 @@ export default function StoryForgePage() {
         worldFacts: foundationResult.worldFacts,
         storySummary: `The adventure begins for ${foundationResult.characterProfile.name} in ${data.seriesName}, at ${foundationResult.currentLocation}. Initial scene: ${foundationResult.sceneDescription.substring(0,100)}...`,
         quests: narrativeElementsResult.quests,
-        storyArcs: narrativeElementsResult.storyArcs, // Renamed
-        currentStoryArcId: firstStoryArcId, // Renamed
+        storyArcs: narrativeElementsResult.storyArcs,
+        currentStoryArcId: firstStoryArcId,
         trackedNPCs: narrativeElementsResult.trackedNPCs,
       };
 
@@ -435,10 +439,10 @@ export default function StoryForgePage() {
                         description: event.questDescription,
                         type: event.questType || 'dynamic',
                         status: 'active',
-                        storyArcId: event.storyArcId, // Renamed
-                        orderInStoryArc: event.orderInStoryArc, // Renamed
+                        storyArcId: event.storyArcId,
+                        orderInStoryArc: event.orderInStoryArc,
                         category: event.category,
-                        objectives: event.objectives?.map(o => ({...o, isCompleted: false})) || [{description: event.questDescription, isCompleted:false}],
+                        objectives: event.objectives?.map(o => ({...o, description: o.description || "Unnamed Objective", isCompleted: false})) || [{description: event.questDescription, isCompleted:false}],
                         rewards: event.rewards ? {
                             experiencePoints: event.rewards.experiencePoints,
                             currency: event.rewards.currency,
@@ -461,39 +465,87 @@ export default function StoryForgePage() {
          if (result.updatedStoryState.currentLocation) draftState.currentLocation = result.updatedStoryState.currentLocation;
          if (result.updatedStoryState.worldFacts) draftState.worldFacts = result.updatedStoryState.worldFacts;
          if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs;
-         if (result.updatedStoryState.storyArcs) draftState.storyArcs = result.updatedStoryState.storyArcs; // Renamed
-         if (result.updatedStoryState.currentStoryArcId) draftState.currentStoryArcId = result.updatedStoryState.currentStoryArcId; // Renamed
+         if (result.updatedStoryState.storyArcs) draftState.storyArcs = result.updatedStoryState.storyArcs;
+         if (result.updatedStoryState.currentStoryArcId) draftState.currentStoryArcId = result.updatedStoryState.currentStoryArcId;
 
       });
 
 
-      const previousStoryArcId = currentStoryState.currentStoryArcId; // Renamed
-      const currentStoryArcInNewBaseState = finalUpdatedBaseStoryState.storyArcs.find(arc => arc.id === previousStoryArcId); // Renamed
+      const previousStoryArcId = currentStoryState.currentStoryArcId;
+      const currentStoryArcInNewBaseState = finalUpdatedBaseStoryState.storyArcs.find(arc => arc.id === previousStoryArcId);
 
-      if (previousStoryArcId && currentStoryArcInNewBaseState?.isCompleted) { // Renamed
+      if (previousStoryArcId && currentStoryArcInNewBaseState?.isCompleted) {
         console.log(`CLIENT: Story Arc "${currentStoryArcInNewBaseState.title}" (ID: ${previousStoryArcId}) completed.`);
-        const nextStoryArcOrder = currentStoryArcInNewBaseState.order + 1; // Renamed
-        const nextStoryArcToFleshOut = finalUpdatedBaseStoryState.storyArcs.find( // Renamed
-          arc => arc.order === nextStoryArcOrder && !arc.isCompleted && (!arc.mainQuestIds || arc.mainQuestIds.length === 0)
-        );
-
-        if (nextStoryArcToFleshOut && currentSession.seriesPlotSummary) {
-          console.log(`CLIENT: Found next outlined story arc: "${nextStoryArcToFleshOut.title}". Attempting to flesh out quests.`);
-          setLoadingType('arcLoad'); // Renamed
-          toast({
-            title: "Story Arc Complete!", // Renamed
+        toast({
+            title: "Story Arc Complete!",
             description: (
               <div className="flex items-start">
                 <Milestone className="w-5 h-5 mr-2 mt-0.5 text-accent shrink-0" />
-                <span>{currentStoryArcInNewBaseState.title} finished. Preparing the next story arc...</span>
+                <span>{currentStoryArcInNewBaseState.title} finished. Checking for next arc...</span>
               </div>
             ),
             duration: 6000,
           });
+        
+        const nextStoryArcOrder = currentStoryArcInNewBaseState.order + 1;
+        let nextStoryArcToFleshOut = finalUpdatedBaseStoryState.storyArcs.find(
+          arc => arc.order === nextStoryArcOrder && !arc.isCompleted && (!arc.mainQuestIds || arc.mainQuestIds.length === 0)
+        );
 
+        if (!nextStoryArcToFleshOut && currentSession.seriesPlotSummary) { // No pre-outlined arc, try to discover
+            console.log("CLIENT: No pre-outlined next arc. Attempting to discover a new major story arc.");
+            setLoadingType('discoveringArc');
+            try {
+                const discoverInput: DiscoverNextStoryArcInput = {
+                    seriesName: currentSession.seriesName,
+                    seriesPlotSummary: currentSession.seriesPlotSummary,
+                    completedOrGeneratedArcTitles: finalUpdatedBaseStoryState.storyArcs.map(arc => arc.title),
+                    lastCompletedArcOrder: currentStoryArcInNewBaseState.order,
+                    usePremiumAI: currentSession.isPremiumSession,
+                };
+                console.log("CLIENT: Calling discoverNextStoryArc with input:", discoverInput);
+                const discoveryResult: DiscoverNextStoryArcOutput = await callDiscoverNextStoryArc(discoverInput);
+                console.log("CLIENT: discoverNextStoryArc successful. Result:", discoveryResult);
+
+                if (discoveryResult.nextStoryArcOutline) {
+                    const newArcOutline = discoveryResult.nextStoryArcOutline;
+                    finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                        draftState.storyArcs.push(newArcOutline);
+                        draftState.currentStoryArcId = newArcOutline.id; // Set current arc to the newly discovered one
+                    });
+                    nextStoryArcToFleshOut = newArcOutline; // This newly discovered arc now needs fleshing out
+                     toast({
+                        title: "New Story Arc Uncovered!",
+                        description: (
+                        <div className="flex items-start">
+                            <SearchIcon className="w-5 h-5 mr-2 mt-0.5 text-primary shrink-0" />
+                            <span>The saga continues with: {newArcOutline.title}</span>
+                        </div>
+                        ),
+                        duration: 7000,
+                    });
+                } else {
+                    toast({ title: "End of Known Saga", description: `You've explored all major story arcs currently identifiable for ${currentSession.seriesName}!` });
+                }
+            } catch (discoveryError: any) {
+                console.error("CLIENT: Failed to discover next story arc:", discoveryError);
+                toast({
+                    title: "Error Discovering Next Arc",
+                    description: `Could not find the next part of the story. ${discoveryError.message || ""}`,
+                    variant: "destructive",
+                });
+            }
+            setLoadingType('nextScene'); // Revert loading type after discovery attempt
+        }
+
+
+        if (nextStoryArcToFleshOut && currentSession.seriesPlotSummary) {
+          console.log(`CLIENT: Found next outlined story arc: "${nextStoryArcToFleshOut.title}". Attempting to flesh out quests.`);
+          setLoadingType('arcLoad');
+          
           try {
-            const fleshOutInput: FleshOutStoryArcQuestsInput = { // Renamed
-              storyArcToFleshOut: nextStoryArcToFleshOut, // Renamed
+            const fleshOutInput: FleshOutStoryArcQuestsInput = {
+              storyArcToFleshOut: nextStoryArcToFleshOut,
               seriesName: currentSession.seriesName,
               seriesPlotSummary: currentSession.seriesPlotSummary,
               overallStorySummarySoFar: finalUpdatedBaseStoryState.storySummary || "",
@@ -504,27 +556,27 @@ export default function StoryForgePage() {
               },
               usePremiumAI: currentSession.isPremiumSession,
             };
-            console.log("CLIENT: Calling fleshOutStoryArcQuests with input:", fleshOutInput); // Renamed
-            const fleshedResult: FleshOutStoryArcQuestsOutput = await callFleshOutStoryArcQuests(fleshOutInput); // Renamed
-            console.log("CLIENT: fleshOutStoryArcQuests successful. Result:", fleshedResult); // Renamed
+            console.log("CLIENT: Calling fleshOutStoryArcQuests with input:", fleshOutInput);
+            const fleshedResult: FleshOutStoryArcQuestsOutput = await callFleshOutStoryArcQuests(fleshOutInput);
+            console.log("CLIENT: fleshOutStoryArcQuests successful. Result:", fleshedResult);
 
             finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
               draftState.quests.push(...fleshedResult.fleshedOutQuests);
-              const arcIndex = draftState.storyArcs.findIndex(arc => arc.id === nextStoryArcToFleshOut.id); // Renamed
+              const arcIndex = draftState.storyArcs.findIndex(arc => arc.id === nextStoryArcToFleshOut!.id);
               if (arcIndex !== -1) {
-                draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id); // Renamed
+                draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
               }
-              draftState.currentStoryArcId = nextStoryArcToFleshOut.id; // Renamed
+              // currentStoryArcId would have been set if a new arc was discovered, or remains if it was pre-outlined
             });
             toast({
-              title: `Story Arc Started: ${nextStoryArcToFleshOut.title}`, // Renamed
+              title: `Story Arc Started: ${nextStoryArcToFleshOut.title}`,
               description: `New main quests are available in your journal.`,
               duration: 5000,
             });
           } catch (fleshOutError: any) {
-            console.error("CLIENT: Failed to flesh out story arc quests:", fleshOutError); // Renamed
+            console.error("CLIENT: Failed to flesh out story arc quests:", fleshOutError);
             toast({
-              title: "Error Loading Next Story Arc", // Renamed
+              title: "Error Loading Next Story Arc",
               description: `Could not generate quests for "${nextStoryArcToFleshOut.title}". ${fleshOutError.message || ""}`,
               variant: "destructive",
             });
@@ -533,7 +585,7 @@ export default function StoryForgePage() {
         } else if (nextStoryArcToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next story arc is outlined, but no seriesPlotSummary found in session to flesh it out.");
         } else if (!nextStoryArcToFleshOut && currentStoryArcInNewBaseState?.isCompleted) {
-            toast({ title: "Main Story Progress!", description: "You've completed all available story arcs for now!" });
+             // This case is handled by the toast above if discovery also returned null
         }
       }
 
@@ -852,8 +904,8 @@ export default function StoryForgePage() {
             <TabsContent value="journal" className="overflow-y-auto flex-grow">
               <JournalDisplay
                 quests={currentStoryState.quests as Quest[]}
-                storyArcs={currentStoryState.storyArcs as StoryArc[]} // Renamed
-                currentStoryArcId={currentStoryState.currentStoryArcId} // Renamed
+                storyArcs={currentStoryState.storyArcs as StoryArc[]}
+                currentStoryArcId={currentStoryState.currentStoryArcId}
                 worldFacts={currentStoryState.worldFacts}
               />
             </TabsContent>

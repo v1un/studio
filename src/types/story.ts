@@ -90,17 +90,17 @@ export interface Quest {
   id: string;
   title?: string;
   description: string;
-  type: 'main' | 'side' | 'dynamic' | 'arc_goal'; // Renamed chapter_goal to arc_goal
+  type: 'main' | 'side' | 'dynamic' | 'arc_goal';
   status: 'active' | 'completed' | 'failed';
-  storyArcId?: string; // Renamed from chapterId
-  orderInStoryArc?: number; // Renamed from orderInChapter
+  storyArcId?: string;
+  orderInStoryArc?: number;
   category?: string;
   objectives?: QuestObjective[];
   rewards?: QuestRewards;
   updatedAt?: string;
 }
 
-export interface StoryArc { // Renamed from Chapter
+export interface StoryArc {
   id: string;
   title: string;
   description: string;
@@ -148,8 +148,8 @@ export interface StructuredStoryState {
   inventory: Item[];
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   quests: Quest[];
-  storyArcs: StoryArc[]; // Renamed from chapters
-  currentStoryArcId?: string; // Renamed from currentChapterId
+  storyArcs: StoryArc[];
+  currentStoryArcId?: string;
   worldFacts: string[];
   trackedNPCs: NPCProfile[];
   storySummary?: string;
@@ -252,7 +252,7 @@ export interface GenerateScenarioNarrativeElementsInput {
 
 export interface GenerateScenarioNarrativeElementsOutput {
   quests: Quest[];
-  storyArcs: StoryArc[]; // Renamed from chapters
+  storyArcs: StoryArc[];
   trackedNPCs: NPCProfile[];
   initialLoreEntries: RawLoreEntry[];
 }
@@ -331,8 +331,8 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   questTitle?: string;
   questDescription: string;
   questType?: Quest['type'];
-  storyArcId?: string; // Renamed from chapterId
-  orderInStoryArc?: number; // Renamed from orderInChapter
+  storyArcId?: string;
+  orderInStoryArc?: number;
   category?: string;
   objectives?: { description: string }[];
   rewards?: { experiencePoints?: number; currency?: number; items?: Array<Partial<Item> & { activeEffects?: ActiveEffect[] }> };
@@ -417,9 +417,8 @@ export interface GenerateStoryStartOutput {
   storyState: StructuredStoryState;
 }
 
-// Renamed from FleshOutChapterQuestsInput
 export interface FleshOutStoryArcQuestsInput {
-  storyArcToFleshOut: StoryArc; // Renamed from chapterToFleshOut
+  storyArcToFleshOut: StoryArc;
   seriesName: string;
   seriesPlotSummary: string;
   overallStorySummarySoFar: string;
@@ -427,10 +426,23 @@ export interface FleshOutStoryArcQuestsInput {
   usePremiumAI?: boolean;
 }
 
-// Renamed from FleshOutChapterQuestsOutput
 export interface FleshOutStoryArcQuestsOutput {
   fleshedOutQuests: Quest[];
 }
+
+// Input/Output for the DiscoverNextStoryArcFlow
+export interface DiscoverNextStoryArcInput {
+  seriesName: string;
+  seriesPlotSummary: string;
+  completedOrGeneratedArcTitles: string[];
+  lastCompletedArcOrder: number;
+  usePremiumAI?: boolean;
+}
+
+export interface DiscoverNextStoryArcOutput {
+  nextStoryArcOutline: StoryArc | null; // null if no more arcs found
+}
+
 
 export interface Faction {
   id: string;
