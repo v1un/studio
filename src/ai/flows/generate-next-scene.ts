@@ -39,11 +39,11 @@ const SkillSchemaInternal = z.object({
 });
 
 const CharacterProfileSchemaInternal = z.object({
-  name: z.string().describe('The name of the character.'),
-  class: z.string().describe('The class or archetype of the character.'),
-  description: z.string().describe('A brief backstory or description of the character.'),
-  health: z.number().describe('Current health points of the character.'),
-  maxHealth: z.number().describe('Maximum health points of the character.'),
+  name: z.string().describe('The name of the character. This field is required.'),
+  class: z.string().describe('The class or archetype of the character. This field is required.'),
+  description: z.string().describe('A brief backstory or description of the character. This field is required.'),
+  health: z.number().describe('Current health points of the character. This field is required.'),
+  maxHealth: z.number().describe('Maximum health points of the character. This field is required.'),
   mana: z.number().optional().describe('Current mana or magic points of the character. Must be a number; use 0 if not applicable, or omit.'),
   maxMana: z.number().optional().describe('Maximum mana or magic points. Must be a number; use 0 if not applicable, or omit.'),
   strength: z.number().optional().describe('Character\'s physical power, or omit.'),
@@ -52,9 +52,9 @@ const CharacterProfileSchemaInternal = z.object({
   intelligence: z.number().optional().describe('Character\'s reasoning and memory, or omit.'),
   wisdom: z.number().optional().describe('Character\'s perception and intuition, or omit.'),
   charisma: z.number().optional().describe('Character\'s social skills and influence, or omit.'),
-  level: z.number().describe('The current level of the character.'),
-  experiencePoints: z.number().describe('Current experience points of the character.'),
-  experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level.'),
+  level: z.number().describe('The current level of the character. This field is required.'),
+  experiencePoints: z.number().describe('Current experience points of the character. This field is required.'),
+  experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level. This field is required.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of the character's current skills and abilities. Each includes an id, name, description, and type."),
   currency: z.number().optional().describe("Character's current currency (e.g., gold). Default to 0 if not set."),
   languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). If not present, assume 100 (fluent)."),
@@ -127,7 +127,7 @@ const NPCProfileSchemaInternal = z.object({
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, skills/abilities, and languageUnderstanding (0-100).'),
+  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, and languageUnderstanding (0-100).'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
@@ -256,7 +256,7 @@ const generateNextSceneFlow = ai.defineFlow(
   {
     name: 'generateNextSceneFlow',
     inputSchema: GenerateNextSceneInputSchemaInternal,
-    outputSchema: GenerateNextSceneOutputSchemaInternal, // The flow itself will strictly output this
+    outputSchema: GenerateNextSceneOutputSchemaInternal,
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
@@ -265,7 +265,6 @@ const generateNextSceneFlow = ai.defineFlow(
         name: 'generateNextScenePrompt',
         model: modelName,
         input: {schema: PromptInternalInputSchema},
-        // Use .deepPartial() here so the AI doesn't fail Zod validation for missing fields
         output: {schema: GenerateNextSceneOutputSchemaInternal.deepPartial()}, 
         tools: [lookupLoreTool],
         prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
@@ -286,6 +285,7 @@ Current Player Character:
 - Currency: {{storyState.character.currency}}
 - XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 - Stats: Str:{{storyState.character.strength}}, Dex:{{storyState.character.dexterity}}, Con:{{storyState.character.constitution}}, Int:{{storyState.character.intelligence}}, Wis:{{storyState.character.wisdom}}, Cha:{{storyState.character.charisma}}
+- Description: {{storyState.character.description}}
 - Skills & Abilities:
 {{{formattedSkillsString}}}
 
@@ -345,7 +345,7 @@ If character has such an ability and faces a 'fatal' event:
 **Character Progression:** Award skills/stats for quests/milestones.
 - **Leveling Up:** When XP >= XPToNextLevel: increment level, subtract old XPToNextLevel from XP, set new higher XPToNextLevel. Grant +1 to a core stat OR one new skill. Narrate level up and reward.
 
-Crucially, update story state fields: character (health, mana, XP, level, currency, skills, stats, **languageUnderstanding**), inventory, equippedItems, quests, trackedNPCs, worldFacts.
+**Crucially, when providing 'updatedStoryState.character', ensure you return the COMPLETE character object.** This means including ALL fields that were present in the input 'storyState.character' (like name, class, description, all stats, maxHealth, experienceToNextLevel, etc.), modifying only those fields that were directly affected by the current scene's events (e.g., health, mana, XP, level, currency, skills, languageUnderstanding). **Do not omit fields like 'class', 'description', or 'maxHealth' if they weren't directly changed by the turn's events.**
 Ensure 'updatedStorySummary' is provided.
 `,
     });
@@ -390,53 +390,68 @@ Ensure 'updatedStorySummary' is provided.
         };
     }
     
-    // Start with a deep copy of the input state to ensure all fields are present
-    // and then merge the AI's partial updates.
     let mergedStoryState = produce(input.storyState, draftState => {
         if (aiPartialOutput?.updatedStoryState) {
             const aiChar = aiPartialOutput.updatedStoryState.character;
+            const originalChar = input.storyState.character; // Keep a direct reference
+
             if (aiChar) {
-                // Merge AI character updates, ensuring required fields are preserved or defaulted
-                draftState.character.name = aiChar.name ?? draftState.character.name ?? "Unnamed Character";
-                draftState.character.class = aiChar.class ?? draftState.character.class ?? "Adventurer";
-                draftState.character.description = aiChar.description ?? draftState.character.description ?? "A mysterious adventurer.";
-                draftState.character.health = typeof aiChar.health === 'number' ? aiChar.health : draftState.character.health;
-                draftState.character.maxHealth = typeof aiChar.maxHealth === 'number' ? aiChar.maxHealth : (draftState.character.maxHealth ?? 100);
-                draftState.character.level = typeof aiChar.level === 'number' ? aiChar.level : (draftState.character.level ?? 1);
-                draftState.character.experiencePoints = typeof aiChar.experiencePoints === 'number' ? aiChar.experiencePoints : (draftState.character.experiencePoints ?? 0);
-                draftState.character.experienceToNextLevel = typeof aiChar.experienceToNextLevel === 'number' ? aiChar.experienceToNextLevel : (draftState.character.experienceToNextLevel ?? 100);
+                // REQUIRED String fields
+                draftState.character.name = (typeof aiChar.name === 'string' && aiChar.name.trim() !== "") ? aiChar.name : originalChar.name;
+                draftState.character.class = (typeof aiChar.class === 'string' && aiChar.class.trim() !== "") ? aiChar.class : originalChar.class;
+                draftState.character.description = (typeof aiChar.description === 'string' && aiChar.description.trim() !== "") ? aiChar.description : originalChar.description;
+
+                // REQUIRED Number fields
+                draftState.character.health = typeof aiChar.health === 'number' ? aiChar.health : originalChar.health;
+                draftState.character.maxHealth = typeof aiChar.maxHealth === 'number' && aiChar.maxHealth > 0 ? aiChar.maxHealth : originalChar.maxHealth;
+                draftState.character.level = typeof aiChar.level === 'number' ? aiChar.level : originalChar.level;
+                draftState.character.experiencePoints = typeof aiChar.experiencePoints === 'number' ? aiChar.experiencePoints : originalChar.experiencePoints;
+                draftState.character.experienceToNextLevel = typeof aiChar.experienceToNextLevel === 'number' && aiChar.experienceToNextLevel > 0 ? aiChar.experienceToNextLevel : originalChar.experienceToNextLevel;
                 
-                // Ensure health doesn't exceed maxHealth
+                // Ensure critical values from original if AI provided unusable values for required fields
+                if (!draftState.character.name) draftState.character.name = originalChar.name || "Unnamed Character";
+                if (!draftState.character.class) draftState.character.class = originalChar.class || "Adventurer";
+                if (!draftState.character.description) draftState.character.description = originalChar.description || "A mysterious adventurer.";
+                if (typeof draftState.character.health !== 'number') draftState.character.health = originalChar.health || 100;
+                if (typeof draftState.character.maxHealth !== 'number' || draftState.character.maxHealth <= 0) draftState.character.maxHealth = originalChar.maxHealth || 100;
+                if (typeof draftState.character.level !== 'number') draftState.character.level = originalChar.level || 1;
+                if (typeof draftState.character.experiencePoints !== 'number') draftState.character.experiencePoints = originalChar.experiencePoints || 0;
+                if (typeof draftState.character.experienceToNextLevel !== 'number' || draftState.character.experienceToNextLevel <=0) draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel || 100;
+
+
+                // Cap health at maxHealth
                 if (draftState.character.health > draftState.character.maxHealth) {
                     draftState.character.health = draftState.character.maxHealth;
                 }
-                if (draftState.character.experienceToNextLevel <= 0) draftState.character.experienceToNextLevel = 100;
-                if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints) {
-                     draftState.character.experienceToNextLevel = draftState.character.experiencePoints + 50;
-                }
+                 if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) { 
+                     draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor(originalChar.experienceToNextLevel * 0.5));
+                 }
 
 
-                // Optional fields with defaults
-                draftState.character.mana = aiChar.mana ?? draftState.character.mana ?? 0;
-                draftState.character.maxMana = aiChar.maxMana ?? draftState.character.maxMana ?? 0;
-                draftState.character.strength = aiChar.strength ?? draftState.character.strength ?? 10;
-                draftState.character.dexterity = aiChar.dexterity ?? draftState.character.dexterity ?? 10;
-                draftState.character.constitution = aiChar.constitution ?? draftState.character.constitution ?? 10;
-                draftState.character.intelligence = aiChar.intelligence ?? draftState.character.intelligence ?? 10;
-                draftState.character.wisdom = aiChar.wisdom ?? draftState.character.wisdom ?? 10;
-                draftState.character.charisma = aiChar.charisma ?? draftState.character.charisma ?? 10;
-                draftState.character.currency = aiChar.currency ?? draftState.character.currency ?? 0;
-                draftState.character.languageUnderstanding = aiChar.languageUnderstanding ?? draftState.character.languageUnderstanding ?? 100;
-                draftState.character.skillsAndAbilities = aiChar.skillsAndAbilities ?? draftState.character.skillsAndAbilities ?? [];
+                // Optional fields with defaults (prefer AI if valid, then original, then hardcoded)
+                draftState.character.mana = typeof aiChar.mana === 'number' ? aiChar.mana : (originalChar.mana ?? 0);
+                draftState.character.maxMana = typeof aiChar.maxMana === 'number' ? aiChar.maxMana : (originalChar.maxMana ?? 0);
+                draftState.character.strength = typeof aiChar.strength === 'number' ? aiChar.strength : (originalChar.strength ?? 10);
+                draftState.character.dexterity = typeof aiChar.dexterity === 'number' ? aiChar.dexterity : (originalChar.dexterity ?? 10);
+                draftState.character.constitution = typeof aiChar.constitution === 'number' ? aiChar.constitution : (originalChar.constitution ?? 10);
+                draftState.character.intelligence = typeof aiChar.intelligence === 'number' ? aiChar.intelligence : (originalChar.intelligence ?? 10);
+                draftState.character.wisdom = typeof aiChar.wisdom === 'number' ? aiChar.wisdom : (originalChar.wisdom ?? 10);
+                draftState.character.charisma = typeof aiChar.charisma === 'number' ? aiChar.charisma : (originalChar.charisma ?? 10);
+                draftState.character.currency = typeof aiChar.currency === 'number' ? aiChar.currency : (originalChar.currency ?? 0);
+                draftState.character.languageUnderstanding = typeof aiChar.languageUnderstanding === 'number' ? aiChar.languageUnderstanding : (originalChar.languageUnderstanding ?? 100);
+                
+                draftState.character.skillsAndAbilities = Array.isArray(aiChar.skillsAndAbilities) ? aiChar.skillsAndAbilities : (originalChar.skillsAndAbilities ?? []);
+            } else { 
+                 draftState.character = {...originalChar}; 
             }
 
             draftState.currentLocation = aiPartialOutput.updatedStoryState.currentLocation ?? draftState.currentLocation;
-            draftState.inventory = aiPartialOutput.updatedStoryState.inventory ?? draftState.inventory;
-            draftState.equippedItems = aiPartialOutput.updatedStoryState.equippedItems ?? draftState.equippedItems;
-            draftState.quests = aiPartialOutput.updatedStoryState.quests ?? draftState.quests;
-            draftState.worldFacts = aiPartialOutput.updatedStoryState.worldFacts ?? draftState.worldFacts;
-            draftState.trackedNPCs = aiPartialOutput.updatedStoryState.trackedNPCs ?? draftState.trackedNPCs;
-            draftState.storySummary = aiPartialOutput.updatedStoryState.storySummary ?? draftState.storySummary;
+            draftState.inventory = Array.isArray(aiPartialOutput.updatedStoryState.inventory) ? aiPartialOutput.updatedStoryState.inventory : draftState.inventory;
+            draftState.equippedItems = typeof aiPartialOutput.updatedStoryState.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null ? aiPartialOutput.updatedStoryState.equippedItems : draftState.equippedItems;
+            draftState.quests = Array.isArray(aiPartialOutput.updatedStoryState.quests) ? aiPartialOutput.updatedStoryState.quests : draftState.quests;
+            draftState.worldFacts = Array.isArray(aiPartialOutput.updatedStoryState.worldFacts) ? aiPartialOutput.updatedStoryState.worldFacts : draftState.worldFacts;
+            draftState.trackedNPCs = Array.isArray(aiPartialOutput.updatedStoryState.trackedNPCs) ? aiPartialOutput.updatedStoryState.trackedNPCs : draftState.trackedNPCs;
+            // storySummary is handled directly in the output object construction later
         }
     });
 
@@ -470,48 +485,45 @@ Ensure 'updatedStorySummary' is provided.
       }
     }
     
-    // Detailed Sanitation for Character Profile
+    // Detailed Sanitation for Character Profile (final pass after merging)
     if (output.updatedStoryState.character) {
       const updatedChar = output.updatedStoryState.character;
-      const originalChar = input.storyState.character; // For fallback
+      const originalChar = input.storyState.character; // For fallback, again, if needed
 
-      // Ensure required fields are present, falling back to original state or safe defaults
-      updatedChar.name = updatedChar.name || originalChar.name || "Unnamed Character";
-      updatedChar.class = updatedChar.class || originalChar.class || "Adventurer";
-      updatedChar.description = updatedChar.description || originalChar.description || "A mysterious adventurer.";
+      // Ensure required fields are definitively present and correctly typed
+      updatedChar.name = (typeof updatedChar.name === 'string' && updatedChar.name.trim() !== "") ? updatedChar.name : (originalChar.name || "Unnamed Character");
+      updatedChar.class = (typeof updatedChar.class === 'string' && updatedChar.class.trim() !== "") ? updatedChar.class : (originalChar.class || "Adventurer");
+      updatedChar.description = (typeof updatedChar.description === 'string' && updatedChar.description.trim() !== "") ? updatedChar.description : (originalChar.description || "A mysterious adventurer.");
       updatedChar.health = typeof updatedChar.health === 'number' ? updatedChar.health : (originalChar.health || 100);
-      updatedChar.maxHealth = typeof updatedChar.maxHealth === 'number' ? updatedChar.maxHealth : (originalChar.maxHealth || 100);
+      updatedChar.maxHealth = (typeof updatedChar.maxHealth === 'number' && updatedChar.maxHealth > 0) ? updatedChar.maxHealth : (originalChar.maxHealth > 0 ? originalChar.maxHealth : 100);
       updatedChar.level = typeof updatedChar.level === 'number' ? updatedChar.level : (originalChar.level || 1);
       updatedChar.experiencePoints = typeof updatedChar.experiencePoints === 'number' ? updatedChar.experiencePoints : (originalChar.experiencePoints || 0);
-      updatedChar.experienceToNextLevel = typeof updatedChar.experienceToNextLevel === 'number' ? updatedChar.experienceToNextLevel : (originalChar.experienceToNextLevel || 100);
-
-      // Cap health at maxHealth
+      updatedChar.experienceToNextLevel = (typeof updatedChar.experienceToNextLevel === 'number' && updatedChar.experienceToNextLevel > 0) ? updatedChar.experienceToNextLevel : (originalChar.experienceToNextLevel > 0 ? originalChar.experienceToNextLevel : 100);
+      
+      if (updatedChar.health < 0) updatedChar.health = 0;
       if (updatedChar.health > updatedChar.maxHealth) {
         updatedChar.health = updatedChar.maxHealth;
       }
-      if (updatedChar.health < 0) updatedChar.health = 0;
 
-
-      // Default optional fields
-      updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
-      updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
-      updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
-      updatedChar.dexterity = updatedChar.dexterity ?? originalChar.dexterity ?? 10;
-      updatedChar.constitution = updatedChar.constitution ?? originalChar.constitution ?? 10;
-      updatedChar.intelligence = updatedChar.intelligence ?? originalChar.intelligence ?? 10;
-      updatedChar.wisdom = updatedChar.wisdom ?? originalChar.wisdom ?? 10;
-      updatedChar.charisma = updatedChar.charisma ?? originalChar.charisma ?? 10;
-      updatedChar.currency = updatedChar.currency ?? originalChar.currency ?? 0;
+      // Default optional fields if they are still not numbers after merging
+      updatedChar.mana = typeof updatedChar.mana === 'number' ? updatedChar.mana : (originalChar.mana ?? 0);
+      updatedChar.maxMana = typeof updatedChar.maxMana === 'number' ? updatedChar.maxMana : (originalChar.maxMana ?? 0);
+      updatedChar.strength = typeof updatedChar.strength === 'number' ? updatedChar.strength : (originalChar.strength ?? 10);
+      updatedChar.dexterity = typeof updatedChar.dexterity === 'number' ? updatedChar.dexterity : (originalChar.dexterity ?? 10);
+      updatedChar.constitution = typeof updatedChar.constitution === 'number' ? updatedChar.constitution : (originalChar.constitution ?? 10);
+      updatedChar.intelligence = typeof updatedChar.intelligence === 'number' ? updatedChar.intelligence : (originalChar.intelligence ?? 10);
+      updatedChar.wisdom = typeof updatedChar.wisdom === 'number' ? updatedChar.wisdom : (originalChar.wisdom ?? 10);
+      updatedChar.charisma = typeof updatedChar.charisma === 'number' ? updatedChar.charisma : (originalChar.charisma ?? 10);
+      updatedChar.currency = typeof updatedChar.currency === 'number' ? updatedChar.currency : (originalChar.currency ?? 0);
       if (updatedChar.currency < 0) updatedChar.currency = 0;
 
-      updatedChar.languageUnderstanding = updatedChar.languageUnderstanding ?? originalChar.languageUnderstanding ?? 100;
+      updatedChar.languageUnderstanding = typeof updatedChar.languageUnderstanding === 'number' ? updatedChar.languageUnderstanding : (originalChar.languageUnderstanding ?? 100);
       if (updatedChar.languageUnderstanding < 0) updatedChar.languageUnderstanding = 0;
       if (updatedChar.languageUnderstanding > 100) updatedChar.languageUnderstanding = 100;
       
       let originalXpToNextLevel = originalChar.experienceToNextLevel;
       if (originalXpToNextLevel <=0) originalXpToNextLevel = 100; 
 
-      // Leveling logic
       const didLevelUp = updatedChar.level > originalChar.level || 
                          (originalChar.experiencePoints >= originalXpToNextLevel && updatedChar.level === originalChar.level +1);
 
@@ -521,7 +533,6 @@ Ensure 'updatedStorySummary' is provided.
         } else if (updatedChar.experiencePoints < originalXpToNextLevel && originalChar.experiencePoints >= originalXpToNextLevel ) {
             // AI might have already subtracted XP
         } else {
-             // If AI didn't handle XP correctly for level up, reset to avoid negative XP due to prior subtractions
              updatedChar.experiencePoints = originalChar.experiencePoints >= originalXpToNextLevel ? 
                                              originalChar.experiencePoints - originalXpToNextLevel : 
                                              originalChar.experiencePoints;
@@ -533,14 +544,13 @@ Ensure 'updatedStorySummary' is provided.
                                               : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevel * 0.5));
         }
       } else {
-         // Ensure XP to next level is always positive and greater than current XP if not leveling up
          if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel <= updatedChar.experiencePoints) {
             updatedChar.experienceToNextLevel = originalXpToNextLevel > updatedChar.experiencePoints ? originalXpToNextLevel : updatedChar.experiencePoints + 50;
          }
       }
-      if (updatedChar.experiencePoints < 0) updatedChar.experiencePoints = 0; // Prevent negative XP
+      if (updatedChar.experiencePoints < 0) updatedChar.experiencePoints = 0; 
       
-      updatedChar.skillsAndAbilities = updatedChar.skillsAndAbilities ?? originalChar.skillsAndAbilities ?? [];
+      updatedChar.skillsAndAbilities = Array.isArray(updatedChar.skillsAndAbilities) ? updatedChar.skillsAndAbilities : (originalChar.skillsAndAbilities ?? []);
       const skillIdSet = new Set<string>();
       updatedChar.skillsAndAbilities.forEach((skill, index) => {
         if (!skill.id || skill.id.trim() === "" || skillIdSet.has(skill.id)) { 
@@ -596,7 +606,7 @@ Ensure 'updatedStorySummary' is provided.
           });
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
-            const charForRewards = output.updatedStoryState.character; // Already ensured to exist
+            const charForRewards = output.updatedStoryState.character; 
             if (typeof quest.rewards.experiencePoints === 'number') charForRewards.experiencePoints += quest.rewards.experiencePoints;
             if (typeof quest.rewards.currency === 'number' && charForRewards.currency !== undefined) {
               charForRewards.currency += quest.rewards.currency;
@@ -702,7 +712,6 @@ Ensure 'updatedStorySummary' is provided.
             if (npcIdMap.has(npc.id)) { console.warn(`Duplicate NPC ID ${npc.id} in AI output. Skipping duplicate.`); continue; }
             
             const processedNpc: Partial<NPCProfileType> = { ...npc }; 
-
             delete (processedNpc as any).currentGoal; 
 
             if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '') delete processedNpc.classOrRole;
@@ -716,7 +725,6 @@ Ensure 'updatedStorySummary' is provided.
 
             if (processedNpc.sellsItemTypes === null) delete processedNpc.sellsItemTypes;
             else processedNpc.sellsItemTypes = processedNpc.sellsItemTypes ?? undefined;
-
 
             processedNpc.name = processedNpc.name || "Unnamed NPC";
             processedNpc.description = processedNpc.description || "No description provided.";
