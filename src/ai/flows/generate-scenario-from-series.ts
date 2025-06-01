@@ -270,7 +270,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
         model: modelName,
         input: { schema: CharacterAndSceneInputSchema },
         output: { schema: CharacterAndSceneOutputSchema },
-        prompt: `You are a master storyteller setting up an interactive text adventure in the series: "{{seriesName}}".
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CharacterAndSceneOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+You are a master storyteller setting up an interactive text adventure in the series: "{{seriesName}}".
 Your output MUST be a JSON object strictly conforming to the 'CharacterAndSceneOutputSchema'. ALL fields specified as required in the schema ('sceneDescription', 'characterCore', 'currentLocation', and required fields within 'characterCore' like 'name', 'class', 'health', 'maxHealth', 'level', 'experiencePoints', 'experienceToNextLevel', 'description') MUST be present and correctly typed (e.g., numbers for stats, currency). Optional fields should only be included if applicable and must also be correctly typed.
 
 User's character preferences:
@@ -291,7 +292,8 @@ You MUST generate an object with 'sceneDescription', 'characterCore', and 'curre
         - Otherwise, if not specified by canon for the starting situation, default 'languageUnderstanding' to 100 (fluent) or a series-appropriate value if known. If the AI omits 'languageUnderstanding', it will be defaulted to 100 in post-processing.
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
 
-Output ONLY the JSON object for CharacterAndSceneOutputSchema. Ensure all fields are correctly populated and typed.`,
+Output ONLY the JSON object for CharacterAndSceneOutputSchema. Ensure all fields are correctly populated and typed.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the CharacterAndSceneOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialCharacterSkillsPrompt = ai.definePrompt({
@@ -299,7 +301,8 @@ Output ONLY the JSON object for CharacterAndSceneOutputSchema. Ensure all fields
         model: modelName,
         input: { schema: InitialCharacterSkillsInputSchema },
         output: { schema: InitialCharacterSkillsOutputSchema },
-        prompt: `For a character in the series "{{seriesName}}":
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialCharacterSkillsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a character in the series "{{seriesName}}":
 Name: {{characterName}}
 Class/Role: {{characterClass}}
 Description: {{characterDescription}}
@@ -307,7 +310,8 @@ Description: {{characterDescription}}
 Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills.
 - Each skill: unique 'id', 'name', 'description', 'type'. All fields are required.
 - For characters known for specific signature abilities relevant at the start (e.g., for "Re:Zero" and Subaru, "Return by Death" MUST be included if appropriate for the scenario start), ensure they are present.
-Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }. If no skills, output { "skillsAndAbilities": [] }.`,
+Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }. If no skills, output { "skillsAndAbilities": [] }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialCharacterSkillsOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialInventoryPrompt = ai.definePrompt({
@@ -315,7 +319,8 @@ Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }.
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialInventoryOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialInventoryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
@@ -324,7 +329,8 @@ Generate ONLY 'inventory': An array of 0-3 unequipped starting items.
 - Each item: unique 'id', 'name', 'description', 'basePrice' (MUST BE a number, e.g., 0, 10, 50). All these fields are required.
 - 'equipSlot' if equippable gear (e.g., "weapon", "head"), OMITTED otherwise (e.g., for potions, keys).
 - 'isConsumable', 'effectDescription' for consumables. 'isQuestItem', 'relevantQuestId' for quest items.
-Adhere to JSON schema. Output ONLY { "inventory": [...] }.`,
+Adhere to JSON schema. Output ONLY { "inventory": [...] }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialInventoryOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialMainGearPrompt = ai.definePrompt({
@@ -332,14 +338,16 @@ Adhere to JSON schema. Output ONLY { "inventory": [...] }.`,
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialMainGearOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialMainGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY an object with 'weapon', 'shield', 'body' equipped items. Each field ('weapon', 'shield', 'body') MUST be present.
 - Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (must match slot key, e.g. "weapon")) or 'null'. All item fields are required if an item object is provided.
-Adhere to JSON schema. Output ONLY { "weapon": ..., "shield": ..., "body": ... }.`,
+Adhere to JSON schema. Output ONLY { "weapon": ..., "shield": ..., "body": ... }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialMainGearOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialSecondaryGearPrompt = ai.definePrompt({
@@ -347,14 +355,16 @@ Adhere to JSON schema. Output ONLY { "weapon": ..., "shield": ..., "body": ... }
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialSecondaryGearOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialSecondaryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY an object with 'head', 'legs', 'feet', 'hands' equipped items. Each field ('head', 'legs', 'feet', 'hands') MUST be present.
 - Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (must match slot key, e.g. "head")) or 'null'. All item fields are required if an item object is provided.
-Adhere to JSON schema. Output ONLY an object with these four keys.`,
+Adhere to JSON schema. Output ONLY an object with these four keys.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialSecondaryGearOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialAccessoryGearPrompt = ai.definePrompt({
@@ -362,14 +372,16 @@ Adhere to JSON schema. Output ONLY an object with these four keys.`,
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialAccessoryGearOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialAccessoryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY an object with 'neck', 'ring1', 'ring2' equipped items. Each field ('neck', 'ring1', 'ring2') MUST be present.
 - Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (should be "neck" or "ring")) or 'null'. All item fields are required if an item object is provided. If 'equipSlot' is "ring", it's for ring1 or ring2.
-Adhere to JSON schema. Output ONLY an object with these three keys.`,
+Adhere to JSON schema. Output ONLY an object with these three keys.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialAccessoryGearOutputSchema definition provided earlier in this prompt.`,
     });
     
     const initialWorldFactsPrompt = ai.definePrompt({
@@ -377,14 +389,16 @@ Adhere to JSON schema. Output ONLY an object with these three keys.`,
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialWorldFactsOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialWorldFactsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY 'worldFacts': An array of 3-5 key world facts (strings).
 - If 'character.languageUnderstanding' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot understand the local spoken or written language, making interaction and reading impossible." or "Signs are unreadable and speech is incomprehensible."
-Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.`,
+Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialWorldFactsOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialQuestsPrompt = ai.definePrompt({
@@ -392,7 +406,8 @@ Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.`,
         model: modelName,
         input: { schema: InitialQuestsInputSchema },
         output: { schema: InitialQuestsOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialQuestsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
@@ -407,7 +422,8 @@ Generate ONLY 'quests': 1-2 initial quests that provide clear direction and feel
     - Optional: 'category', 'objectives' (each objective: 'description', 'isCompleted: false').
     - **It is highly recommended to include a 'rewards' block for these initial quests.** If 'rewards' are included, they MUST specify at least some 'experiencePoints' (MUST BE a number) or 'currency' (MUST BE a number). 'items' are optional but good; if included, each item MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'equipSlot' (OMIT 'equipSlot' if not equippable gear). All fields within 'rewards' and reward items are required if that structure is present.
     Example reward: { "experiencePoints": 50, "currency": 10, "items": [{ "id": "item_simple_potion_reward_01", "name": "Minor Healing Draught", "description": "A weak potion that restores a small bit of health.", "basePrice": 5, "isConsumable": true, "effectDescription": "Heals 10 HP" }] }
-Adhere to JSON schema. Output ONLY { "quests": [...] }. Ensure all fields are correctly populated and typed.`,
+Adhere to JSON schema. Output ONLY { "quests": [...] }. Ensure all fields are correctly populated and typed.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialQuestsOutputSchema definition provided earlier in this prompt.`,
     });
 
     const initialTrackedNPCsPrompt = ai.definePrompt({
@@ -415,7 +431,8 @@ Adhere to JSON schema. Output ONLY { "quests": [...] }. Ensure all fields are co
         model: modelName,
         input: { schema: InitialTrackedNPCsInputSchema },
         output: { schema: InitialTrackedNPCsOutputSchema },
-        prompt: `For a story in "{{seriesName}}" starting with:
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialTrackedNPCsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
 Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) -
 Initial Scene: {{sceneDescription}}
 Player's Starting Location: {{currentLocation}}
@@ -430,7 +447,8 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
         - Contextual Details: 'firstEncounteredLocation' (canonical), 'lastKnownLocation'.
         - If merchant: include merchant data as above.
     - For ALL NPCs: 'firstEncounteredTurnId' & 'lastSeenTurnId' = "initial_turn_0". Empty dialogue history. Optional 'seriesContextNotes', 'shortTermGoal', 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number).
-Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all fields are correctly populated and typed, especially numeric ones.`,
+Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all fields are correctly populated and typed, especially numeric ones.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialTrackedNPCsOutputSchema definition provided earlier in this prompt.`,
     });
 
     const loreEntriesPrompt = ai.definePrompt({
@@ -438,12 +456,14 @@ Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all
         model: modelName,
         input: { schema: LoreGenerationInputSchema },
         output: { schema: z.array(RawLoreEntrySchemaInternal) },
-        prompt: `You are a lore master for "{{seriesName}}".
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON array conforming to the output schema (an array of RawLoreEntrySchemaInternal objects). Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+You are a lore master for "{{seriesName}}".
 Context: Character "{{characterName}}" ({{characterClass}}).
 Scene: {{sceneDescription}}
 Character Background: {{characterDescription}}
 Generate 6-8 key lore entries. Each entry MUST have a 'keyword' and 'content'. 'category' is optional.
-Output ONLY JSON array.`,
+Output ONLY JSON array.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the output schema definition provided earlier in this prompt.`,
     });
 
     const styleGuidePrompt = ai.definePrompt({
@@ -451,7 +471,8 @@ Output ONLY JSON array.`,
         model: modelName,
         input: { schema: StyleGuideInputSchema },
         output: { schema: z.string().nullable() },
-        prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string ("").
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single string (for the style guide) or an empty string (""). Do not include JSON structure unless the string itself is JSON (which is not expected here).
+For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string ("").
 Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     });
 
@@ -718,8 +739,8 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
                 mItem.description = mItem.description || "No description.";
                 mItem.basePrice = mItem.basePrice ?? 0;
                 if(mItem.basePrice < 0) mItem.basePrice = 0;
-                mItem.price = mItem.price ?? mItem.basePrice;
-                if(mItem.price < 0) mItem.price = 0;
+                (mItem as any).price = (mItem as any).price ?? mItem.basePrice; 
+                if((mItem as any).price < 0) (mItem as any).price = 0;
             });
         }
         finalOutput.storyState.trackedNPCs[index] = processedNpc as NPCProfileType;
@@ -732,5 +753,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     return finalOutput;
   }
 );
+
+    
 
     
