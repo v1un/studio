@@ -31,7 +31,7 @@ const ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("Descriptive name of the effect. REQUIRED."),
   description: z.string().describe("Narrative description of what the effect does. REQUIRED."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
-  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().describe("Number of turns effect lasts (for consumables, should be positive).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
   statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', array of stat changes."),
   sourceItemId: z.string().optional(),
 });
@@ -47,7 +47,7 @@ const ItemSchemaInternal = z.object({
   relevantQuestId: z.string().optional(),
   basePrice: z.number().optional().describe("Base value. MUST BE a number if provided."),
   rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most quest rewards can be 'uncommon' or 'rare'."),
-  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("Array of structured active effects. For reward gear, consider adding 'stat_modifier' effects. 'duration' should be 'permanent_while_equipped' for gear stat mods."),
+  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("Array of structured active effects. For reward gear, consider adding 'stat_modifier' effects. 'duration' should be 'permanent_while_equipped' for gear stat mods. For consumables, duration should be a positive integer (number of turns)."),
 });
 
 const QuestObjectiveSchemaInternal = z.object({
@@ -57,7 +57,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("XP awarded. MUST BE a number if provided."),
-  items: z.array(ItemSchemaInternal).optional().describe("Items awarded. Each must have unique ID, name, description, 'basePrice' (number), optional 'rarity', optional 'equipSlot', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier')."),
+  items: z.array(ItemSchemaInternal).optional().describe("Items awarded. Each must have unique ID, name, description, 'basePrice' (number), optional 'rarity', optional 'equipSlot', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' (should be positive) for consumables)."),
   currency: z.number().optional().describe("Currency awarded. MUST BE a number if provided."),
 }).describe("Potential rewards. Defined at quest creation.");
 
@@ -161,7 +161,7 @@ Generate an array of 2-3 'fleshedOutQuests' for the story arc titled "{{storyArc
 - Each quest MUST have a unique \`id\` (e.g., quest_main_{{storyArcToFleshOut.id}}_001), an optional \`title\`, a detailed \`description\`, and 1-2 \`objectives\` (with \`isCompleted: false\`).
 - **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items).
 - For reward items: each MUST have a unique 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', and optional 'equipSlot' (OMIT for non-equippable items).
-- **For reward items that are gear (especially 'uncommon' or 'rare'), you MAY include 'activeEffects'.** If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped' for gear stat mods, or a string for how long a temporary effect lasts), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
+- **For reward items that are gear (especially 'uncommon' or 'rare'), you MAY include 'activeEffects'.** If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped' for gear stat mods, or a string for how long a temporary effect lasts, or an integer for number of turns for consumables - should be positive), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
 - Ensure all numeric fields (prices, XP, currency, stat values etc.) are actual numbers.
 
 Output ONLY the JSON object adhering to 'FleshOutStoryArcQuestsOutputSchema'. Example: \`{"fleshedOutQuests": [{"id": "...", "title": "...", ...}]}\`
@@ -209,7 +209,7 @@ Ensure all field names and values in your JSON response strictly match the types
                             value: mod.value ?? 0,
                             type: mod.type || 'add',
                         })) || [],
-                        duration: effect.duration || (effect.type === 'stat_modifier' ? 'permanent_while_equipped' : undefined),
+                        duration: (typeof effect.duration === 'number' && effect.duration <=0) ? 1 : effect.duration || (effect.type === 'stat_modifier' ? 'permanent_while_equipped' : undefined),
                     })).filter(effect => effect.statModifiers && effect.statModifiers.length > 0 || effect.type !== 'stat_modifier') || [],
                 };
                 if (validatedItem.activeEffects && validatedItem.activeEffects.length === 0) {
@@ -224,3 +224,6 @@ Ensure all field names and values in your JSON response strictly match the types
     return { fleshedOutQuests: validatedQuests as QuestType[] };
   }
 );
+
+
+    

@@ -31,7 +31,7 @@ const Foundation_ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("REQUIRED."),
   description: z.string().describe("REQUIRED."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
-  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().positive().describe("Number of turns effect lasts (for consumables).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().describe("Number of turns effect lasts (for consumables, should be positive).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
   statModifiers: z.array(Foundation_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
@@ -47,7 +47,7 @@ const Foundation_ItemSchemaInternal = z.object({
   relevantQuestId: z.string().optional(),
   basePrice: z.number().optional().describe("MUST BE a number if provided."),
   rarity: Foundation_ItemRarityEnumInternal.optional(),
-  activeEffects: z.array(Foundation_ActiveEffectSchemaInternal).optional().describe("Structured active effects. For gear, duration: 'permanent_while_equipped'. For consumables, provide numeric duration (turns)."),
+  activeEffects: z.array(Foundation_ActiveEffectSchemaInternal).optional().describe("Structured active effects. For gear, duration: 'permanent_while_equipped'. For consumables, provide numeric duration (turns, should be positive)."),
 });
 
 const Foundation_SkillSchemaInternal = z.object({
@@ -58,7 +58,7 @@ const Foundation_SkillSchemaInternal = z.object({
 });
 
 const Foundation_TemporaryEffectSchemaInternal = Foundation_ActiveEffectSchemaInternal.extend({
-    turnsRemaining: z.number().int().nonnegative().describe("REQUIRED. Number of turns remaining for this effect."),
+    turnsRemaining: z.number().int().describe("REQUIRED. Number of turns remaining for this effect (should be non-negative)."),
 });
 
 const Foundation_CharacterCoreProfileSchemaInternal = z.object({
@@ -307,7 +307,7 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
         name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialInventoryOutputSchema'. The 'inventory' array is REQUIRED (can be empty). Each item MUST have 'id', 'name', 'description'. 'basePrice' (number) is optional.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'inventory': 0-3 unequipped items. Include optional 'rarity'. For consumables, 'activeEffects' may define temporary buffs with numeric 'duration' (turns). 'equipSlot' if equippable, OMITTED otherwise.
+Generate ONLY 'inventory': 0-3 unequipped items. Include optional 'rarity'. For consumables, 'activeEffects' may define temporary buffs with numeric 'duration' (turns, should be positive). 'equipSlot' if equippable, OMITTED otherwise.
 Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are present. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
@@ -464,7 +464,7 @@ const Narrative_ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("REQUIRED."),
   description: z.string().describe("REQUIRED."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
-  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().positive().describe("Number of turns effect lasts (for consumables).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().describe("Number of turns effect lasts (for consumables, should be positive).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
   statModifiers: z.array(Narrative_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
@@ -480,7 +480,7 @@ const Narrative_ItemSchemaInternal = z.object({
   relevantQuestId: z.string().optional(),
   basePrice: z.number().optional().describe("MUST BE a number if provided."),
   rarity: Narrative_ItemRarityEnumInternal.optional(),
-  activeEffects: z.array(Narrative_ActiveEffectSchemaInternal).optional().describe("Structured active effects. For gear, duration: 'permanent_while_equipped'. For consumables, provide numeric duration (turns)."),
+  activeEffects: z.array(Narrative_ActiveEffectSchemaInternal).optional().describe("Structured active effects. For gear, duration: 'permanent_while_equipped'. For consumables, provide numeric duration (turns, should be positive)."),
 });
 
 const Narrative_SkillSchemaInternal = z.object({
@@ -491,7 +491,7 @@ const Narrative_SkillSchemaInternal = z.object({
 });
 
 const Narrative_TemporaryEffectSchemaInternal = Narrative_ActiveEffectSchemaInternal.extend({
-    turnsRemaining: z.number().int().nonnegative().describe("REQUIRED. Number of turns remaining for this effect."),
+    turnsRemaining: z.number().int().describe("REQUIRED. Number of turns remaining for this effect (should be non-negative)."),
 });
 
 const Narrative_CharacterProfileSchemaForInput = z.object({
@@ -585,7 +585,7 @@ const Narrative_NPCProfileSchemaInternal = z.object({
     shortTermGoal: z.string().optional(),
     updatedAt: z.string().optional(),
     isMerchant: z.boolean().optional(),
-    merchantInventory: z.array(Narrative_MerchantItemSchemaInternal).optional().describe("Items should include 'activeEffects' with numeric 'duration' for consumables."),
+    merchantInventory: z.array(Narrative_MerchantItemSchemaInternal).optional().describe("Items should include 'activeEffects' with numeric 'duration' (should be positive) for consumables."),
     buysItemTypes: z.array(z.string()).optional(),
     sellsItemTypes: z.array(z.string()).optional(),
 });
@@ -678,9 +678,9 @@ Generate 'storyArcs' & 'quests'.
   - First story arc: 'mainQuestIds' must list the IDs of its generated quests (see below).
   - Subsequent story arcs: These are OUTLINES. Their 'mainQuestIds' array MUST be EMPTY initially (e.g., \`[]\`).
 
-'quests': For the FIRST story arc ONLY, generate a suitable number (e.g., 2-4) of 'main' quests directly based on its portion of the 'seriesPlotSummary'. Each quest MUST have 'id', 'description', 'type: "main"', 'status: "active"', 'storyArcId' (first story arc's ID), 'orderInStoryArc'. 'title' is optional. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers and numeric 'duration' for consumables)). Include 1-2 'objectives' ('isCompleted: false'). Use 'lookupLoreTool' for accuracy.
+'quests': For the FIRST story arc ONLY, generate a suitable number (e.g., 2-4) of 'main' quests directly based on its portion of the 'seriesPlotSummary'. Each quest MUST have 'id', 'description', 'type: "main"', 'status: "active"', 'storyArcId' (first story arc's ID), 'orderInStoryArc'. 'title' is optional. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers and numeric 'duration' (should be positive) for consumables)). Include 1-2 'objectives' ('isCompleted: false'). Use 'lookupLoreTool' for accuracy.
 
-Output ONLY JSON { "quests": [...], "storyArcs": [...] }. Ensure 'activeEffects' are structured correctly (including numeric duration for consumables). Ensure all IDs are unique.`,
+Output ONLY JSON { "quests": [...], "storyArcs": [...] }. Ensure 'activeEffects' are structured correctly (including numeric 'duration' (should be positive) for consumables). Ensure all IDs are unique.`,
     });
 
     const narrative_initialTrackedNPCsPrompt = ai.definePrompt({
@@ -690,8 +690,8 @@ For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription
 Generate ONLY 'trackedNPCs':
 - NPCs IN SCENE: Must include. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts' (can be empty array). 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
 - PRE-POPULATED MAJOR NPCs (NOT in scene): 2-4 crucial early-series NPCs. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts' (can be empty array). Their canonical locations for 'firstEncounteredLocation'/'lastKnownLocation'.
-- ALL NPCs: 'firstEncounteredTurnId'/'lastSeenTurnId' = "initial_turn_0". Optional 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number). If merchant: 'isMerchant: true', 'merchantInventory' (items with id, name, desc, basePrice (number), price (number), optional rarity, optional activeEffects with statModifiers and numeric 'duration' for consumables), 'buysItemTypes', 'sellsItemTypes'.
-Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured correctly (including numeric duration for consumables). Ensure all IDs are unique.`,
+- ALL NPCs: 'firstEncounteredTurnId'/'lastSeenTurnId' = "initial_turn_0". Optional 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number). If merchant: 'isMerchant: true', 'merchantInventory' (items with id, name, desc, basePrice (number), price (number), optional rarity, optional activeEffects with statModifiers and numeric 'duration' (should be positive) for consumables), 'buysItemTypes', 'sellsItemTypes'.
+Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured correctly (including numeric 'duration' (should be positive) for consumables). Ensure all IDs are unique.`,
     });
 
     const narrative_characterLorePrompt = ai.definePrompt({
@@ -853,5 +853,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     return output;
   }
 );
+
+    
 
     
