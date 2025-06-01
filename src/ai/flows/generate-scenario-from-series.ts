@@ -322,13 +322,18 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Using model: ${modelName}`);
-    const modelConfig = { maxOutputTokens: 8000 };
+    
+    // Optimized Model Configs
+    const modelConfigShort = { maxOutputTokens: 500 };
+    const modelConfigMedium = { maxOutputTokens: 2000 };
+    const modelConfigLarge = { maxOutputTokens: 4000 }; // Reduced from 8000 for general large outputs
+    const modelConfigLore = { maxOutputTokens: 2500 }; // For lore arrays, still needs to be generous but not extreme
 
     let step1StartTime = Date.now();
     console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
 
     const characterAndScenePrompt = ai.definePrompt({
-        name: 'characterAndScenePrompt', model: modelName, input: { schema: CharacterAndSceneInputSchema }, output: { schema: CharacterAndSceneOutputSchema }, config: modelConfig,
+        name: 'characterAndScenePrompt', model: modelName, input: { schema: CharacterAndSceneInputSchema }, output: { schema: CharacterAndSceneOutputSchema }, config: modelConfigMedium,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CharacterAndSceneOutputSchema'.
 You are a master storyteller for "{{seriesName}}".
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
@@ -339,11 +344,11 @@ Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     });
     const styleGuidePrompt = ai.definePrompt({
-        name: 'generateSeriesStyleGuidePrompt', model: modelName, input: { schema: StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
+        name: 'generateSeriesStyleGuidePrompt', model: modelName, input: { schema: StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfigShort,
         prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string (""). Output ONLY the summary string or empty string.`,
     });
     const seriesPlotSummaryPrompt = ai.definePrompt({
-        name: 'generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: SeriesPlotSummaryInputSchema }, output: { schema: SeriesPlotSummaryOutputSchema }, config: modelConfig,
+        name: 'generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: SeriesPlotSummaryInputSchema }, output: { schema: SeriesPlotSummaryOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph. Output ONLY JSON for SeriesPlotSummaryOutputSchema.`,
     });
 
@@ -378,7 +383,7 @@ Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     let step2StartTime = Date.now();
     console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
     const initialCharacterSkillsPrompt = ai.definePrompt({
-        name: 'initialCharacterSkillsPrompt', model: modelName, input: { schema: InitialCharacterSkillsInputSchema }, output: { schema: InitialCharacterSkillsOutputSchema }, config: modelConfig,
+        name: 'initialCharacterSkillsPrompt', model: modelName, input: { schema: InitialCharacterSkillsInputSchema }, output: { schema: InitialCharacterSkillsOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
 Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills (unique 'id', 'name', 'description', 'type'). Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
 Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }.`,
@@ -429,37 +434,37 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }.`,
     };
 
     const initialInventoryPrompt = ai.definePrompt({
-        name: 'initialInventoryPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialInventoryOutputSchema }, config: modelConfig,
+        name: 'initialInventoryPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialInventoryOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'inventory': 0-3 unequipped items. Each: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
 Output ONLY { "inventory": [...] }.`,
     });
     const initialMainGearPrompt = ai.definePrompt({
-        name: 'initialMainGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialMainGearOutputSchema }, config: modelConfig,
+        name: 'initialMainGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialMainGearOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }.`,
     });
     const initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'initialSecondaryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialSecondaryGearOutputSchema }, config: modelConfig,
+        name: 'initialSecondaryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialSecondaryGearOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }.`,
     });
     const initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'initialAccessoryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialAccessoryGearOutputSchema }, config: modelConfig,
+        name: 'initialAccessoryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialAccessoryGearOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }.`,
     });
     const initialWorldFactsPrompt = ai.definePrompt({
-        name: 'initialWorldFactsPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialWorldFactsOutputSchema }, config: modelConfig,
+        name: 'initialWorldFactsPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialWorldFactsOutputSchema }, config: modelConfigMedium,
         prompt: `For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'worldFacts': 3-5 key facts. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
 Output ONLY { "worldFacts": [...] }.`,
     });
     const initialQuestsAndChaptersPrompt = ai.definePrompt({
-        name: 'initialQuestsAndChaptersPrompt', model: modelName, input: { schema: InitialQuestsAndChaptersInputSchema }, output: { schema: InitialQuestsAndChaptersOutputSchema }, config: modelConfig,
+        name: 'initialQuestsAndChaptersPrompt', model: modelName, input: { schema: InitialQuestsAndChaptersInputSchema }, output: { schema: InitialQuestsAndChaptersOutputSchema }, config: modelConfigLarge,
         tools: [lookupLoreTool],
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Plot: {{{seriesPlotSummary}}}).
 Generate 'chapters' & 'quests'.
@@ -468,7 +473,7 @@ Generate 'chapters' & 'quests'.
 Output ONLY JSON { "quests": [...], "chapters": [...] }. Ensure 'activeEffects' are structured correctly if included.`,
     });
     const initialTrackedNPCsPrompt = ai.definePrompt({
-        name: 'initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfig,
+        name: 'initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfigLarge,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'trackedNPCs':
 - NPCs IN SCENE: Must include. 'id', 'name', 'desc', 'relationshipStatus' (number). 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
@@ -478,33 +483,33 @@ Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured corr
     });
 
     const characterLorePrompt = ai.definePrompt({
-        name: 'characterLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        name: 'characterLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfigLore,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
-Generate 20-25 key lore entries for MAJOR CHARACTERS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Character".
+Generate 10-12 key lore entries for MAJOR CHARACTERS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Character".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Character"}, ...] }.`,
     });
     const locationLorePrompt = ai.definePrompt({
-        name: 'locationLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        name: 'locationLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfigLore,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
-Generate 20-25 key lore entries for MAJOR LOCATIONS/REGIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Location".
+Generate 10-12 key lore entries for MAJOR LOCATIONS/REGIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Location".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Location"}, ...] }.`,
     });
     const factionLorePrompt = ai.definePrompt({
-        name: 'factionLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        name: 'factionLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfigLore,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
-Generate 15-20 key lore entries for IMPORTANT FACTIONS/ORGANIZATIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Faction/Organization".
+Generate 8-10 key lore entries for IMPORTANT FACTIONS/ORGANIZATIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Faction/Organization".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Faction/Organization"}, ...] }.`,
     });
     const itemConceptLorePrompt = ai.definePrompt({
-        name: 'itemConceptLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        name: 'itemConceptLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfigLore,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
-Generate 15-20 key lore entries for SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Item/Concept" or "Technology".
+Generate 8-10 key lore entries for SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Item/Concept" or "Technology".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Item/Concept"}, ...] }.`,
     });
     const eventHistoryLorePrompt = ai.definePrompt({
-        name: 'eventHistoryLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        name: 'eventHistoryLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfigLore,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
-Generate 15-20 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
+Generate 8-10 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Event/History"}, ...] }.`,
     });
 
@@ -670,3 +675,6 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     return finalOutput;
   }
 );
+
+
+    
