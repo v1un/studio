@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview A Genkit flow for generating an initial game scenario based on a real-life series.
- * This includes the starting scene, character state (potentially based on user input for name/class, including languageUnderstanding),
+ * This includes the starting scene, character state (potentially based on user input for name/class, including separate languageReading and languageSpeaking skills),
  * initial inventory, quests (with objectives, categories, and pre-defined rewards including currency), world facts,
  * a set of pre-populated lorebook entries relevant to the series, a brief series style guide,
  * initial profiles for any NPCs introduced in the starting scene or known major characters from the series (including merchant data, and optional health/mana for combatants),
@@ -44,7 +44,7 @@ const SkillSchemaInternal = z.object({
 const CharacterCoreProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the main character, appropriate for the series. This might be an existing character or an original character fitting the series, based on user input if provided.'),
   class: z.string().describe('The class, role, or archetype of the character within the series (e.g., "Shinobi", "Alchemist", "Keyblade Wielder"), based on user input if provided.'),
-  description: z.string().describe('A brief backstory or description of the character, consistent with the series lore and their starting situation. If it is an Original Character (OC), explain their place or origin within the series. For characters who canonically start with language barriers, this description MUST reflect that initial inability to understand the local language.'),
+  description: z.string().describe('A brief backstory or description of the character, consistent with the series lore and their starting situation. If it is an Original Character (OC), explain their place or origin within the series. For characters who canonically start with language barriers, this description MUST reflect that initial inability to understand written and/or spoken language.'),
   health: z.number().describe('Current health points of the character. MUST BE a number.'),
   maxHealth: z.number().describe('Maximum health points of the character. MUST BE a number.'),
   mana: z.number().optional().describe('Current mana or energy points (e.g., Chakra, Reiatsu, Magic Points). Assign 0 if not applicable, or omit if truly not part of the character concept. MUST BE a number if provided.'),
@@ -59,7 +59,8 @@ const CharacterCoreProfileSchemaInternal = z.object({
   experiencePoints: z.number().describe('Initialize to 0. MUST BE a number.'),
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100. MUST BE a number, and > 0.'),
   currency: z.number().optional().describe("Character's starting currency (e.g., gold, credits). Initialize to a small amount like 50, or 0. MUST BE a number if provided."),
-  languageUnderstanding: z.number().optional().describe("Character's understanding of the current primary local language, on a scale of 0 (none) to 100 (fluent). Initialize appropriately for the series/character start (e.g., 0 for characters canonically starting with no understanding, 100 for most others unless specified otherwise by series lore). MUST BE a number if provided."),
+  languageReading: z.number().optional().describe("Character's understanding of the current primary local WRITTEN language, on a scale of 0 (none) to 100 (fluent). Initialize appropriately for the series/character start (e.g., 0 for characters canonically starting with no understanding of written script, 100 for most others unless specified otherwise by series lore). MUST BE a number if provided."),
+  languageSpeaking: z.number().optional().describe("Character's understanding of the current primary local SPOKEN language, on a scale of 0 (none) to 100 (fluent). Initialize appropriately for the series/character start (e.g., 0 for characters canonically starting with no understanding of spoken language, 100 for most others unless specified otherwise by series lore). MUST BE a number if provided."),
 });
 
 const CharacterProfileSchemaInternal = CharacterCoreProfileSchemaInternal.extend({
@@ -141,7 +142,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description, and basePrice (as a number). If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED. Can be empty. For consumable items, set `isConsumable: true` and provide `effectDescription`. For quest items, set `isQuestItem: true` and `relevantQuestId`.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion, including items with 'basePrice' (number) and currency (number)). These quests should be compelling and provide clear direction."),
-  worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation. If character.languageUnderstanding is 0, one fact should describe the effects (e.g., "Signs are unreadable, speech is incomprehensible").'),
+  worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation. If character.languageReading is 0, one fact should describe the effects (e.g., "Signs are unreadable, script is incomprehensible"). If character.languageSpeaking is 0, one fact should describe the effects (e.g., "Spoken language is incomprehensible").'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, for the '{{seriesName}}' universe, you SHOULD prioritize pre-populating profiles for 2-4 other major, well-known characters who are canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series. If an NPC is a merchant, set 'isMerchant' to true and populate 'merchantInventory' with items including 'price' (number) and 'basePrice' (number). For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts', an optional 'shortTermGoal', and optionally 'seriesContextNotes'. Dialogue history should be empty. Include 'health'/'maxHealth' (numbers) for combat-oriented NPCs if known from series context."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro for the series context."),
 });
@@ -161,7 +162,7 @@ const GenerateScenarioFromSeriesInputSchema = z.object({
 export type GenerateScenarioFromSeriesInput = z.infer<typeof GenerateScenarioFromSeriesInputSchema>;
 
 const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
-  sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character. If the character has languageUnderstanding: 0, the scene should reflect this (e.g., unreadable signs, indecipherable speech).'),
+  sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character. If the character has languageReading: 0, the scene should reflect this (e.g., unreadable signs). If languageSpeaking is 0, it should reflect incomprehensible speech.'),
   storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs (with merchant details and optional health/mana for combatants if applicable), starting skills/abilities for the character, and starting currency. Ensure all numeric fields like prices, stats, currency are numbers.'),
   initialLoreEntries: z.array(RawLoreEntrySchemaInternal).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
   seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
@@ -171,7 +172,7 @@ export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFr
 const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
 const CharacterAndSceneOutputSchema = z.object({
     sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
-    characterCore: CharacterCoreProfileSchemaInternal.describe("The character's core profile, EXCLUDING skills and abilities, which will be generated in a subsequent step. Crucially, initialize 'languageUnderstanding' based on series canon. For example, if the `seriesName` and `characterNameInput` (if provided) suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments), `languageUnderstanding` MUST be set to 0. The `description` field should also reflect this. Otherwise, set to 100 (fluent) or a series-appropriate value if known. If the AI omits `languageUnderstanding`, it will be defaulted to 100 later unless specific series logic dictates otherwise. Ensure all numeric fields like stats, currency are numbers."),
+    characterCore: CharacterCoreProfileSchemaInternal.describe("The character's core profile, EXCLUDING skills and abilities, which will be generated in a subsequent step. Crucially, initialize 'languageReading' and 'languageSpeaking' based on series canon. For example, if the `seriesName` and `characterNameInput` (if provided) suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments), `languageReading` AND `languageSpeaking` MUST be set to 0. The `description` field should also reflect this. Otherwise, set to 100 (fluent) for both or series-appropriate values if known. If the AI omits these, they will be defaulted to 100 in post-processing. Ensure all numeric fields like stats, currency are numbers."),
     currentLocation: StructuredStoryStateSchemaInternal.shape.currentLocation,
 });
 
@@ -187,7 +188,7 @@ const InitialCharacterSkillsOutputSchema = z.object({
 
 const MinimalContextForItemsFactsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterCoreProfileSchemaInternal.pick({ name: true, class: true, description: true, currency: true, languageUnderstanding: true }),
+    character: CharacterCoreProfileSchemaInternal.pick({ name: true, class: true, description: true, currency: true, languageReading: true, languageSpeaking: true }),
     sceneDescription: z.string(),
     currentLocation: z.string(),
 });
@@ -283,16 +284,16 @@ User's character preferences:
 
 You MUST generate an object with 'sceneDescription', 'characterCore', and 'currentLocation'.
 
-1.  'sceneDescription': A vivid initial scene. If the character's 'languageUnderstanding' (see below) is set to 0, the scene MUST reflect this (e.g., signs are gibberish, speech is incomprehensible sounds).
+1.  'sceneDescription': A vivid initial scene. If the character's 'languageReading' (see below) is set to 0, the scene MUST reflect this (e.g., signs are gibberish). If 'languageSpeaking' is 0, the scene MUST reflect incomprehensible speech.
 2.  'characterCore': CharacterCoreProfile object (EXCLUDING 'skillsAndAbilities').
     - If 'characterNameInput' is a known character, create their profile authentically.
     - For Original Characters (OCs) or unspecified characters, create a fitting protagonist.
-    - Profile MUST include: 'name', 'class', 'description'. The 'description' MUST reflect any initial language barrier if 'languageUnderstanding' is 0.
+    - Profile MUST include: 'name', 'class', 'description'. The 'description' MUST reflect any initial language barrier if 'languageReading' or 'languageSpeaking' is 0.
     - Health/MaxHealth (e.g., 100, MUST BE numbers). Mana/MaxMana (0 if not applicable, MUST BE numbers). Stats (5-15, MUST BE numbers). Level 1 (MUST BE a number), 0 XP (MUST BE a number), XPToNextLevel (e.g., 100, MUST BE a number and > 0). Currency (e.g., 25-50, MUST BE a number).
-    - **'languageUnderstanding' (MUST BE a number)**:
-        - If the \`seriesName\` and \`characterNameInput\` (if provided) strongly suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments, or a character known to be in a foreign land without prior knowledge of the local language), \`languageUnderstanding\` MUST be set to 0. The \`description\` field should also reflect this.
-        - For other characters/series, if the series canon implies an initial language barrier for the protagonist, set 'languageUnderstanding' to 0 or a low value appropriate to the canon.
-        - Otherwise, if not specified by canon for the starting situation, default 'languageUnderstanding' to 100 (fluent) or a series-appropriate value if known. If the AI omits 'languageUnderstanding', it will be defaulted to 100 in post-processing.
+    - **'languageReading' (MUST BE a number, 0-100)** and **'languageSpeaking' (MUST BE a number, 0-100)**:
+        - If the \`seriesName\` and \`characterNameInput\` (if provided) strongly suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments, or a character known to be in a foreign land without prior knowledge of the local language), \`languageReading\` AND \`languageSpeaking\` MUST be set to 0. The \`description\` field should also reflect this.
+        - For other characters/series, if the series canon implies an initial language barrier (reading or speaking) for the protagonist, set the relevant skill(s) to 0 or a low value appropriate to the canon.
+        - Otherwise, if not specified by canon for the starting situation, default both 'languageReading' and 'languageSpeaking' to 100 (fluent) or series-appropriate values if known. If the AI omits these, they will be defaulted to 100 in post-processing.
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
 
 Output ONLY the JSON object for CharacterAndSceneOutputSchema. Ensure all fields are correctly populated and typed.
@@ -318,7 +319,7 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialInventoryPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialInventoryOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialInventoryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -334,7 +335,7 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialMainGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialMainGearOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialMainGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -348,7 +349,7 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialSecondaryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialSecondaryGearOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialSecondaryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -362,7 +363,7 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialAccessoryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialAccessoryGearOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialAccessoryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
@@ -376,12 +377,13 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialWorldFactsPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialWorldFactsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialWorldFactsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY 'worldFacts': An array of 3-5 key world facts (strings).
-- If 'character.languageUnderstanding' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot understand the local spoken or written language, making interaction and reading impossible." or "Signs are unreadable and speech is incomprehensible."
+- If 'character.languageReading' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot read the local script, making signs and books incomprehensible."
+- If 'character.languageSpeaking' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot understand or speak the local language, making verbal communication impossible."
 Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialWorldFactsOutputSchema definition provided earlier in this prompt.`,
     });
@@ -390,13 +392,13 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialQuestsPrompt', model: modelName, input: { schema: InitialQuestsInputSchema }, output: { schema: InitialQuestsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialQuestsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 **Contextual Quest Generation Guidance:**
 -   Consider the character's immediate situation, background, and the canonical starting point of the series for this character, if known.
--   If 'character.languageUnderstanding' is very low (e.g., < 10, common for characters new to a world), initial quests MUST relate to this barrier or basic orientation, e.g., "Try to understand what's happening", "Find a way to communicate", "Seek immediate shelter or safety." Avoid quests requiring complex interaction or understanding tasks from unknown entities unless that is a core part of the canonical start.
+-   If 'character.languageReading' or 'character.languageSpeaking' is very low (e.g., < 10), initial quests MUST relate to this barrier or basic orientation, e.g., "Try to understand what's written on signs", "Find a way to communicate basic needs", "Seek immediate shelter or safety." Avoid quests requiring complex interaction or understanding tasks from unknown entities unless that is a core part of the canonical start.
 -   For other characters, quests should feel like natural next steps from the 'sceneDescription' and 'currentLocation', and align with the series' initial plot if applicable.
 
 Generate ONLY 'quests': 1-2 initial quests that provide clear direction and feel rewarding.
@@ -412,7 +414,7 @@ Ensure all field names and values in your JSON response strictly match the types
         name: 'initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialTrackedNPCsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
-Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) -
+Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) -
 Initial Scene: {{sceneDescription}}
 Player's Starting Location: {{currentLocation}}
 
@@ -476,7 +478,9 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     characterCore.mana = characterCore.mana ?? 0;
     characterCore.maxMana = characterCore.maxMana ?? 0;
     characterCore.currency = characterCore.currency ?? 0;
-    characterCore.languageUnderstanding = characterCore.languageUnderstanding ?? 100;
+    characterCore.languageReading = characterCore.languageReading ?? 100;
+    characterCore.languageSpeaking = characterCore.languageSpeaking ?? 100;
+
 
     // --- Step 2: Skills Generation (Sequential) ---
     stepStartTime = Date.now();
@@ -501,7 +505,14 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
 
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: { name: fullCharacterProfile.name, class: fullCharacterProfile.class, description: fullCharacterProfile.description, currency: fullCharacterProfile.currency, languageUnderstanding: fullCharacterProfile.languageUnderstanding },
+        character: { 
+            name: fullCharacterProfile.name, 
+            class: fullCharacterProfile.class, 
+            description: fullCharacterProfile.description, 
+            currency: fullCharacterProfile.currency, 
+            languageReading: fullCharacterProfile.languageReading,
+            languageSpeaking: fullCharacterProfile.languageSpeaking,
+        },
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
     };
@@ -601,9 +612,15 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       char.experienceToNextLevel = char.experienceToNextLevel && char.experienceToNextLevel > 0 ? char.experienceToNextLevel : 100;
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
-      char.languageUnderstanding = char.languageUnderstanding ?? 100;
-      if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
-      if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
+      
+      char.languageReading = char.languageReading ?? 100;
+      if (char.languageReading < 0) char.languageReading = 0;
+      if (char.languageReading > 100) char.languageReading = 100;
+
+      char.languageSpeaking = char.languageSpeaking ?? 100;
+      if (char.languageSpeaking < 0) char.languageSpeaking = 0;
+      if (char.languageSpeaking > 100) char.languageSpeaking = 100;
+      
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
       char.skillsAndAbilities.forEach((skill, index) => {
           if (!skill.id) skill.id = `skill_generated_series_${Date.now()}_${index}`;
@@ -733,4 +750,3 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     return finalOutput;
   }
 );
-

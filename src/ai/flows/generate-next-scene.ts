@@ -19,7 +19,7 @@ import type {
     Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType,
     NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment,
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
-    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent, EquipmentSlot
+    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent, EquipmentSlot, LanguageSkillChangeEvent
 } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
@@ -67,7 +67,8 @@ const CharacterProfileSchemaInternal = z.object({
   experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level. This field is required.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of the character's current skills and abilities. Each includes an id, name, description, and type."),
   currency: z.number().optional().describe("Character's current currency (e.g., gold). Default to 0 if not set."),
-  languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). If not present, assume 100 (fluent)."),
+  languageReading: z.number().optional().describe("Character's understanding of the local written language (0-100). If not present, assume 100 (fluent)."),
+  languageSpeaking: z.number().optional().describe("Character's understanding of the local spoken language (0-100). If not present, assume 100 (fluent)."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -141,12 +142,12 @@ const NPCProfileSchemaInternal = z.object({
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, and languageUnderstanding (0-100).'),
+  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, languageReading (0-100), and languageSpeaking (0-100).'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice (as a number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency (number) and items with 'basePrice' (number)), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
-  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to worldFacts if the character would perceive them. A worldFact like "Language barrier makes communication difficult" should be present if languageUnderstanding is low, and removed if it improves significantly.'),
+  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to worldFacts if the character would perceive them. Facts like "Language barrier makes communication difficult", "Cannot read local script", or "Cannot understand spoken language" should be present if relevant language skills are low, and removed if they improve significantly.'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, set 'isMerchant', 'merchantInventory' (with items having 'basePrice' and 'price' as numbers), 'buysItemTypes', 'sellsItemTypes'. Include NPC 'health'/'maxHealth'/'mana'/'maxMana' as numbers if applicable (e.g. for combatants)."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments so far. This summary will be updated each turn."),
 });
@@ -172,7 +173,8 @@ const ManaChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal(
 const XPChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('xpChange'), amount: z.number() });
 const LevelUpEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('levelUp'), newLevel: z.number(), rewardSuggestion: z.string().optional().describe("e.g., 'suggests increasing strength' or 'new skill: Parry'") });
 const CurrencyChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('currencyChange'), amount: z.number() });
-const LanguageImprovementEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('languageImprovement'), amount: z.number().min(1).max(20).describe("Small, reasonable amount of improvement (1-20).") });
+const LanguageSkillChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('languageSkillChange'), skillTarget: z.enum(['reading', 'speaking']).describe("The language skill being improved."), amount: z.number().min(1).max(20).describe("Small, reasonable amount of improvement (1-20).") });
+
 
 const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('itemFound'),
@@ -236,7 +238,7 @@ const SkillLearnedEventSchema = DescribedEventBaseSchema.extend({
 });
 
 const DescribedEventSchema = z.discriminatedUnion("type", [
-  HealthChangeEventSchema, ManaChangeEventSchema, XPChangeEventSchema, LevelUpEventSchema, CurrencyChangeEventSchema, LanguageImprovementEventSchema,
+  HealthChangeEventSchema, ManaChangeEventSchema, XPChangeEventSchema, LevelUpEventSchema, CurrencyChangeEventSchema, LanguageSkillChangeEventSchema,
   ItemFoundEventSchema, ItemLostEventSchema, ItemUsedEventSchema, ItemEquippedEventSchema, ItemUnequippedEventSchema,
   QuestAcceptedEventSchema, QuestObjectiveUpdateEventSchema, QuestCompletedEventSchema,
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
@@ -408,7 +410,7 @@ Current Player Character:
 - Name: {{storyState.character.name}}, Class: {{storyState.character.class}} (Level: {{storyState.character.level}})
 - Description: {{storyState.character.description}}
 - Health: {{storyState.character.health}}/{{storyState.character.maxHealth}}, Mana: {{storyState.character.mana}}/{{storyState.character.maxMana}}
-- Language Understanding: {{storyState.character.languageUnderstanding}}/100
+- Language Reading: {{storyState.character.languageReading}}/100, Language Speaking: {{storyState.character.languageSpeaking}}/100
 - Currency: {{storyState.character.currency}}, XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 - Skills & Abilities:
 {{{formattedSkillsString}}}
@@ -442,22 +444,24 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0). 'objectives' MUST have 'isCompleted: false'.
     - For 'newNPCIntroduced' events, 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples:
-    - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageImprovement\\", \\"amount\\": 5, \\"reason\\": \\"studied local script\\" \\} (amount is a number, 1-20), \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
+    - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageSkillChange\\", \\"skillTarget\\": \\"speaking\\", \\"amount\\": 5, \\"reason\\": \\"practiced conversation\\" \\} (amount is a number, 1-20), \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
     - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
     - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
     - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\", \\"initialRelationship\\": 0, \\"initialHealth\\": 75, \\"isMerchant\\": false \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
     - Skills: \\{\\"type\\": \\"skillLearned\\", \\"skillName\\": \\"Fireball\\", \\"skillDescription\\": \\"Hurls a ball of fire.\\", \\"skillType\\": \\"Magic\\" \\}
-    Be specific. If an item is found, describe it and its properties. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts, a number). If a level up occurs, indicate the new level (a number). If an NPC's state changes (e.g. becomes hostile, flees), describe it.
+    Be specific. If an item is found, describe it and its properties. If a quest updates, detail which one and what changed. If a language skill (reading or speaking) improves, note by how much (1-20 pts, a number) and which skill. If a level up occurs, indicate the new level (a number). If an NPC's state changes (e.g. becomes hostile, flees), describe it.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action.
 4.  **New Lore (newLoreProposals):** If relevant new lore for "{{seriesName}}" is revealed, propose entries. Use 'lookupLoreTool' if more info on existing lore is needed for the narrative.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** A VERY brief (1-2 sentences) summary of ONLY what happened in THIS scene/turn.
 
-**Language Understanding Mechanic:**
-- Player's 'languageUnderstanding' (0-100) affects comprehension.
-- If low (0-40), GM narration in 'generatedMessages' MUST reflect this (e.g., indecipherable speech/text). Actual foreign dialogue can be in NPC segments for player OOC knowledge.
-- If player actions lead to language improvement (e.g., "I study the signs", "ask for translation"), describe this as a 'languageImprovement' event with a small 'amount' (e.g., 5-15, a number).
-- If language understanding is very low, the AI can also describe events such as 'currencyChange' by a certain amount (a number) without the player knowing exactly how much until their understanding improves or they find a way to verify.
+**Language Skills Mechanic:**
+- Player's 'languageReading' (0-100) affects comprehension of written text.
+- Player's 'languageSpeaking' (0-100) affects comprehension of spoken language and ability to speak it.
+- If 'languageReading' is low (0-40), GM narration in 'generatedMessages' MUST reflect this (e.g., unreadable signs/books).
+- If 'languageSpeaking' is low (0-40), GM narration in 'generatedMessages' MUST reflect this (e.g., indecipherable speech, NPC confusion). Actual foreign dialogue can be in NPC segments for player OOC knowledge.
+- If player actions lead to language improvement (e.g., "I study the signs", "ask for translation", "practice speaking"), describe this as a 'languageSkillChange' event with a 'skillTarget' ('reading' or 'speaking') and a small 'amount' (e.g., 5-15, a number).
+- If language skills are very low, the AI can also describe events such as 'currencyChange' by a certain amount (a number) without the player knowing exactly how much until their understanding improves or they find a way to verify.
 `,
     });
 
@@ -576,25 +580,34 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                         localCorrectionWarnings.push(`Event: Character currency changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
                     }
                     break;
-                case 'languageImprovement':
-                    if (typeof event.amount === 'number') {
-                        const currentUnderstanding = draftState.character.languageUnderstanding ?? originalChar.languageUnderstanding ?? 0;
-                        draftState.character.languageUnderstanding = Math.max(0, Math.min(100, currentUnderstanding + event.amount));
-                        localCorrectionWarnings.push(`Event: Language understanding improved by ${event.amount} to ${draftState.character.languageUnderstanding}. Reason: ${event.reason || 'unspecified'}`);
-                         if (draftState.character.languageUnderstanding >= 40) {
-                            const factsBeforeFilter = [...(draftState.worldFacts || [])];
-                            const languageBarrierFactExists = factsBeforeFilter.some(fact =>
-                                fact.toLowerCase().includes("language barrier") ||
-                                fact.toLowerCase().includes("cannot understand") ||
-                                fact.toLowerCase().includes("incomprehensible")
-                            );
-                            if (languageBarrierFactExists) {
-                                draftState.worldFacts = factsBeforeFilter.filter(fact =>
-                                    !fact.toLowerCase().includes("language barrier") &&
-                                    !fact.toLowerCase().includes("cannot understand") &&
-                                    !fact.toLowerCase().includes("incomprehensible")
-                                );
-                                localCorrectionWarnings.push("Removed 'language barrier' world fact due to improved understanding.");
+                case 'languageSkillChange':
+                    {
+                        const typedEvent = event as LanguageSkillChangeEvent;
+                        if (typeof typedEvent.amount === 'number') {
+                            if (typedEvent.skillTarget === 'reading') {
+                                const currentUnderstanding = draftState.character.languageReading ?? originalChar.languageReading ?? 0;
+                                draftState.character.languageReading = Math.max(0, Math.min(100, currentUnderstanding + typedEvent.amount));
+                                localCorrectionWarnings.push(`Event: Language Reading improved by ${typedEvent.amount} to ${draftState.character.languageReading}. Reason: ${typedEvent.reason || 'unspecified'}`);
+                                if (draftState.character.languageReading >= 40) {
+                                    const factsBeforeFilter = [...(draftState.worldFacts || [])];
+                                    const readingBarrierFactPattern = /cannot read|unreadable script|signs are incomprehensible/i;
+                                    if (factsBeforeFilter.some(fact => readingBarrierFactPattern.test(fact))) {
+                                        draftState.worldFacts = factsBeforeFilter.filter(fact => !readingBarrierFactPattern.test(fact));
+                                        localCorrectionWarnings.push("Removed 'reading barrier' world fact due to improved reading skill.");
+                                    }
+                                }
+                            } else if (typedEvent.skillTarget === 'speaking') {
+                                const currentUnderstanding = draftState.character.languageSpeaking ?? originalChar.languageSpeaking ?? 0;
+                                draftState.character.languageSpeaking = Math.max(0, Math.min(100, currentUnderstanding + typedEvent.amount));
+                                localCorrectionWarnings.push(`Event: Language Speaking improved by ${typedEvent.amount} to ${draftState.character.languageSpeaking}. Reason: ${typedEvent.reason || 'unspecified'}`);
+                                 if (draftState.character.languageSpeaking >= 40) {
+                                    const factsBeforeFilter = [...(draftState.worldFacts || [])];
+                                    const speakingBarrierFactPattern = /cannot understand spoken|speech is incomprehensible|communication difficult/i;
+                                     if (factsBeforeFilter.some(fact => speakingBarrierFactPattern.test(fact))) {
+                                        draftState.worldFacts = factsBeforeFilter.filter(fact => !speakingBarrierFactPattern.test(fact));
+                                        localCorrectionWarnings.push("Removed 'speaking/communication barrier' world fact due to improved speaking skill.");
+                                    }
+                                }
                             }
                         }
                     }
@@ -1066,9 +1079,14 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
         ensureOptionalNumber('currency', 0);
         if (draftState.character.currency! < 0) draftState.character.currency = 0;
 
-        ensureOptionalNumber('languageUnderstanding', 100);
-        if (draftState.character.languageUnderstanding! < 0) draftState.character.languageUnderstanding = 0;
-        if (draftState.character.languageUnderstanding! > 100) draftState.character.languageUnderstanding = 100;
+        ensureOptionalNumber('languageReading', 100);
+        if (draftState.character.languageReading! < 0) draftState.character.languageReading = 0;
+        if (draftState.character.languageReading! > 100) draftState.character.languageReading = 100;
+
+        ensureOptionalNumber('languageSpeaking', 100);
+        if (draftState.character.languageSpeaking! < 0) draftState.character.languageSpeaking = 0;
+        if (draftState.character.languageSpeaking! > 100) draftState.character.languageSpeaking = 100;
+
 
         if (!Array.isArray(draftState.character.skillsAndAbilities)) {
             draftState.character.skillsAndAbilities = Array.isArray(originalChar.skillsAndAbilities) ? originalChar.skillsAndAbilities : [];
@@ -1291,4 +1309,3 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     return finalOutput;
   }
 );
-

@@ -38,7 +38,8 @@ export interface CharacterProfile {
   experienceToNextLevel: number;
   skillsAndAbilities: Skill[];
   currency?: number; // Player's currency
-  languageUnderstanding?: number; // Scale of 0 (none) to 100 (fluent) for understanding the primary local language.
+  languageReading?: number; // Scale of 0 (none) to 100 (fluent) for understanding written language.
+  languageSpeaking?: number; // Scale of 0 (none) to 100 (fluent) for understanding spoken language.
 }
 
 export type EquipmentSlot =
@@ -196,7 +197,7 @@ export type EventType =
   | 'xpChange'
   | 'levelUp' // Generic level up, specific rewards handled by TypeScript or subsequent focused AI call
   | 'currencyChange'
-  | 'languageImprovement'
+  | 'languageSkillChange' // Changed from languageImprovement
   | 'itemFound'
   | 'itemLost'
   | 'itemUsed'
@@ -224,7 +225,8 @@ export interface ManaChangeEvent extends DescribedEventBase { type: 'manaChange'
 export interface XPChangeEvent extends DescribedEventBase { type: 'xpChange'; amount: number; }
 export interface LevelUpEvent extends DescribedEventBase { type: 'levelUp'; newLevel: number; rewardSuggestion?: string; } // e.g., "suggests increasing strength"
 export interface CurrencyChangeEvent extends DescribedEventBase { type: 'currencyChange'; amount: number; }
-export interface LanguageImprovementEvent extends DescribedEventBase { type: 'languageImprovement'; amount: number; }
+export interface LanguageSkillChangeEvent extends DescribedEventBase { type: 'languageSkillChange'; skillTarget: 'reading' | 'speaking'; amount: number; }
+
 
 export interface ItemFoundEvent extends DescribedEventBase { 
   type: 'itemFound'; 
@@ -283,7 +285,7 @@ export interface SkillLearnedEvent extends DescribedEventBase {
 
 
 export type DescribedEvent = 
-  | HealthChangeEvent | ManaChangeEvent | XPChangeEvent | LevelUpEvent | CurrencyChangeEvent | LanguageImprovementEvent
+  | HealthChangeEvent | ManaChangeEvent | XPChangeEvent | LevelUpEvent | CurrencyChangeEvent | LanguageSkillChangeEvent
   | ItemFoundEvent | ItemLostEvent | ItemUsedEvent | ItemEquippedEvent | ItemUnequippedEvent
   | QuestAcceptedEvent | QuestObjectiveUpdateEvent | QuestCompletedEvent // | QuestFailedEvent
   | NPCRelationshipChangeEvent | NPCStateChangeEvent | NewNPCIntroducedEvent
@@ -330,5 +332,3 @@ export interface GenerateStoryStartOutput {
   sceneDescription: string;
   storyState: StructuredStoryState;
 }
-
-    

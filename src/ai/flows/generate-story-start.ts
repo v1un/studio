@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, initial quests (with optional objectives, categories, and pre-defined rewards), initial tracked NPCs, starting skills/abilities, and languageUnderstanding.
+ * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, initial quests (with optional objectives, categories, and pre-defined rewards), initial tracked NPCs, starting skills/abilities, and separate languageReading/languageSpeaking skills.
  * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts. Supports model selection.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
@@ -53,7 +53,8 @@ const CharacterProfileSchemaInternal = z.object({
   experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100. MUST BE a number.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 1-2 starting skills or abilities appropriate for the character's class. Each skill requires an id, name, description, and type."),
   currency: z.number().optional().describe("Character's starting currency (e.g., gold). Initialize to a small amount like 50, or 0. MUST BE a number if provided."),
-  languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and can't understand anyone'), then set to a low value like 0-10. MUST BE a number if provided."),
+  languageReading: z.number().optional().describe("Character's understanding of written local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and cannot read signs'), then set to a low value like 0-10. MUST BE a number if provided."),
+  languageSpeaking: z.number().optional().describe("Character's understanding of spoken local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and can't understand anyone'), then set to a low value like 0-10. MUST BE a number if provided."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -122,12 +123,12 @@ const NPCProfileSchemaInternal = z.object({
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, and languageUnderstanding (0-100). Ensure all numeric fields are numbers.'),
+  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, languageReading (0-100), and languageSpeaking (0-100). Ensure all numeric fields are numbers.'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
   inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description, and basePrice (MUST BE a number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an \'equipSlot\' (e.g. \'weapon\', \'head\', \'body\'). If it\'s not an equippable type of item (e.g., a potion, a key, a generic diary/book), the \'equipSlot\' field MUST BE OMITTED ENTIRELY.** Consider adding `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId`.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion, including items with basePrice (MUST BE a number) and currency (MUST BE a number)).'),
-  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts. If languageUnderstanding is low, a fact should describe this.'),
+  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts. If languageReading or languageSpeaking is low, a fact should describe the specific barrier.'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene. If an NPC is a merchant, set 'isMerchant' and populate 'merchantInventory' with priced items (basePrice and price MUST BE numbers). Ensure all numeric fields are numbers."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro."),
 });
@@ -141,7 +142,7 @@ const GenerateStoryStartInputSchemaInternal = z.object({
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details (with languageUnderstanding), stats, level, XP, currency (all as numbers), empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards including currency (number) and items with basePrice (number)), starting skills/abilities, and profiles for any NPCs introduced (including merchant details if applicable, with item prices as numbers).'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details (with languageReading and languageSpeaking skills), stats, level, XP, currency (all as numbers), empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards including currency (number) and items with basePrice (number)), starting skills/abilities, and profiles for any NPCs introduced (including merchant details if applicable, with item prices as numbers).'),
 });
 
 export async function generateStoryStart(input: GenerateStoryStartInputType): Promise<GenerateStoryStartOutputType> {
@@ -182,13 +183,14 @@ Based on the theme and user suggestions, generate the following:
         -   'experiencePoints': Initialize to 0 (MUST BE a number).
         -   'experienceToNextLevel': Initialize to a starting value, e.g., 100 (MUST BE a number, and > 0).
         -   'currency': Initialize to a small amount, e.g., 20-50 (MUST BE a number, can be 0).
-        -   'languageUnderstanding': (MUST BE a number, 0-100). Default to 100 (fluent) unless the theme "{{prompt}}" strongly implies a language barrier (e.g., "lost in a foreign land and can't understand anyone"), in which case set to an appropriate low value like 0-10.
+        -   'languageReading' (MUST BE a number, 0-100): Default to 100 (fluent) unless the theme "{{prompt}}" strongly implies a reading barrier (e.g., "lost in a foreign land and cannot read signs"), in which case set to an appropriate low value like 0-10.
+        -   'languageSpeaking' (MUST BE a number, 0-100): Default to 100 (fluent) unless the theme "{{prompt}}" strongly implies a speaking/understanding barrier (e.g., "lost in a foreign land and can't understand anyone"), in which case set to an appropriate low value like 0-10.
         -   'skillsAndAbilities': An array of 1-2 starting skills (each with a unique 'id', 'name', 'description', and 'type'). Can be an empty array if no starting skills are appropriate.
     b.  'currentLocation': A fitting starting location string.
     c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', and 'basePrice' (MUST BE a number, can be 0). 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear (like potions, keys, generic books). For equippable gear, 'equipSlot' must be a valid slot name. 'isConsumable', 'effectDescription', 'isQuestItem', 'relevantQuestId' are optional but useful.
     d.  'equippedItems': All 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') MUST be present. Each slot should contain 'null' if empty. If an item object is provided for a slot, it MUST have a unique 'id', 'name', 'description', its correct 'equipSlot' value, and 'basePrice' (MUST BE a number).
     e.  'quests': An array of initial quests. Can be an empty array \`[]\`. If a quest is included, it MUST have a unique 'id', 'description', and 'status: "active"'. 'category' and 'objectives' (with 'isCompleted: false') are optional. **For any included quest, it is highly recommended to define a 'rewards' block.** If 'rewards' are included, they MUST specify at least some 'experiencePoints' (number) or 'currency' (number). 'items' are optional; if included, each item MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'equipSlot' (OMIT 'equipSlot' for non-equippable rewards). For example, rewards could be: \`{"experiencePoints": 50, "currency": 10, "items": [{"id": "item_starting_potion_01", "name": "Minor Healing Potion", "description": "A simple potion to mend small wounds.", "basePrice": 5, "isConsumable": true, "effectDescription": "Heals 10 HP"}]}\`.
-    f.  'worldFacts': An array of 1-2 key facts about the world or starting situation. If 'languageUnderstanding' for the character is low (e.g., 0-10), one fact MUST state something like: "The local language is currently incomprehensible to {{character.name}}."
+    f.  'worldFacts': An array of 1-2 key facts about the world or starting situation. If 'languageReading' for the character is low (e.g., 0-10), one fact MUST state something like: "The local script is currently unreadable to {{character.name}}." If 'languageSpeaking' is low, one fact MUST state: "Spoken language in this area is currently incomprehensible to {{character.name}}."
     g.  'trackedNPCs': An array of NPC profiles. Initialize as an empty array \`[]\` unless NPCs are directly part of the initial scene. If an NPC is included, they MUST have a unique 'id', 'name', 'description', and 'relationshipStatus' (MUST BE a number, e.g., 0 for neutral). Other fields like 'classOrRole', locations, turn IDs ("initial_turn_0"), 'knownFacts' (empty for new NPCs), 'dialogueHistory' (empty), 'isMerchant' are optional but useful. If 'isMerchant' is true, 'merchantInventory' (array of items, each with unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and merchant 'price' (MUST BE a number). OMIT 'equipSlot' for non-equippable items in inventory), 'buysItemTypes', and 'sellsItemTypes' can be populated.
     h.  'storySummary': Initialize as an empty string "" or a very brief (1-sentence) thematic intro.
 
@@ -217,9 +219,13 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
       
-      char.languageUnderstanding = char.languageUnderstanding ?? 100;
-      if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
-      if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
+      char.languageReading = char.languageReading ?? 100;
+      if (char.languageReading < 0) char.languageReading = 0;
+      if (char.languageReading > 100) char.languageReading = 100;
+
+      char.languageSpeaking = char.languageSpeaking ?? 100;
+      if (char.languageSpeaking < 0) char.languageSpeaking = 0;
+      if (char.languageSpeaking > 100) char.languageSpeaking = 100;
 
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
       char.skillsAndAbilities.forEach((skill, index) => {
@@ -366,3 +372,4 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
     return output!;
   }
 );
+

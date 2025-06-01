@@ -14,7 +14,7 @@ import {
     PackageIcon, HeartIcon, ZapIcon, 
     DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon, 
     GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
-    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon
+    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon, BookOpenIcon, MessageSquareIcon
 } from "lucide-react";
 
 interface CharacterSheetProps {
@@ -55,14 +55,15 @@ function getSlotDisplayName(slot: EquipmentSlot): string {
   return slot.charAt(0).toUpperCase() + slot.slice(1);
 }
 
-function getLanguageProficiencyLabel(level?: number): string {
-    if (level === undefined || level === null) return "Unknown";
-    if (level <= 0) return "None (0/100)";
-    if (level <= 10) return `Rudimentary (${level}/100)`;
-    if (level <= 40) return `Basic (${level}/100)`;
-    if (level <= 70) return `Conversational (${level}/100)`;
-    if (level <= 99) return `Good (${level}/100)`;
-    return `Fluent (${level}/100)`;
+function getLanguageProficiencyLabel(level?: number, type?: 'Reading' | 'Speaking'): string {
+    const skillType = type ? `${type} ` : "";
+    if (level === undefined || level === null) return `${skillType}Unknown`;
+    if (level <= 0) return `${skillType}None (0/100)`;
+    if (level <= 10) return `${skillType}Rudimentary (${level}/100)`;
+    if (level <= 40) return `${skillType}Basic (${level}/100)`;
+    if (level <= 70) return `${skillType}Conversational (${level}/100)`;
+    if (level <= 99) return `${skillType}Good (${level}/100)`;
+    return `${skillType}Fluent (${level}/100)`;
 }
 
 export default function CharacterSheet({ character, storyState }: CharacterSheetProps) {
@@ -142,10 +143,16 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <StatDisplay icon={CharismaIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
           </div>
         </div>
-
+        
         <Separator />
         <div>
-            <StatDisplay icon={LanguagesIcon} label="Language Understanding" value={getLanguageProficiencyLabel(character.languageUnderstanding)} colorClass="text-indigo-500" />
+          <h4 className="font-semibold mb-2 text-md flex items-center">
+            <LanguagesIcon className="w-4 h-4 mr-1.5 text-indigo-500" /> Language Skills
+          </h4>
+          <div className="space-y-1">
+            <StatDisplay icon={BookOpenIcon} label="Reading" value={getLanguageProficiencyLabel(character.languageReading)} colorClass="text-indigo-400" />
+            <StatDisplay icon={MessageSquareIcon} label="Speaking" value={getLanguageProficiencyLabel(character.languageSpeaking)} colorClass="text-indigo-400" />
+          </div>
         </div>
         
         <Separator />

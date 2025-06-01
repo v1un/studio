@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserCircleIcon, CoinsIcon, SparklesIcon, LanguagesIcon } from "lucide-react";
+import { HeartIcon, ZapIcon, AwardIcon, GaugeIcon, MapPinIcon, SwordsIcon, UserCircleIcon, CoinsIcon, SparklesIcon, LanguagesIcon, BookOpenIcon, MessageSquareIcon } from "lucide-react";
 
 interface MinimalCharacterStatusProps {
   character: CharacterProfile;
@@ -14,14 +14,15 @@ interface MinimalCharacterStatusProps {
   isPremiumSession?: boolean;
 }
 
-function getShortLanguageProficiencyLabel(level?: number): string {
-    if (level === undefined || level === null) return "Lang: N/A";
-    if (level <= 0) return "Lang: None";
-    if (level <= 10) return `Lang: Rudimentary`;
-    if (level <= 40) return `Lang: Basic`;
-    if (level <= 70) return `Lang: Conversational`;
-    if (level <= 99) return `Lang: Good`;
-    return `Lang: Fluent`;
+function getShortLanguageProficiencyLabel(level?: number, type?: 'Read' | 'Speak'): string {
+    const prefix = type ? `${type}: ` : "Lang: ";
+    if (level === undefined || level === null) return `${prefix}N/A`;
+    if (level <= 0) return `${prefix}None`;
+    if (level <= 10) return `${prefix}Basic`; // Simplified for minimal display
+    if (level <= 40) return `${prefix}Limited`;
+    if (level <= 70) return `${prefix}Okay`;
+    if (level <= 99) return `${prefix}Good`;
+    return `${prefix}Fluent`;
 }
 
 
@@ -55,11 +56,17 @@ export default function MinimalCharacterStatus({ character, storyState, isPremiu
                 Lvl {character.level}
                 </Badge>
             </div>
-            <div className="flex items-center gap-2">
-                {character.languageUnderstanding !== undefined && (
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+                {character.languageReading !== undefined && (
                     <Badge variant="secondary" className="text-xs">
-                        <LanguagesIcon className="w-3 h-3 mr-1 text-indigo-500 shrink-0" />
-                        {getShortLanguageProficiencyLabel(character.languageUnderstanding)}
+                        <BookOpenIcon className="w-3 h-3 mr-1 text-indigo-500 shrink-0" />
+                        {getShortLanguageProficiencyLabel(character.languageReading, 'Read')}
+                    </Badge>
+                )}
+                 {character.languageSpeaking !== undefined && (
+                    <Badge variant="secondary" className="text-xs">
+                        <MessageSquareIcon className="w-3 h-3 mr-1 text-teal-500 shrink-0" />
+                        {getShortLanguageProficiencyLabel(character.languageSpeaking, 'Speak')}
                     </Badge>
                 )}
                 {character.currency !== undefined && (
