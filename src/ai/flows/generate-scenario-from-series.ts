@@ -655,31 +655,31 @@ Generate ONLY 'trackedNPCs':
 Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured correctly. Ensure all IDs are unique.`,
     });
 
-    const characterLorePrompt = ai.definePrompt({
+    const narrative_characterLorePrompt = ai.definePrompt({
         name: 'narrative_characterLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR CHARACTERS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Character".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Character"}, ...] }.`,
     });
-    const locationLorePrompt = ai.definePrompt({
+    const narrative_locationLorePrompt = ai.definePrompt({
         name: 'narrative_locationLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR LOCATIONS/REGIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Location".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Location"}, ...] }.`,
     });
-    const factionLorePrompt = ai.definePrompt({
+    const narrative_factionLorePrompt = ai.definePrompt({
         name: 'narrative_factionLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for IMPORTANT FACTIONS/ORGANIZATIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Faction/Organization".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Faction/Organization"}, ...] }.`,
     });
-    const itemConceptLorePrompt = ai.definePrompt({
+    const narrative_itemConceptLorePrompt = ai.definePrompt({
         name: 'narrative_itemConceptLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Item/Concept" or "Technology".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Item/Concept"}, ...] }.`,
     });
-    const eventHistoryLorePrompt = ai.definePrompt({
+    const narrative_eventHistoryLorePrompt = ai.definePrompt({
         name: 'narrative_eventHistoryLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
@@ -724,12 +724,12 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
             eventLore
         ] = await Promise.all([
             narrative_initialQuestsAndChaptersPrompt(questsChaptersInput).then(r => r.output),
-            initialTrackedNPCsPrompt(npcsInput).then(r => r.output),
-            characterLorePrompt(loreBaseInput).then(r => r.output),
-            locationLorePrompt(loreBaseInput).then(r => r.output),
-            factionLorePrompt(loreBaseInput).then(r => r.output),
-            itemConceptLorePrompt(loreBaseInput).then(r => r.output),
-            eventHistoryLorePrompt(loreBaseInput).then(r => r.output),
+            narrative_initialTrackedNPCsPrompt(npcsInput).then(r => r.output),
+            narrative_characterLorePrompt(loreBaseInput).then(r => r.output),
+            narrative_locationLorePrompt(loreBaseInput).then(r => r.output),
+            narrative_factionLorePrompt(loreBaseInput).then(r => r.output),
+            narrative_itemConceptLorePrompt(loreBaseInput).then(r => r.output),
+            narrative_eventHistoryLorePrompt(loreBaseInput).then(r => r.output),
         ]);
     } catch (e: any) {
         console.error(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: Parallel AI calls FAILED. Error: ${e.message}`);
