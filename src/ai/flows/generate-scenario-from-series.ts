@@ -45,7 +45,7 @@ const Foundation_ItemSchemaInternal = z.object({
   effectDescription: z.string().optional(),
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
-  basePrice: z.number().optional(),
+  basePrice: z.number().optional().describe("MUST BE a number if provided."),
   rarity: Foundation_ItemRarityEnumInternal.optional(),
   activeEffects: z.array(Foundation_ActiveEffectSchemaInternal).optional(),
 });
@@ -193,10 +193,7 @@ const foundationFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFoundationFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = mainInput.usePremiumAI 
-        ? { maxOutputTokens: 32000 } 
-        : { maxOutputTokens: 8000 };
-
+    const modelConfig = { maxOutputTokens: mainInput.usePremiumAI ? 32000 : 8000 }; // Use generous token limit
 
     let step1StartTime = Date.now();
     console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
@@ -208,12 +205,14 @@ You are a master storyteller for "{{seriesName}}".
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
 Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 'characterCore': Authentically create profile. Include name, class, description. Health/MaxHealth (numbers). Mana/MaxMana (numbers, 0 if not applicable). Stats (5-15, numbers). Level 1, 0 XP, XPToNextLevel (numbers, >0). Currency (number).
-'languageReading' & 'languageSpeaking' (numbers, 0-100): Set to 0 for canonical language barriers, else 100 or series-appropriate. Description MUST reflect language barriers if skills are 0.
+'languageReading' & 'languageSpeaking' (numbers, 0-100):
+  - IF seriesName is "Re:Zero" or contains "Re:Zero - Starting Life in Another World" or "Re:Zero", set 'languageSpeaking' to 100 and 'languageReading' to 0. The character description MUST clearly state that the character can understand spoken language but is illiterate.
+  - ELSE, set to 0 for other known canonical language barriers, or 100 for both if no specific barrier applies, or make a series-appropriate choice. The character description MUST reflect any language barriers.
 'currentLocation': Specific series starting location.
 Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchema and all its REQUIRED fields.`,
     });
     const foundation_styleGuidePrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig, // Assuming style guide is short
+        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: { maxOutputTokens: 500 }, // Short output
         prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string (""). Output ONLY the summary string or empty string.`,
     });
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
@@ -277,7 +276,7 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
     }
     console.log(`[${new Date().toISOString()}] generateScenarioFoundationFlow: STEP 2 - foundation_initialCharacterSkillsPrompt completed in ${Date.now() - step2StartTime}ms.`);
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
-    const fullCharacterProfile: z.infer<typeof Foundation_CharacterProfileSchemaInternal> = {
+    const fullCharacterProfile: CharacterProfileType = { 
         ...characterCore,
         skillsAndAbilities: characterSkills,
     };
@@ -323,8 +322,12 @@ Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure all REQUIRED fie
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
         name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialWorldFactsOutputSchema'. The 'worldFacts' array is REQUIRED (can be empty).
-For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'worldFacts': 3-5 key facts. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
+For "{{seriesName}}" (Char: {{character.name}} - Desc: {{character.description}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+Generate ONLY 'worldFacts': 3-5 key facts.
+If the character description or language skills (languageReading: {{character.languageReading}}, languageSpeaking: {{character.languageSpeaking}}) indicate illiteracy, one fact MUST state "Character {{character.name}} cannot read local script."
+If the character description or language skills indicate inability to speak/understand the local language (and they are not also illiterate), one fact MUST state "Character {{character.name}} cannot understand/speak the local language."
+If both reading and speaking are 0 or described as such, facts reflecting both barriers are appropriate.
+If both reading and speaking are 100 and the description implies no barriers, no specific language barrier facts are needed unless a canonical plot point dictates it.
 Output ONLY { "worldFacts": [...] }.`,
     });
 
@@ -392,7 +395,7 @@ Output ONLY { "worldFacts": [...] }.`,
         if (item.basePrice < 0) item.basePrice = 0;
         if (item.rarity === undefined) delete item.rarity;
         item.activeEffects = item.activeEffects ?? [];
-        item.activeEffects.forEach((effect, effIdx) => {
+        item.activeEffects.forEach((effect: Partial<ActiveEffectType>, effIdx: number) => {
             if(!effect.id) effect.id = `eff_${item.id}_${effIdx}`;
             effect.name = effect.name || "Unnamed Effect";
             effect.description = effect.description || "No effect description.";
@@ -432,7 +435,6 @@ Output ONLY { "worldFacts": [...] }.`,
 
 
 // --- SCHEMAS FOR NARRATIVE ELEMENTS FLOW ---
-// (Moved from separate file back into here)
 
 const Narrative_ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
 
@@ -462,7 +464,7 @@ const Narrative_ItemSchemaInternal = z.object({
   effectDescription: z.string().optional(),
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
-  basePrice: z.number().optional(),
+  basePrice: z.number().optional().describe("MUST BE a number if provided."),
   rarity: Narrative_ItemRarityEnumInternal.optional(),
   activeEffects: z.array(Narrative_ActiveEffectSchemaInternal).optional(),
 });
@@ -474,7 +476,7 @@ const Narrative_SkillSchemaInternal = z.object({
     type: z.string().describe("REQUIRED.")
 });
 
-const Narrative_CharacterProfileSchemaForInput = z.object({ // Used for input context
+const Narrative_CharacterProfileSchemaForInput = z.object({ 
   name: z.string().describe("REQUIRED."),
   class: z.string().describe("REQUIRED."),
   description: z.string().describe("REQUIRED."),
@@ -505,14 +507,14 @@ const Narrative_QuestObjectiveSchemaInternal = z.object({
 });
 
 const Narrative_QuestRewardsSchemaInternal = z.object({
-  experiencePoints: z.number().optional(),
+  experiencePoints: z.number().optional().describe("MUST BE a number if provided."),
   items: z.array(Narrative_ItemSchemaInternal).optional(),
-  currency: z.number().optional(),
+  currency: z.number().optional().describe("MUST BE a number if provided."),
 });
 
 const Narrative_QuestSchemaInternal = z.object({
   id: z.string().describe("REQUIRED."),
-  title: z.string().optional(),
+  title: z.string().optional().describe("REQUIRED if no detailed description provided."),
   description: z.string().describe("REQUIRED."),
   type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("REQUIRED."),
   status: Narrative_QuestStatusEnumInternal.describe("REQUIRED."),
@@ -541,7 +543,7 @@ const Narrative_NPCDialogueEntrySchemaInternal = z.object({
 });
 
 const Narrative_MerchantItemSchemaInternal = Narrative_ItemSchemaInternal.extend({
-  price: z.number().optional(),
+  price: z.number().optional().describe("MUST BE a number if provided."),
 });
 
 const Narrative_NPCProfileSchemaInternal = z.object({
@@ -549,13 +551,13 @@ const Narrative_NPCProfileSchemaInternal = z.object({
     name: z.string().describe("REQUIRED."),
     description: z.string().describe("REQUIRED."),
     classOrRole: z.string().optional(),
-    health: z.number().optional(),
-    maxHealth: z.number().optional(),
-    mana: z.number().optional(),
-    maxMana: z.number().optional(),
+    health: z.number().optional().describe("Number if provided."),
+    maxHealth: z.number().optional().describe("Number if provided."),
+    mana: z.number().optional().describe("Number if provided."),
+    maxMana: z.number().optional().describe("Number if provided."),
     firstEncounteredLocation: z.string().optional(),
     firstEncounteredTurnId: z.string().optional(),
-    relationshipStatus: z.number().describe("REQUIRED."),
+    relationshipStatus: z.number().describe("REQUIRED. Number."),
     knownFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
     dialogueHistory: z.array(Narrative_NPCDialogueEntrySchemaInternal).optional(),
     lastKnownLocation: z.string().optional(),
@@ -579,10 +581,10 @@ const ScenarioNarrative_RawLoreEntryZodSchema = z.object({
 const GenerateScenarioNarrativeElementsInputSchema = z.object({
   seriesName: z.string(),
   seriesPlotSummary: z.string(),
-  characterProfile: Narrative_CharacterProfileSchemaForInput,
+  characterProfile: Narrative_CharacterProfileSchemaForInput, 
   sceneDescription: z.string(),
   currentLocation: z.string(),
-  characterNameInput: z.string().optional(), // From original user input
+  characterNameInput: z.string().optional(), 
   usePremiumAI: z.boolean().optional(),
 });
 export type GenerateScenarioNarrativeElementsInput = z.infer<typeof GenerateScenarioNarrativeElementsInputSchema>;
@@ -596,7 +598,7 @@ const GenerateScenarioNarrativeElementsOutputSchema = z.object({
 export type GenerateScenarioNarrativeElementsOutput = z.infer<typeof GenerateScenarioNarrativeElementsOutputSchema>;
 
 
-// Schemas for internal AI calls within Narrative Elements Flow
+// Schemas for internal AI calls
 const Narrative_InitialQuestsAndChaptersInputSchema = GenerateScenarioNarrativeElementsInputSchema.pick({
     seriesName: true, seriesPlotSummary: true, characterProfile: true, sceneDescription: true, currentLocation: true, characterNameInput: true
 });
@@ -637,12 +639,10 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
   },
   async (input: GenerateScenarioNarrativeElementsInput): Promise<GenerateScenarioNarrativeElementsOutput> => {
     const flowStartTime = Date.now();
-    console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioNarrativeElementsFlow: START for Series: ${input.seriesName}, Character: ${input.characterProfile.name}`);
+    console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioNarrativeElementsFlow: START for Series: ${input.seriesName}, Character: ${input.characterProfile.name}, Premium: ${input.usePremiumAI}`);
 
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = input.usePremiumAI 
-        ? { maxOutputTokens: 32000 } 
-        : { maxOutputTokens: 8000 };
+    const modelConfig = { maxOutputTokens: input.usePremiumAI ? 32000 : 8000 }; // Use generous token limit as requested
 
     // --- Define Prompts ---
     const narrative_initialQuestsAndChaptersPrompt = ai.definePrompt({
@@ -702,6 +702,7 @@ You are a lore master for "{{seriesName}}". Context: Character "{{characterName}
 Generate 8-10 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Event/History"}, ...] }.`,
     });
+
 
     // --- Prepare Inputs for Prompts ---
     const questsChaptersInput: z.infer<typeof Narrative_InitialQuestsAndChaptersInputSchema> = {
@@ -780,7 +781,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
         if (item.basePrice < 0) item.basePrice = 0;
         if (item.rarity === undefined) delete item.rarity;
         item.activeEffects = item.activeEffects ?? [];
-        item.activeEffects.forEach((effect, effIdx) => {
+        item.activeEffects.forEach((effect: Partial<ActiveEffectType>, effIdx: number) => {
             if(!effect.id) effect.id = `eff_${item.id}_${effIdx}`;
             effect.name = effect.name || "Unnamed Effect";
             effect.description = effect.description || "No effect description.";
@@ -795,7 +796,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
         if (item.activeEffects.length === 0) delete item.activeEffects;
         return item as ItemType;
     };
-
+    
     questsChaptersResult.quests.forEach(quest => {
         if (quest.rewards?.items) {
             quest.rewards.items.forEach((item, index) => sanitizeItem(item, `item_reward_narrative_${quest.id}`, index));
@@ -817,11 +818,10 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
       quests: questsChaptersResult.quests,
       chapters: questsChaptersResult.chapters,
       trackedNPCs: npcsResult.trackedNPCs,
-      initialLoreEntries: allLoreEntries.filter(entry => entry.keyword && entry.content), // Filter out potentially empty lore entries
+      initialLoreEntries: allLoreEntries.filter(entry => entry.keyword && entry.content),
     };
-
+    
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
     return output;
   }
 );
-
