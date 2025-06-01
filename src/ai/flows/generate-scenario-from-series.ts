@@ -264,12 +264,14 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
   },
   async (mainInput: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    const modelConfig = { maxOutputTokens: 8000 };
 
     const characterAndScenePrompt = ai.definePrompt({
         name: 'characterAndScenePrompt',
         model: modelName,
         input: { schema: CharacterAndSceneInputSchema },
         output: { schema: CharacterAndSceneOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CharacterAndSceneOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 You are a master storyteller setting up an interactive text adventure in the series: "{{seriesName}}".
 Your output MUST be a JSON object strictly conforming to the 'CharacterAndSceneOutputSchema'. ALL fields specified as required in the schema ('sceneDescription', 'characterCore', 'currentLocation', and required fields within 'characterCore' like 'name', 'class', 'health', 'maxHealth', 'level', 'experiencePoints', 'experienceToNextLevel', 'description') MUST be present and correctly typed (e.g., numbers for stats, currency). Optional fields should only be included if applicable and must also be correctly typed.
@@ -301,6 +303,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: InitialCharacterSkillsInputSchema },
         output: { schema: InitialCharacterSkillsOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialCharacterSkillsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a character in the series "{{seriesName}}":
 Name: {{characterName}}
@@ -319,6 +322,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialInventoryOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialInventoryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -338,6 +342,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialMainGearOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialMainGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -355,6 +360,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialSecondaryGearOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialSecondaryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -372,6 +378,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialAccessoryGearOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialAccessoryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -389,6 +396,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: MinimalContextForItemsFactsInputSchema },
         output: { schema: InitialWorldFactsOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialWorldFactsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -406,6 +414,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: InitialQuestsInputSchema },
         output: { schema: InitialQuestsOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialQuestsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -431,6 +440,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: InitialTrackedNPCsInputSchema },
         output: { schema: InitialTrackedNPCsOutputSchema },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialTrackedNPCsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) -
@@ -456,6 +466,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: LoreGenerationInputSchema },
         output: { schema: z.array(RawLoreEntrySchemaInternal) },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON array conforming to the output schema (an array of RawLoreEntrySchemaInternal objects). Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 You are a lore master for "{{seriesName}}".
 Context: Character "{{characterName}}" ({{characterClass}}).
@@ -471,6 +482,7 @@ Ensure all field names and values in your JSON response strictly match the types
         model: modelName,
         input: { schema: StyleGuideInputSchema },
         output: { schema: z.string().nullable() },
+        config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single string (for the style guide) or an empty string (""). Do not include JSON structure unless the string itself is JSON (which is not expected here).
 For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string ("").
 Output ONLY the summary string or empty string. DO NOT output 'null'.`,
@@ -753,7 +765,3 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     return finalOutput;
   }
 );
-
-    
-
-    

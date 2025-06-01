@@ -156,12 +156,14 @@ const generateStoryStartFlow = ai.defineFlow(
   },
   async (input: GenerateStoryStartInputType) => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    const modelConfig = { maxOutputTokens: 8000 };
 
     const storyStartPrompt = ai.definePrompt({
         name: 'generateStoryStartPrompt',
         model: modelName,
         input: {schema: GenerateStoryStartInputSchemaInternal},
         output: {schema: GenerateStoryStartOutputSchemaInternal},
+        config: modelConfig,
         prompt: `You are a creative storyteller and game master. Your primary task is to generate a complete and valid JSON object that strictly adheres to the 'GenerateStoryStartOutputSchemaInternal'. ALL non-optional fields defined in the schema MUST be present in your output. ALL fields (including optional ones if you choose to include them) MUST use the correct data types as specified in their descriptions (e.g., numbers for prices, stats, currency; strings for names; booleans where appropriate). IDs for items, quests, skills, and NPCs MUST be unique.
 
 Theme: "{{prompt}}".
@@ -364,5 +366,3 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
     return output!;
   }
 );
-
-

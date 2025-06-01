@@ -16,10 +16,10 @@
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z}from 'zod';
 import type {
-    EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType,
+    Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType,
     NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment,
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
-    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent
+    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent, EquipmentSlot
 } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
@@ -382,6 +382,7 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    const modelConfig = { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
 
     // ----- AI Call 1: Generate Narrative and Described Events -----
@@ -391,7 +392,9 @@ const generateNextSceneFlow = ai.defineFlow(
         input: {schema: NarrativeAndEventsPromptInputSchema},
         output: {schema: NarrativeAndEventsOutputSchema.deepPartial()},
         tools: [lookupLoreTool],
-        prompt: `You are a dynamic storyteller. Based on the player's action and current story context, generate the next part of the story.
+        config: modelConfig,
+        prompt: `You are a dynamic storyteller. Adhere to the 'NarrativeAndEventsOutputSchema' (partially, as it's deepPartial). Prioritize clear narrative and accurate event descriptions. DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on describing the events that TypeScript will use to update the state.
+Based on the player's action and current story context, generate the next part of the story.
 This story is set in the universe of: {{seriesName}}.
 {{#if seriesStyleGuide}}Series Style Guide: {{seriesStyleGuide}}{{/if}}
 
@@ -436,7 +439,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     - For 'newNPCIntroduced' events, 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples:
     - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageImprovement\\", \\"amount\\": 5, \\"reason\\": \\"studied local script\\" \\} (amount is a number, 1-20), \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
-    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\} (omit 'equipSlot'), \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\} (omit 'equipSlot'), \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
+    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
     - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
     - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\", \\"initialRelationship\\": 0, \\"initialHealth\\": 75, \\"isMerchant\\": false \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
@@ -1279,5 +1282,3 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     return finalOutput;
   }
 );
-
-    
