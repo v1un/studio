@@ -67,13 +67,28 @@ export interface QuestRewards {
 
 export interface Quest {
   id: string;
+  title?: string; // New: Short title for the quest
   description: string;
-  status: 'active' | 'completed';
+  type: 'main' | 'side' | 'dynamic' | 'chapter_goal'; // New: Categorize quests
+  status: 'active' | 'completed' | 'failed'; // Added 'failed'
+  chapterId?: string; // New: Link to a chapter for main quests
+  orderInChapter?: number; // New: Suggested order within a chapter
   category?: string;
   objectives?: QuestObjective[];
   rewards?: QuestRewards; // Potential rewards defined at quest creation
   updatedAt?: string;
 }
+
+export interface Chapter {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  mainQuestIds?: string[]; // IDs of 'main' type Quests belonging to this chapter
+  isCompleted: boolean;
+  unlockCondition?: string; // e.g., "previousChapterCompleted"
+}
+
 
 export interface NPCDialogueEntry {
   playerInput?: string;
@@ -112,6 +127,8 @@ export interface StructuredStoryState {
   inventory: Item[];
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   quests: Quest[];
+  chapters: Chapter[]; // New: Main storyline chapters
+  currentChapterId?: string; // New: Tracks the active chapter
   worldFacts: string[];
   trackedNPCs: NPCProfile[];
   storySummary?: string; // A brief, running summary of key story events and character developments.
@@ -248,7 +265,11 @@ export interface ItemUnequippedEvent extends DescribedEventBase { type: 'itemUne
 export interface QuestAcceptedEvent extends DescribedEventBase { 
   type: 'questAccepted'; 
   questIdSuggestion?: string; // AI can suggest an ID
+  questTitle?: string; // New
   questDescription: string; 
+  questType?: Quest['type']; // New
+  chapterId?: string; // New
+  orderInChapter?: number; // New
   category?: string; 
   objectives?: { description: string }[]; 
   rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] }; // Changed itemNames to Partial<Item>[]
@@ -332,3 +353,4 @@ export interface GenerateStoryStartOutput {
   sceneDescription: string;
   storyState: StructuredStoryState;
 }
+

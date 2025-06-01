@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment, DisplayMessage } from "@/types/story";
-import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile } from "@/types/story";
+import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, Chapter } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -35,12 +35,13 @@ const PLAYER_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 const scenarioGenerationSteps = [
   "Initializing AI Forge...",
   "Drafting initial scene and character concept...",
+  "Summarizing series plot points...",
   "Defining character's core attributes...",
   "Forging starting skills & abilities...",
   "Gathering initial inventory items...",
   "Equipping character for adventure...",
   "Establishing key world facts...",
-  "Unveiling first quests...",
+  "Outlining main story chapters & first quests...",
   "Populating the world with notable figures...",
   "Compiling essential series lore...",
   "Crafting a unique style guide for your story...",
@@ -514,6 +515,8 @@ export default function StoryForgePage() {
             <TabsContent value="journal" className="overflow-y-auto flex-grow">
               <JournalDisplay 
                 quests={currentStoryState.quests as Quest[]} 
+                chapters={currentStoryState.chapters as Chapter[]}
+                currentChapterId={currentStoryState.currentChapterId}
                 worldFacts={currentStoryState.worldFacts} 
               />
             </TabsContent>
@@ -545,3 +548,4 @@ export default function StoryForgePage() {
 }
 
     
+
