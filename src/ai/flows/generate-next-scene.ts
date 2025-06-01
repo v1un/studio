@@ -60,17 +60,18 @@ const CharacterProfileSchemaInternal = z.object({
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
-  weapon: ItemSchemaInternal.nullable().optional().describe("Weapon slot. Null if empty."),
-  shield: ItemSchemaInternal.nullable().optional().describe("Shield slot. Null if empty."),
-  head: ItemSchemaInternal.nullable().optional().describe("Head slot. Null if empty."),
-  body: ItemSchemaInternal.nullable().optional().describe("Body slot. Null if empty."),
-  legs: ItemSchemaInternal.nullable().optional().describe("Legs slot. Null if empty."),
-  feet: ItemSchemaInternal.nullable().optional().describe("Feet slot. Null if empty."),
-  hands: ItemSchemaInternal.nullable().optional().describe("Hands slot. Null if empty."),
-  neck: ItemSchemaInternal.nullable().optional().describe("Neck slot. Null if empty."),
-  ring1: ItemSchemaInternal.nullable().optional().describe("Ring 1 slot. Null if empty."),
-  ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
-}).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. All 10 slots must be present, with 'null' for empty ones.");
+  weapon: ItemSchemaInternal.nullable().describe("Weapon slot. An item object or null if empty."),
+  shield: ItemSchemaInternal.nullable().describe("Shield slot. An item object or null if empty."),
+  head: ItemSchemaInternal.nullable().describe("Head slot. An item object or null if empty."),
+  body: ItemSchemaInternal.nullable().describe("Body slot. An item object or null if empty."),
+  legs: ItemSchemaInternal.nullable().describe("Legs slot. An item object or null if empty."),
+  feet: ItemSchemaInternal.nullable().describe("Feet slot. An item object or null if empty."),
+  hands: ItemSchemaInternal.nullable().describe("Hands slot. An item object or null if empty."),
+  neck: ItemSchemaInternal.nullable().describe("Neck slot. An item object or null if empty."),
+  ring1: ItemSchemaInternal.nullable().describe("Ring 1 slot. An item object or null if empty."),
+  ring2: ItemSchemaInternal.nullable().describe("Ring 2 slot. An item object or null if empty."),
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
+
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed']);
 const QuestObjectiveSchemaInternal = z.object({
@@ -303,8 +304,7 @@ Known World Facts (Reflect immediate environment, character's understanding, NPC
 Tracked NPCs:
 {{{formattedTrackedNPCsString}}}
 
-Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2.
-All items must have a 'basePrice'. Merchant items have 'price'.
+Available Equipment Slots: weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2. All items must have a 'basePrice'. Merchant items have 'price'.
 
 If player input implies lore lookup in "{{seriesName}}", use 'lookupLoreTool'.
 
@@ -327,6 +327,7 @@ Update 'storyState.storySummary'. Incorporate key events from this scene.
 
 **Narrative Integrity & Player Impact:**
 Respect player choices but maintain coherence with {{seriesName}} universe. Guide gently if severe lore contradiction. Consequences of actions MUST be reflected in 'generatedMessages', 'updatedStoryState' (worldFacts, NPC states, quests, character.languageUnderstanding), and 'updatedStorySummary'. Weave in series plot points organically if player actions align.
+If the player's actions or the evolving story naturally approach a known major plot point, character arc, or iconic scenario from the '{{seriesName}}' universe, consider weaving elements of it into the 'generatedMessages' or having NPCs react in ways that acknowledge this potential trajectory. This should serve to enrich the experience with series-specific depth *if opportunities arise organically*, rather than forcing the player onto a specific path against their will. The primary goal remains collaborative storytelling driven by player agency.
 
 **Special Abilities (e.g., "Return by Death"):**
 If character has such an ability and faces a 'fatal' event:
@@ -360,9 +361,38 @@ Ensure 'updatedStorySummary' is provided.
       formattedTrackedNPCsString: formattedTrackedNPCsString,
       formattedSkillsString: formattedSkillsString,
     };
+    
+    let outputFromPrompt;
+    try {
+        const response = await prompt(promptPayload);
+        outputFromPrompt = response.output; 
+    } catch (e: any) {
+        console.error(`[${modelName}] Error during prompt execution for generateNextScenePrompt:`, e);
+        if (e.details) console.error("Error details:", e.details);
+        // Return a minimal valid output to prevent downstream errors and inform the user.
+        // This is a stop-gap for catastrophic AI failure.
+        return {
+            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI model failed to generate a response for the current scene. Details: ${e.message}. Please try a different action, or if this persists, consider restarting the session.)` }],
+            updatedStoryState: input.storyState, // Return original state to prevent data loss
+            updatedStorySummary: input.storyState.storySummary || "Error generating summary due to AI failure.",
+            activeNPCsInScene: [],
+            newLoreEntries: [],
+        };
+    }
 
-    const {output} = await prompt(promptPayload);
-    if (!output) throw new Error("Failed to generate next scene output.");
+    if (!outputFromPrompt) {
+        console.warn(`[${modelName}] Null or undefined output from prompt for generateNextScenePrompt after successful execution, but no exception was caught. This indicates a potential issue with prompt output structure or model behavior.`);
+        return {
+            generatedMessages: [{ speaker: 'GM', content: "(Critical AI Error: The AI model returned an empty or invalid structure for the scene. Please try again or restart.)" }],
+            updatedStoryState: input.storyState,
+            updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
+            activeNPCsInScene: [],
+            newLoreEntries: [],
+        };
+    }
+    
+    const output: GenerateNextSceneOutput = outputFromPrompt as GenerateNextSceneOutput;
+
 
     if (!output.generatedMessages || !Array.isArray(output.generatedMessages) || output.generatedMessages.length === 0) {
       output.generatedMessages = [{ speaker: 'GM', content: "(AI response issue: No messages generated.)" }];
@@ -546,14 +576,14 @@ Ensure 'updatedStorySummary' is provided.
         output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts ?? [];
         output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
-        const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-        const aiEquipped = output.updatedStoryState.equippedItems || {};
-        const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
+        const defaultEquippedItems: Record<EquipmentSlot, ItemType | null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
+        const aiEquipped = output.updatedStoryState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>;
+        const newEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedItems};
         const equippedItemIds = new Set<string>();
+
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
-            newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
-            if (newEquippedItems[slotKey]) {
-                const item = newEquippedItems[slotKey]!;
+            const item = aiEquipped[slotKey]; // This will be the item object or null if present, or undefined if the key is missing
+            if (item && typeof item === 'object' && item.name) { // Check if it's a valid item object
                 if (!item.id || item.id.trim() === "" || equippedItemIds.has(item.id) || invItemIds.has(item.id)) {
                      let baseId = `item_equipped_next_${Date.now()}_${Math.random().toString(36).substring(7)}_${slotKey}`;
                      let newId = baseId; let counter = 0;
@@ -568,9 +598,12 @@ Ensure 'updatedStorySummary' is provided.
                 delete (item as Partial<ItemType>)!.relevantQuestId;
                 item.basePrice = item.basePrice ?? 0;
                 if (item.basePrice < 0) item.basePrice = 0;
+                newEquippedItems[slotKey] = item;
+            } else {
+                newEquippedItems[slotKey] = null; // Explicitly set to null if not a valid item or missing
             }
         }
-        output.updatedStoryState.equippedItems = newEquippedItems as any;
+        output.updatedStoryState.equippedItems = newEquippedItems;
 
         output.updatedStoryState.trackedNPCs = output.updatedStoryState.trackedNPCs ?? [];
         const npcIdMap = new Map<string, NPCProfileType>();

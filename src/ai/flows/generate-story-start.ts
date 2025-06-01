@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -58,17 +59,17 @@ const CharacterProfileSchemaInternal = z.object({
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
-  weapon: ItemSchemaInternal.nullable().optional().describe("Weapon slot. Null if empty."),
-  shield: ItemSchemaInternal.nullable().optional().describe("Shield slot. Null if empty."),
-  head: ItemSchemaInternal.nullable().optional().describe("Head slot. Null if empty."),
-  body: ItemSchemaInternal.nullable().optional().describe("Body slot. Null if empty."),
-  legs: ItemSchemaInternal.nullable().optional().describe("Legs slot. Null if empty."),
-  feet: ItemSchemaInternal.nullable().optional().describe("Feet slot. Null if empty."),
-  hands: ItemSchemaInternal.nullable().optional().describe("Hands slot. Null if empty."),
-  neck: ItemSchemaInternal.nullable().optional().describe("Neck slot. Null if empty."),
-  ring1: ItemSchemaInternal.nullable().optional().describe("Ring 1 slot. Null if empty."),
-  ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
-}).describe("A record of the character's equipped items. Keys are slot names (weapon, shield, head, body, legs, feet, hands, neck, ring1, ring2), values are the item object or null if the slot is empty. Initialize all 10 slots to null.");
+  weapon: ItemSchemaInternal.nullable().describe("Weapon slot. An item object or null if empty."),
+  shield: ItemSchemaInternal.nullable().describe("Shield slot. An item object or null if empty."),
+  head: ItemSchemaInternal.nullable().describe("Head slot. An item object or null if empty."),
+  body: ItemSchemaInternal.nullable().describe("Body slot. An item object or null if empty."),
+  legs: ItemSchemaInternal.nullable().describe("Legs slot. An item object or null if empty."),
+  feet: ItemSchemaInternal.nullable().describe("Feet slot. An item object or null if empty."),
+  hands: ItemSchemaInternal.nullable().describe("Hands slot. An item object or null if empty."),
+  neck: ItemSchemaInternal.nullable().describe("Neck slot. An item object or null if empty."),
+  ring1: ItemSchemaInternal.nullable().describe("Ring 1 slot. An item object or null if empty."),
+  ring2: ItemSchemaInternal.nullable().describe("Ring 2 slot. An item object or null if empty."),
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed']);
 const QuestObjectiveSchemaInternal = z.object({
@@ -176,7 +177,7 @@ Generate:
     - 'skillsAndAbilities': 1-2 starting skills (unique 'id', 'name', 'description', 'type').
 3.  Initial story state:
     - Character profile. Starting location. Empty inventory array [].
-    - 'equippedItems': All 10 slots set to null.
+    - 'equippedItems': All 10 slots MUST be present and set to null.
     - Optional: 1 simple starting quest (unique 'id', 'description', 'status: active', optional 'category', 'objectives', and 'rewards' with 'experiencePoints', 'currency', 'items' (each item: unique 'id', 'name', 'description', 'basePrice', optional 'equipSlot')).
     - 1-2 'worldFacts'. If languageUnderstanding is low (0-10), one fact must state "The local language is currently incomprehensible."
     - 'trackedNPCs': Empty or profiles for NPCs in scene. If merchant, set \`isMerchant: true\`, \`merchantInventory\` (items with \`id\`, \`name\`, \`description\`, \`basePrice\`, \`price\`).
@@ -269,23 +270,27 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
         output.storyState.worldFacts = output.storyState.worldFacts ?? [];
         output.storyState.worldFacts = output.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
-        const defaultEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-        const aiEquipped = output.storyState.equippedItems || {};
-        const newEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
+        const defaultEquippedItems: Record<EquipmentSlot, ItemType | null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
+        const aiEquipped = output.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>;
+        const newEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedItems};
+
         for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
-            newEquippedItems[slotKey] = aiEquipped[slotKey] !== undefined ? aiEquipped[slotKey] : null;
-            if (newEquippedItems[slotKey]) {
-               if (!newEquippedItems[slotKey]!.id) newEquippedItems[slotKey]!.id = `item_generated_equip_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-              if ((newEquippedItems[slotKey]!.equipSlot === null || (newEquippedItems[slotKey]!.equipSlot as unknown) === '')) delete (newEquippedItems[slotKey] as Partial<ItemType>)!.equipSlot;
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isConsumable;
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.effectDescription;
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.isQuestItem;
-              delete (newEquippedItems[slotKey] as Partial<ItemType>)!.relevantQuestId;
-              newEquippedItems[slotKey]!.basePrice = newEquippedItems[slotKey]!.basePrice ?? 0;
-              if (newEquippedItems[slotKey]!.basePrice! < 0) newEquippedItems[slotKey]!.basePrice = 0;
+            const item = aiEquipped[slotKey];
+            if (item && typeof item === 'object' && item.name) { 
+               if (!item.id) item.id = `item_generated_equip_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+              if ((item.equipSlot === null || (item.equipSlot as unknown) === '')) delete (item as Partial<ItemType>)!.equipSlot;
+              delete (item as Partial<ItemType>)!.isConsumable;
+              delete (item as Partial<ItemType>)!.effectDescription;
+              delete (item as Partial<ItemType>)!.isQuestItem;
+              delete (item as Partial<ItemType>)!.relevantQuestId;
+              item.basePrice = item.basePrice ?? 0;
+              if (item.basePrice! < 0) item.basePrice = 0;
+              newEquippedItems[slotKey] = item;
+            } else {
+              newEquippedItems[slotKey] = null;
             }
         }
-        output.storyState.equippedItems = newEquippedItems as any;
+        output.storyState.equippedItems = newEquippedItems;
 
         output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
         const npcIdSet = new Set<string>();

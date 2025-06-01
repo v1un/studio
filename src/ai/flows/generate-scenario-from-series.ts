@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -67,17 +68,17 @@ const CharacterProfileSchemaInternal = CharacterCoreProfileSchemaInternal.extend
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
-  weapon: ItemSchemaInternal.nullable().optional().describe("Weapon slot. Null if empty."),
-  shield: ItemSchemaInternal.nullable().optional().describe("Shield slot. Null if empty."),
-  head: ItemSchemaInternal.nullable().optional().describe("Head slot. Null if empty."),
-  body: ItemSchemaInternal.nullable().optional().describe("Body slot. Null if empty."),
-  legs: ItemSchemaInternal.nullable().optional().describe("Legs slot. Null if empty."),
-  feet: ItemSchemaInternal.nullable().optional().describe("Feet slot. Null if empty."),
-  hands: ItemSchemaInternal.nullable().optional().describe("Hands slot. Null if empty."),
-  neck: ItemSchemaInternal.nullable().optional().describe("Neck slot. Null if empty."),
-  ring1: ItemSchemaInternal.nullable().optional().describe("Ring 1 slot. Null if empty."),
-  ring2: ItemSchemaInternal.nullable().optional().describe("Ring 2 slot. Null if empty."),
-}).describe("Character's equipped items. Initialize with null or series-appropriate starting gear. All 10 slots should be represented, with 'null' for empty ones. This object MUST contain all 10 slot keys.");
+  weapon: ItemSchemaInternal.nullable().describe("Weapon slot. An item object or null if empty."),
+  shield: ItemSchemaInternal.nullable().describe("Shield slot. An item object or null if empty."),
+  head: ItemSchemaInternal.nullable().describe("Head slot. An item object or null if empty."),
+  body: ItemSchemaInternal.nullable().describe("Body slot. An item object or null if empty."),
+  legs: ItemSchemaInternal.nullable().describe("Legs slot. An item object or null if empty."),
+  feet: ItemSchemaInternal.nullable().describe("Feet slot. An item object or null if empty."),
+  hands: ItemSchemaInternal.nullable().describe("Hands slot. An item object or null if empty."),
+  neck: ItemSchemaInternal.nullable().describe("Neck slot. An item object or null if empty."),
+  ring1: ItemSchemaInternal.nullable().describe("Ring 1 slot. An item object or null if empty."),
+  ring2: ItemSchemaInternal.nullable().describe("Ring 2 slot. An item object or null if empty."),
+}).describe("Character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed']);
 const QuestObjectiveSchemaInternal = z.object({
@@ -192,22 +193,22 @@ const InitialInventoryOutputSchema = z.object({
 });
 
 const InitialMainGearOutputSchema = z.object({
-    weapon: ItemSchemaInternal.nullable().optional(),
-    shield: ItemSchemaInternal.nullable().optional(),
-    body: ItemSchemaInternal.nullable().optional(),
+    weapon: ItemSchemaInternal.nullable().describe("Weapon slot. An item object or null if empty."),
+    shield: ItemSchemaInternal.nullable().describe("Shield slot. An item object or null if empty."),
+    body: ItemSchemaInternal.nullable().describe("Body slot. An item object or null if empty."),
 });
 
 const InitialSecondaryGearOutputSchema = z.object({
-    head: ItemSchemaInternal.nullable().optional(),
-    legs: ItemSchemaInternal.nullable().optional(),
-    feet: ItemSchemaInternal.nullable().optional(),
-    hands: ItemSchemaInternal.nullable().optional(),
+    head: ItemSchemaInternal.nullable().describe("Head slot. An item object or null if empty."),
+    legs: ItemSchemaInternal.nullable().describe("Legs slot. An item object or null if empty."),
+    feet: ItemSchemaInternal.nullable().describe("Feet slot. An item object or null if empty."),
+    hands: ItemSchemaInternal.nullable().describe("Hands slot. An item object or null if empty."),
 });
 
 const InitialAccessoryGearOutputSchema = z.object({
-    neck: ItemSchemaInternal.nullable().optional(),
-    ring1: ItemSchemaInternal.nullable().optional(),
-    ring2: ItemSchemaInternal.nullable().optional(),
+    neck: ItemSchemaInternal.nullable().describe("Neck slot. An item object or null if empty."),
+    ring1: ItemSchemaInternal.nullable().describe("Ring 1 slot. An item object or null if empty."),
+    ring2: ItemSchemaInternal.nullable().describe("Ring 2 slot. An item object or null if empty."),
 });
     
 const InitialWorldFactsOutputSchema = z.object({
@@ -331,7 +332,7 @@ Character: {{character.name}} ({{character.class}}, Currency: {{character.curren
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
-Generate ONLY 'weapon', 'shield', 'body' equipped items.
+Generate ONLY an object with 'weapon', 'shield', 'body' equipped items. Each field MUST be present.
 - Each slot: item object (unique 'id', 'name', 'description', 'basePrice', 'equipSlot') or 'null'.
 Adhere to JSON schema. Output ONLY { "weapon": ..., "shield": ..., "body": ... }.`,
     });
@@ -346,7 +347,7 @@ Character: {{character.name}} ({{character.class}}, Currency: {{character.curren
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
-Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items.
+Generate ONLY an object with 'head', 'legs', 'feet', 'hands' equipped items. Each field MUST be present.
 - Each slot: item object (unique 'id', 'name', 'description', 'basePrice', 'equipSlot') or 'null'.
 Adhere to JSON schema. Output ONLY an object with these four keys.`,
     });
@@ -361,7 +362,7 @@ Character: {{character.name}} ({{character.class}}, Currency: {{character.curren
 Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
-Generate ONLY 'neck', 'ring1', 'ring2' equipped items.
+Generate ONLY an object with 'neck', 'ring1', 'ring2' equipped items. Each field MUST be present.
 - Each slot: item object (unique 'id', 'name', 'description', 'basePrice', 'equipSlot') or 'null'.
 Adhere to JSON schema. Output ONLY an object with these three keys.`,
     });
@@ -473,9 +474,11 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         skillsAndAbilities: characterSkills,
     };
     
-    // Post-processing ensures languageUnderstanding is set if AI missed it,
-    // defaulting to 100 unless AI provided a specific value (e.g., 0 for a language barrier context).
+    // Prioritize AI's output for languageUnderstanding. If missing, default to 100.
     fullCharacterProfile.languageUnderstanding = fullCharacterProfile.languageUnderstanding ?? 100;
+    // Clamp the value
+    if (fullCharacterProfile.languageUnderstanding < 0) fullCharacterProfile.languageUnderstanding = 0;
+    if (fullCharacterProfile.languageUnderstanding > 100) fullCharacterProfile.languageUnderstanding = 100;
 
 
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
@@ -584,11 +587,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
       
-      // Prioritize AI's output for languageUnderstanding. If missing, default to 100.
-      // This allows AI to set to 0 or other values based on series/character canon as per prompt.
-      char.languageUnderstanding = char.languageUnderstanding ?? 100;
-      if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
-      if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
+      // Language understanding already handled and clamped above
       
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
       const skillIdSet = new Set<string>();
@@ -673,11 +672,12 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
       const defaultEquippedSlots: Record<EquipmentSlot, null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-      const currentEquipped = finalOutput.storyState.equippedItems || {};
-      const processedEquippedItems: Partial<Record<EquipmentSlot, ItemType | null>> = {};
+      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>; // Ensure currentEquipped is not undefined for keys access
+      const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots}; // Start with all slots as null
       const equippedItemIdSet = new Set<string>();
+
       for (const slotKey of Object.keys(defaultEquippedSlots) as EquipmentSlot[]) {
-          const itemInSlot = currentEquipped[slotKey];
+          const itemInSlot = currentEquipped[slotKey]; // Will be item or null if key exists, or undefined if key missing (now less likely)
           if (itemInSlot && typeof itemInSlot === 'object' && itemInSlot.name) { 
             let baseEqId = itemInSlot.id || `item_generated_equip_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}_${slotKey}`;
             let newEqId = baseEqId;
@@ -698,10 +698,10 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
             if (itemInSlot.basePrice < 0) itemInSlot.basePrice = 0;
             processedEquippedItems[slotKey] = itemInSlot;
           } else {
-            processedEquippedItems[slotKey] = null;
+            processedEquippedItems[slotKey] = null; // Explicitly set to null if not a valid item
           }
       }
-      finalOutput.storyState.equippedItems = processedEquippedItems as Required<typeof finalOutput.storyState.equippedItems>;
+      finalOutput.storyState.equippedItems = processedEquippedItems;
 
       finalOutput.storyState.trackedNPCs = finalOutput.storyState.trackedNPCs ?? [];
       const npcIdSet = new Set<string>();
