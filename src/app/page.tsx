@@ -2,16 +2,17 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
+import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@/ai/flows/generate-scenario-from-series"; 
 import { fleshOutChapterQuests as callFleshOutChapterQuests } from "@/ai/flows/flesh-out-chapter-quests";
 import type { 
-    GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, 
+    GenerateScenarioFoundationInput, GenerateScenarioFoundationOutput,
+    GenerateScenarioNarrativeElementsInput, GenerateScenarioNarrativeElementsOutput,
     AIMessageSegment, DisplayMessage, 
     FleshOutChapterQuestsInput, FleshOutChapterQuestsOutput, 
     CombatHelperInfo, CombatEventLogEntry, 
     HealthChangeEvent, NPCStateChangeEvent, DescribedEvent,
     CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, Chapter,
-    StatModifier // Imported for calculateEffectiveCharacterProfile
+    StatModifier, RawLoreEntry
 } from "@/types/story";
 import { produce } from "immer";
 
@@ -42,20 +43,16 @@ const GM_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 const PLAYER_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 
 const scenarioGenerationSteps = [
-  "Initializing AI Forge...",
-  "Drafting initial scene and character concept...",
-  "Summarizing series plot points...",
-  "Defining character's core attributes...",
-  "Forging starting skills & abilities...",
-  "Gathering initial inventory items...",
-  "Equipping character for adventure...",
-  "Establishing key world facts...",
-  "Outlining main story chapters & first quests...",
+  "Phase 1: Laying Scenario Foundation...", // For generateScenarioFoundation
+  "Generating character concepts and opening scene...",
+  "Establishing core world details and items...",
+  "Phase 2: Weaving Narrative Threads...", // For generateScenarioNarrativeElements
+  "Crafting initial chapters and main quests...",
   "Populating the world with notable figures...",
-  "Compiling essential series lore...",
-  "Crafting a unique style guide for your story...",
+  "Compiling a rich tapestry of lore entries...",
   "Finalizing scenario details..."
 ];
+
 
 // Helper function to calculate effective character stats including item bonuses
 function calculateEffectiveCharacterProfile(
@@ -85,22 +82,19 @@ function calculateEffectiveCharacterProfile(
           for (const modifier of effect.statModifiers) {
             if (modifier.type === 'add') {
               const statKey = modifier.stat as keyof CharacterProfile;
-              // Ensure the stat key is actually a property of CharacterProfile before attempting to modify
               if (Object.prototype.hasOwnProperty.call(effectiveProfile, statKey) || Object.prototype.hasOwnProperty.call(CharacterProfile.prototype, statKey) || statKey in effectiveProfile) {
                  addStat(statKey, modifier.value);
               } else {
                 console.warn(`calculateEffectiveCharacterProfile: Attempted to modify unknown stat '${statKey}'`);
               }
             }
-            // TODO: Implement 'multiply' type modifiers if needed, ensuring correct order of operations
           }
         }
       }
     }
   }
 
-  // Ensure health doesn't exceed new maxHealth and isn't negative
-  if (effectiveProfile.maxHealth <= 0) effectiveProfile.maxHealth = 1; // Prevent maxHealth from being 0 or less
+  if (effectiveProfile.maxHealth <= 0) effectiveProfile.maxHealth = 1; 
   if (effectiveProfile.health > effectiveProfile.maxHealth) {
     effectiveProfile.health = effectiveProfile.maxHealth;
   }
@@ -108,9 +102,8 @@ function calculateEffectiveCharacterProfile(
     effectiveProfile.health = 0;
   }
 
-  // Ensure mana doesn't exceed new maxMana and isn't negative
   if (effectiveProfile.mana !== undefined && effectiveProfile.maxMana !== undefined) {
-    if (effectiveProfile.maxMana <= 0 && effectiveProfile.mana > 0) effectiveProfile.maxMana = effectiveProfile.mana; // ensure maxMana is at least mana
+    if (effectiveProfile.maxMana <= 0 && effectiveProfile.mana > 0) effectiveProfile.maxMana = effectiveProfile.mana; 
     else if (effectiveProfile.maxMana <=0) effectiveProfile.maxMana = 0;
 
     if (effectiveProfile.mana > effectiveProfile.maxMana) {
@@ -123,15 +116,6 @@ function calculateEffectiveCharacterProfile(
     effectiveProfile.maxMana = Math.max(0, effectiveProfile.mana);
   }
 
-
-  // Optional: Ensure core attributes don't drop below a certain value (e.g., 1)
-  // const coreAttributes: (keyof CharacterProfile)[] = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
-  // for (const attr of coreAttributes) {
-  //   if (typeof effectiveProfile[attr] === 'number' && (effectiveProfile[attr] as number) < 1) {
-  //     // (effectiveProfile[attr] as number) = 1; // Uncomment if stats shouldn't drop below 1
-  //   }
-  // }
-
   return effectiveProfile;
 }
 
@@ -142,6 +126,7 @@ export default function StoryForgePage() {
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+  const [loadingStep, setLoadingStep] = useState(0); 
   const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'chapterLoad' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
@@ -150,25 +135,27 @@ export default function StoryForgePage() {
     let intervalId: NodeJS.Timeout | undefined;
 
     if (isLoadingInteraction && loadingType === 'scenario') {
-        let stepIndex = 0;
-        setLoadingMessage(scenarioGenerationSteps[stepIndex]);
-
-        intervalId = setInterval(() => {
-            stepIndex = (stepIndex + 1) % scenarioGenerationSteps.length;
-            setLoadingMessage(scenarioGenerationSteps[stepIndex]);
-        }, 2500);
+        setLoadingMessage(scenarioGenerationSteps[loadingStep]);
     } else if (isLoadingInteraction && loadingType === 'nextScene') {
         setLoadingMessage("AI is crafting the next part of your tale...");
     } else if (isLoadingInteraction && loadingType === 'chapterLoad') {
         setLoadingMessage("The next chapter of your saga is unfolding...");
+    } else {
+      setLoadingMessage(null); // Clear message when not loading or different type
     }
+    
+    // Update loading message if step changes (for sequential scenario loading)
+    if (isLoadingInteraction && loadingType === 'scenario' && loadingMessage !== scenarioGenerationSteps[loadingStep]) {
+        setLoadingMessage(scenarioGenerationSteps[loadingStep]);
+    }
+
 
     return () => {
         if (intervalId) {
             clearInterval(intervalId);
         }
     };
-  }, [isLoadingInteraction, loadingType]);
+  }, [isLoadingInteraction, loadingType, loadingStep, loadingMessage]);
 
 
   const loadSession = useCallback(() => {
@@ -228,11 +215,7 @@ export default function StoryForgePage() {
 
 
   const currentStoryState = useMemo(() => storyHistory.length > 0 ? storyHistory[storyHistory.length - 1].storyStateAfterScene : null, [storyHistory]);
-  
-  // This is the character profile with base stats (before item effects)
   const baseCharacterProfile = useMemo(() => currentStoryState?.character, [currentStoryState]);
-
-  // This is the character profile with item effects applied, used for AI input
   const effectiveCharacterProfileForAI = useMemo(() => {
     if (!baseCharacterProfile || !currentStoryState?.equippedItems) {
       return baseCharacterProfile; 
@@ -247,21 +230,49 @@ export default function StoryForgePage() {
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
     setLoadingType('scenario');
-    const input: GenerateScenarioFromSeriesInput = {
-      seriesName: data.seriesName,
-      characterNameInput: data.characterName,
-      characterClassInput: data.characterClass,
-      usePremiumAI: data.usePremiumAI,
-    };
-    console.log("CLIENT: Starting scenario generation with input:", input);
+    setLoadingStep(0); 
+
+    let foundationResult: GenerateScenarioFoundationOutput;
+    let narrativeElementsResult: GenerateScenarioNarrativeElementsOutput;
 
     try {
-      const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
-      console.log("CLIENT: Scenario generation successful. Result:", result);
+      // Step 1: Generate Foundation
+      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Phase 1")));
+      const foundationInput: GenerateScenarioFoundationInput = {
+        seriesName: data.seriesName,
+        characterNameInput: data.characterName,
+        characterClassInput: data.characterClass,
+        usePremiumAI: data.usePremiumAI,
+      };
+      console.log("CLIENT: Starting scenario generation - Step 1: Foundation. Input:", foundationInput);
+      foundationResult = await generateScenarioFoundation(foundationInput);
+      console.log("CLIENT: Scenario Foundation generation successful. Result:", foundationResult);
+      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("character concepts")) || 1);
+
+
+      // Step 2: Generate Narrative Elements
+      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Phase 2")) || 3);
+      const narrativeElementsInput: GenerateScenarioNarrativeElementsInput = {
+        seriesName: data.seriesName,
+        seriesPlotSummary: foundationResult.seriesPlotSummary,
+        characterProfile: foundationResult.characterProfile,
+        sceneDescription: foundationResult.sceneDescription,
+        currentLocation: foundationResult.currentLocation,
+        characterNameInput: data.characterName,
+        usePremiumAI: data.usePremiumAI,
+      };
+      console.log("CLIENT: Starting scenario generation - Step 2: Narrative Elements. Input:", narrativeElementsInput);
+      narrativeElementsResult = await generateScenarioNarrativeElements(narrativeElementsInput);
+      console.log("CLIENT: Scenario Narrative Elements generation successful. Result:", narrativeElementsResult);
+      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Crafting initial chapters")) || 4);
+
+
+      // Step 3: Combine and Finalize
+      setLoadingStep(scenarioGenerationSteps.length - 1); 
 
       clearLorebook();
-      if (result.initialLoreEntries) {
-        initializeLorebook(result.initialLoreEntries);
+      if (narrativeElementsResult.initialLoreEntries) {
+        initializeLorebook(narrativeElementsResult.initialLoreEntries as RawLoreEntry[]);
       }
 
       const initialGMMessage: DisplayMessage = {
@@ -269,29 +280,45 @@ export default function StoryForgePage() {
         speakerType: 'GM',
         speakerNameLabel: 'GAME-MASTER',
         speakerDisplayName: "admin",
-        content: result.sceneDescription,
+        content: foundationResult.sceneDescription,
         avatarSrc: GM_AVATAR_PLACEHOLDER,
         avatarHint: "wizard staff",
         isPlayer: false,
       };
+      
+      const firstChapterId = narrativeElementsResult.chapters.find(c => c.order === 1)?.id;
+
+      const finalStoryState: StructuredStoryState = {
+        character: foundationResult.characterProfile,
+        currentLocation: foundationResult.currentLocation,
+        inventory: foundationResult.inventory,
+        equippedItems: foundationResult.equippedItems,
+        worldFacts: foundationResult.worldFacts,
+        storySummary: `The adventure begins for ${foundationResult.characterProfile.name} in ${data.seriesName}, at ${foundationResult.currentLocation}. Initial scene: ${foundationResult.sceneDescription.substring(0,100)}...`,
+        quests: narrativeElementsResult.quests,
+        chapters: narrativeElementsResult.chapters,
+        currentChapterId: firstChapterId,
+        trackedNPCs: narrativeElementsResult.trackedNPCs,
+      };
+
 
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
         messages: [initialGMMessage],
-        storyStateAfterScene: result.storyState,
+        storyStateAfterScene: finalStoryState,
       };
 
       const newSessionId = crypto.randomUUID();
       const newSession: GameSession = {
         id: newSessionId,
         storyPrompt: `Adventure in the world of: ${data.seriesName}${data.characterName ? ` as ${data.characterName}` : ''}`,
-        characterName: result.storyState.character.name,
+        characterName: finalStoryState.character.name,
         storyHistory: [firstTurn],
         createdAt: new Date().toISOString(),
         lastPlayedAt: new Date().toISOString(),
         seriesName: data.seriesName,
-        seriesStyleGuide: result.seriesStyleGuide,
-        seriesPlotSummary: result.seriesPlotSummary, // Storing the plot summary
+        seriesStyleGuide: foundationResult.seriesStyleGuide,
+        seriesPlotSummary: foundationResult.seriesPlotSummary,
         isPremiumSession: data.usePremiumAI,
         allDataCorrectionWarnings: [],
       };
@@ -306,6 +333,7 @@ export default function StoryForgePage() {
         title: `Adventure in ${data.seriesName} Begun!`,
         description: `Playing as ${newSession.characterName}. ${data.usePremiumAI ? "(Premium AI Active)" : ""}`,
       });
+
     } catch (error: any) {
       console.error("CLIENT: Failed to start story from series:", error);
       toast({
@@ -317,19 +345,19 @@ export default function StoryForgePage() {
     setIsLoadingInteraction(false);
     setLoadingType(null);
     setLoadingMessage(null);
+    setLoadingStep(0);
   };
 
   const handleUserAction = async (userInput: string) => {
-    if (!currentStoryState || !currentSession || !baseCharacterProfile) return; // Use baseCharacterProfile for check
+    if (!currentStoryState || !currentSession || !baseCharacterProfile) return;
     setIsLoadingInteraction(true);
     setLoadingType('nextScene');
     console.log("CLIENT: User action submitted:", userInput);
 
-
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
       speakerType: 'Player',
-      speakerNameLabel: baseCharacterProfile.name, // Display base name
+      speakerNameLabel: baseCharacterProfile.name, 
       speakerDisplayName: baseCharacterProfile.name,
       content: userInput,
       avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
@@ -347,7 +375,6 @@ export default function StoryForgePage() {
         return [...prevHistory, newTurnForPlayerMessage];
     });
 
-
     try {
       const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
 
@@ -360,21 +387,19 @@ export default function StoryForgePage() {
 
       const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
       
-      // Prepare the story state to be sent to the AI, using the effective character profile
       const storyStateForAI: StructuredStoryState = {
         ...currentStoryState,
-        character: effectiveCharacterProfileForAI || baseCharacterProfile, // Fallback to base if effective is somehow null
+        character: effectiveCharacterProfileForAI || baseCharacterProfile, 
       };
       
       console.log("CLIENT: Calling generateNextScene with context:", { currentSceneContext, userInput, currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial' });
       console.log("CLIENT: Base Character Profile for turn:", baseCharacterProfile);
       console.log("CLIENT: Effective Character Profile for AI:", effectiveCharacterProfileForAI);
 
-
       const result = await generateNextScene({
         currentScene: currentSceneContext,
         userInput: userInput,
-        storyState: storyStateForAI, // Pass the state with effective character profile to AI
+        storyState: storyStateForAI, 
         seriesName: currentSession.seriesName,
         seriesStyleGuide: currentSession.seriesStyleGuide,
         currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
@@ -382,15 +407,76 @@ export default function StoryForgePage() {
       });
       console.log("CLIENT: generateNextScene successful. Result:", result);
 
-      // IMPORTANT: result.updatedStoryState contains the character profile with BASE stats updated by events.
-      // We must use THIS as the new source of truth for the base character state.
-      let finalUpdatedBaseStoryState = result.updatedStoryState;
+      let finalUpdatedBaseStoryState = produce(currentStoryState, draftState => {
+         if (result.updatedStorySummary) draftState.storySummary = result.updatedStorySummary;
+         if (result.describedEvents && Array.isArray(result.describedEvents)) {
+            result.describedEvents.forEach(event => {
+                // Simplified event processing for brevity - actual application would be more complex
+                if (event.type === 'healthChange' && event.characterTarget === 'player') {
+                    draftState.character.health += event.amount;
+                    if (draftState.character.health < 0) draftState.character.health = 0;
+                    if (draftState.character.health > draftState.character.maxHealth) draftState.character.health = draftState.character.maxHealth;
+                }
+                // Add more event processing here for items, quests, npcs etc.
+                 if (event.type === 'itemFound') {
+                     const newItem: ItemType = {
+                        id: `item_${event.itemName.replace(/\s+/g, '_')}_${Date.now()}`,
+                        name: event.itemName,
+                        description: event.itemDescription,
+                        basePrice: event.suggestedBasePrice || 0,
+                        rarity: event.rarity,
+                        equipSlot: event.equipSlot,
+                        isConsumable: event.isConsumable,
+                        effectDescription: event.effectDescription,
+                        isQuestItem: event.isQuestItem,
+                        relevantQuestId: event.relevantQuestId,
+                        activeEffects: event.activeEffects || [],
+                    };
+                    draftState.inventory.push(newItem);
+                 }
+                 if (event.type === 'questAccepted') {
+                     const newQuest: Quest = {
+                        id: event.questIdSuggestion || `quest_${event.questTitle?.replace(/\s+/g, '_')}_${Date.now()}`,
+                        title: event.questTitle || "New Quest",
+                        description: event.questDescription,
+                        type: event.questType || 'dynamic',
+                        status: 'active',
+                        chapterId: event.chapterId,
+                        orderInChapter: event.orderInChapter,
+                        category: event.category,
+                        objectives: event.objectives?.map(o => ({...o, isCompleted: false})) || [{description: event.questDescription, isCompleted:false}],
+                        rewards: event.rewards ? {
+                            experiencePoints: event.rewards.experiencePoints,
+                            currency: event.rewards.currency,
+                            items: event.rewards.items?.map(item => ({
+                                id: item.id || `reward_item_${Date.now()}`,
+                                name: item.name || "Reward Item",
+                                description: item.description || "A reward.",
+                                basePrice: item.basePrice || 0,
+                                rarity: item.rarity,
+                                equipSlot: item.equipSlot,
+                                activeEffects: item.activeEffects || [],
+                            }))
+                        } : undefined,
+                     };
+                     draftState.quests.push(newQuest);
+                 }
+            });
+         }
+         // Pass through other parts of AI's proposed state update if they are directly reflected
+         // This part requires careful consideration of what AI can directly update vs. what events drive
+         if (result.updatedStoryState.character) draftState.character = {...draftState.character, ...result.updatedStoryState.character}; // Merge AI's character perception if needed
+         if (result.updatedStoryState.currentLocation) draftState.currentLocation = result.updatedStoryState.currentLocation;
+         if (result.updatedStoryState.worldFacts) draftState.worldFacts = result.updatedStoryState.worldFacts;
+         if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs;
+         if (result.updatedStoryState.chapters) draftState.chapters = result.updatedStoryState.chapters;
+         if (result.updatedStoryState.currentChapterId) draftState.currentChapterId = result.updatedStoryState.currentChapterId;
 
+      });
+      
 
       const previousChapterId = currentStoryState.currentChapterId;
-      // Check completion against the base state that was just updated by AI events.
       const currentChapterInNewBaseState = finalUpdatedBaseStoryState.chapters.find(c => c.id === previousChapterId);
-
 
       if (previousChapterId && currentChapterInNewBaseState?.isCompleted) {
         console.log(`CLIENT: Chapter "${currentChapterInNewBaseState.title}" (ID: ${previousChapterId}) completed.`);
@@ -430,7 +516,6 @@ export default function StoryForgePage() {
             const fleshedResult: FleshOutChapterQuestsOutput = await callFleshOutChapterQuests(fleshOutInput);
             console.log("CLIENT: fleshOutChapterQuests successful. Result:", fleshedResult);
 
-            // Apply changes from fleshing out quests to the finalUpdatedBaseStoryState
             finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
               draftState.quests.push(...fleshedResult.fleshedOutQuests);
               const chapterIndex = draftState.chapters.findIndex(c => c.id === nextChapterToFleshOut.id);
@@ -452,7 +537,7 @@ export default function StoryForgePage() {
               variant: "destructive",
             });
           }
-          setLoadingType('nextScene'); // Revert loading type after chapter load attempt
+          setLoadingType('nextScene'); 
         } else if (nextChapterToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next chapter is outlined, but no seriesPlotSummary found in session to flesh it out.");
         } else if (!nextChapterToFleshOut && currentChapterInNewBaseState?.isCompleted) {
@@ -513,7 +598,6 @@ export default function StoryForgePage() {
 
       if (isCombatTurn) {
         console.log("CLIENT: Combat detected in turn.");
-        // Use effective stats for display in combat log if needed, but here we list NPCs from base state
         const currentEffectivePlayerProfile = calculateEffectiveCharacterProfile(finalUpdatedBaseStoryState.character, finalUpdatedBaseStoryState.equippedItems);
 
         finalUpdatedBaseStoryState.trackedNPCs.forEach(npc => {
@@ -523,7 +607,7 @@ export default function StoryForgePage() {
             hostileNPCsInTurn.push({
               id: npc.id,
               name: npc.name,
-              health: npc.health, // Display actual NPC health
+              health: npc.health, 
               maxHealth: npc.maxHealth,
               description: npc.description.substring(0,50) + "..."
             });
@@ -531,7 +615,7 @@ export default function StoryForgePage() {
         });
 
         const combatHelperData: CombatHelperInfo = {
-          playerHealth: currentEffectivePlayerProfile.health, // Show effective health for player in log
+          playerHealth: currentEffectivePlayerProfile.health, 
           playerMaxHealth: currentEffectivePlayerProfile.maxHealth,
           playerMana: currentEffectivePlayerProfile.mana,
           playerMaxMana: currentEffectivePlayerProfile.maxMana,
@@ -552,7 +636,7 @@ export default function StoryForgePage() {
       const completedTurn: StoryTurn = {
         id: crypto.randomUUID(),
         messages: [playerMessage, ...aiDisplayMessages],
-        storyStateAfterScene: finalUpdatedBaseStoryState, // This state has base character stats updated by events
+        storyStateAfterScene: finalUpdatedBaseStoryState, 
       };
 
       setStoryHistory(prevHistory => {
@@ -752,7 +836,7 @@ export default function StoryForgePage() {
               <div className="shrink-0">
                 <MinimalCharacterStatus
                     character={baseCharacterProfile} 
-                    storyState={currentStoryState} // Minimal status might want base + equipped items for display, not just pure base
+                    storyState={currentStoryState} 
                     isPremiumSession={currentSession.isPremiumSession}
                 />
               </div>
@@ -807,3 +891,5 @@ export default function StoryForgePage() {
     </div>
   );
 }
+
+    

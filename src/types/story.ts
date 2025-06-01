@@ -8,27 +8,21 @@ export interface Skill {
 
 export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
-// New: Define StatModifier structure
 export interface StatModifier {
   stat: keyof Pick<CharacterProfile, 'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma' | 'maxHealth' | 'maxMana' | 'health' | 'mana' | 'level' | 'experiencePoints' | 'currency' | 'languageReading' | 'languageSpeaking'>;
-  value: number; // Can be positive or negative
-  type: 'add' | 'multiply'; // e.g. +5 strength, or *1.1 health (multiply might be for future use)
-  description?: string; // Optional short description like "+5 Strength"
+  value: number; 
+  type: 'add' | 'multiply'; 
+  description?: string; 
 }
 
-// New: Define ActiveEffect structure
 export interface ActiveEffect {
-  id: string; // Unique ID for the effect instance on an item
-  name: string; // e.g., "Blessing of Strength", "Minor Health Boost"
-  description: string; // Narrative description of the effect
-  type: 'stat_modifier' | 'temporary_ability' | 'passive_aura'; // Start with stat_modifier and passive_aura
-  duration?: 'permanent_while_equipped' | number; // Number of turns, or permanent
-  statModifiers?: StatModifier[]; // Array of stat modifications
-  // Placeholder for future: grantedAbilityId?: string;
-  // Placeholder for future: onUseEffect?: DescribedEvent;
-  // Placeholder for future: onEquipEffect?: DescribedEvent;
-  // Placeholder for future: onUnequipEffect?: DescribedEvent;
-  sourceItemId?: string; // ID of the item granting this effect
+  id: string; 
+  name: string; 
+  description: string; 
+  type: 'stat_modifier' | 'temporary_ability' | 'passive_aura'; 
+  duration?: 'permanent_while_equipped' | number; 
+  statModifiers?: StatModifier[]; 
+  sourceItemId?: string; 
 }
 
 export interface Item {
@@ -37,11 +31,11 @@ export interface Item {
   description: string;
   equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
   isConsumable?: boolean;
-  effectDescription?: string; // Narrative effect for consumables or simple items. For complex gear, prefer activeEffects.
+  effectDescription?: string; 
   isQuestItem?: boolean;
   relevantQuestId?: string;
   basePrice?: number;
-  price?: number;
+  price?: number; // For merchants
   rarity?: ItemRarity;
   activeEffects?: ActiveEffect[];
 }
@@ -226,20 +220,43 @@ export interface RawLoreEntry {
   category?: string;
 }
 
-export interface GenerateScenarioFromSeriesInput {
+// Input/Output for the generateScenarioFoundationFlow (formerly generateScenarioFromSeries)
+export interface GenerateScenarioFoundationInput {
   seriesName: string;
   characterNameInput?: string;
   characterClassInput?: string;
   usePremiumAI?: boolean;
 }
 
-export interface GenerateScenarioFromSeriesOutput {
+export interface GenerateScenarioFoundationOutput {
   sceneDescription: string;
-  storyState: StructuredStoryState;
-  initialLoreEntries: RawLoreEntry[];
+  characterProfile: CharacterProfile; // Full profile including skills
+  currentLocation: string;
+  inventory: Item[];
+  equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
+  worldFacts: string[];
   seriesStyleGuide?: string;
-  seriesPlotSummary?: string;
+  seriesPlotSummary: string; 
 }
+
+// Input/Output for the new generateScenarioNarrativeElementsFlow
+export interface GenerateScenarioNarrativeElementsInput {
+  seriesName: string;
+  seriesPlotSummary: string;
+  characterProfile: CharacterProfile;
+  sceneDescription: string;
+  currentLocation: string;
+  characterNameInput?: string; // From original user input
+  usePremiumAI?: boolean;
+}
+
+export interface GenerateScenarioNarrativeElementsOutput {
+  quests: Quest[];
+  chapters: Chapter[];
+  trackedNPCs: NPCProfile[];
+  initialLoreEntries: RawLoreEntry[];
+}
+
 
 export interface ActiveNPCInfo {
   name: string;
@@ -371,7 +388,7 @@ export interface NarrativeAndEventsOutput {
 export interface GenerateNextSceneInput {
   currentScene: string;
   userInput: string;
-  storyState: StructuredStoryState; // This will be the one with base character stats for AI
+  storyState: StructuredStoryState; 
   seriesName: string;
   seriesStyleGuide?: string;
   currentTurnId: string;
@@ -380,11 +397,12 @@ export interface GenerateNextSceneInput {
 
 export interface GenerateNextSceneOutput {
   generatedMessages: AIMessageSegment[];
-  updatedStoryState: StructuredStoryState; // This is the state AFTER AI processing, with base stats updated by events
+  updatedStoryState: StructuredStoryState; 
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
   updatedStorySummary: string;
   dataCorrectionWarnings?: string[];
+  describedEvents?: DescribedEvent[]; // Pass through described events for client processing
 }
 
 export interface GenerateStoryStartInput {
@@ -399,7 +417,6 @@ export interface GenerateStoryStartOutput {
   storyState: StructuredStoryState;
 }
 
-// Types for FleshOutChapterQuests flow
 export interface FleshOutChapterQuestsInput {
   chapterToFleshOut: Chapter;
   seriesName: string;
@@ -413,19 +430,15 @@ export interface FleshOutChapterQuestsOutput {
   fleshedOutQuests: Quest[];
 }
 
-// --- Placeholder types for future systems ---
-
 export interface Faction {
   id: string;
   name: string;
   description: string;
-  // More fields like allies, enemies, leader etc.
 }
 
 export interface CharacterReputation {
   factionId: string;
-  reputationScore: number; // e.g., -100 (Hostile) to 100 (Exalted)
-  // More fields like status (e.g., "Outcast", "Member", "Champion")
+  reputationScore: number; 
 }
 
 export interface PlayerReputation {
@@ -436,28 +449,26 @@ export interface SkillSpecialization {
   id: string;
   name: string;
   description: string;
-  baseSkillId?: string; // If it branches from a core skill
-  grantsAbilities: Skill[]; // New abilities unlocked by this specialization
-  // Requirements: e.g., level, specific skill levels
+  baseSkillId?: string; 
+  grantsAbilities: Skill[]; 
 }
 
 export interface ResourceItem extends Item {
   resourceType: 'herb' | 'ore' | 'monster_part' | 'wood' | 'gem';
-  // Potentially: gatheringToolRequired?: string;
 }
 
 export interface CraftingRecipeIngredient {
-  itemId: string; // ID of the item (could be resource or other item)
+  itemId: string; 
   quantity: number;
 }
 
 export interface CraftingRecipe {
   id: string;
-  name: string; // e.g., "Minor Healing Potion Recipe"
+  name: string; 
   description: string;
   ingredients: CraftingRecipeIngredient[];
-  outputItemId: string; // ID of the item crafted
+  outputItemId: string; 
   outputQuantity: number;
-  requiredSkill?: { skillId: string; level: number }; // e.g., Alchemy Lvl 5
-  discovered?: boolean; // If the player has learned this recipe
+  requiredSkill?: { skillId: string; level: number }; 
+  discovered?: boolean; 
 }
