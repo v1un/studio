@@ -201,6 +201,7 @@ export interface GenerateNextSceneOutput {
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
   updatedStorySummary: string; // The new running summary of the story
+  dataCorrectionWarnings?: string[]; // Warnings about data corrections made
 }
 
 export interface GenerateStoryStartInput {

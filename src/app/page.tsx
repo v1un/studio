@@ -18,7 +18,7 @@ import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook, getLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -300,6 +300,22 @@ export default function StoryForgePage() {
           duration: 5000,
         });
       }
+
+      if (result.dataCorrectionWarnings && result.dataCorrectionWarnings.length > 0) {
+        result.dataCorrectionWarnings.forEach(warning => {
+          toast({
+            title: "AI Data Correction",
+            description: (
+              <div className="flex items-start">
+                <AlertTriangleIcon className="w-5 h-5 mr-2 mt-0.5 text-orange-500 shrink-0" />
+                <span>{warning}</span>
+              </div>
+            ),
+            duration: 7000, // Longer duration for warnings
+          });
+        });
+      }
+
 
     } catch (error: any) {
       console.error("Failed to generate next scene:", error);

@@ -180,6 +180,7 @@ const GenerateNextSceneOutputSchemaInternal = z.object({
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active (spoke, performed significant actions) in this generated scene. Include their name, an optional brief description, and an optional key piece of dialogue or action. Omit if no distinct NPCs were notably active."),
   newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene. Each entry should have 'keyword', 'content', and optional 'category'."),
   updatedStorySummary: z.string().describe("The new running summary of the story, concisely incorporating key events, decisions, and consequences from this scene, building upon the previous summary. Pay special attention to: significant changes in relationships with key NPCs, major unresolved plot threads or new mysteries introduced, important items gained or lost if they have plot significance, and choices made by the player that had significant, lasting consequences."),
+  dataCorrectionWarnings: z.array(z.string()).optional().describe("An array of warnings if the AI's output for story state required corrections or fallbacks."),
 });
 export type GenerateNextSceneOutput = z.infer<typeof GenerateNextSceneOutputSchemaInternal>;
 
@@ -260,6 +261,7 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    const dataCorrectionWarnings: string[] = [];
 
     const prompt = ai.definePrompt({
         name: 'generateNextScenePrompt',
@@ -279,13 +281,13 @@ Player Input: {{userInput}}
 
 Current Player Character:
 - Name: {{storyState.character.name}}, the {{storyState.character.class}} (Level: {{storyState.character.level}})
+- Description: {{storyState.character.description}}
 - Health: {{storyState.character.health}}/{{storyState.character.maxHealth}}
 - Mana: {{storyState.character.mana}}/{{storyState.character.maxMana}}
 - Language Understanding: {{storyState.character.languageUnderstanding}}/100 (0=None, 10-40=Basic, 41-70=Conversational, 71-99=Good, 100=Fluent)
 - Currency: {{storyState.character.currency}}
 - XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 - Stats: Str:{{storyState.character.strength}}, Dex:{{storyState.character.dexterity}}, Con:{{storyState.character.constitution}}, Int:{{storyState.character.intelligence}}, Wis:{{storyState.character.wisdom}}, Cha:{{storyState.character.charisma}}
-- Description: {{storyState.character.description}}
 - Skills & Abilities:
 {{{formattedSkillsString}}}
 
@@ -375,6 +377,7 @@ Ensure 'updatedStorySummary' is provided.
             updatedStorySummary: input.storyState.storySummary || "Error generating summary due to AI failure.",
             activeNPCsInScene: [],
             newLoreEntries: [],
+            dataCorrectionWarnings: ["AI model failed to generate a valid response structure."],
         };
     }
 
@@ -386,69 +389,130 @@ Ensure 'updatedStorySummary' is provided.
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [],
             newLoreEntries: [],
+            dataCorrectionWarnings: ["AI model returned an empty or malformed structure."],
         };
     }
     
+    const localCorrectionWarnings: string[] = [];
+
     let mergedStoryState = produce(input.storyState, draftState => {
         if (aiPartialOutput?.updatedStoryState) {
             const aiChar = aiPartialOutput.updatedStoryState.character;
             const originalChar = input.storyState.character; 
 
             if (aiChar) {
-                draftState.character.name = (typeof aiChar.name === 'string' && aiChar.name.trim() !== "") ? aiChar.name : originalChar.name;
-                draftState.character.class = (typeof aiChar.class === 'string' && aiChar.class.trim() !== "") ? aiChar.class : originalChar.class;
-                draftState.character.description = (typeof aiChar.description === 'string' && aiChar.description.trim() !== "") ? aiChar.description : originalChar.description;
-                draftState.character.health = typeof aiChar.health === 'number' ? aiChar.health : originalChar.health;
-                draftState.character.maxHealth = typeof aiChar.maxHealth === 'number' && aiChar.maxHealth > 0 ? aiChar.maxHealth : originalChar.maxHealth;
-                draftState.character.level = typeof aiChar.level === 'number' ? aiChar.level : originalChar.level;
-                draftState.character.experiencePoints = typeof aiChar.experiencePoints === 'number' ? aiChar.experiencePoints : originalChar.experiencePoints;
-                draftState.character.experienceToNextLevel = typeof aiChar.experienceToNextLevel === 'number' && aiChar.experienceToNextLevel > 0 ? aiChar.experienceToNextLevel : originalChar.experienceToNextLevel;
-                
-                // Ensure critical values from original if AI provided unusable values for required fields
-                if (!draftState.character.name) draftState.character.name = originalChar.name || "Unnamed Character";
-                if (!draftState.character.class) draftState.character.class = originalChar.class || "Adventurer";
-                if (!draftState.character.description) draftState.character.description = originalChar.description || "A mysterious adventurer.";
-                if (typeof draftState.character.health !== 'number') draftState.character.health = originalChar.health || 100;
-                if (typeof draftState.character.maxHealth !== 'number' || draftState.character.maxHealth <= 0) draftState.character.maxHealth = originalChar.maxHealth || 100;
-                if (typeof draftState.character.level !== 'number') draftState.character.level = originalChar.level || 1;
-                if (typeof draftState.character.experiencePoints !== 'number') draftState.character.experiencePoints = originalChar.experiencePoints || 0;
-                if (typeof draftState.character.experienceToNextLevel !== 'number' || draftState.character.experienceToNextLevel <=0) draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel || 100;
+                // Required fields
+                if (typeof aiChar.name === 'string' && aiChar.name.trim() !== "") draftState.character.name = aiChar.name;
+                else if (originalChar.name) draftState.character.name = originalChar.name; 
+                else { draftState.character.name = "Unnamed Character"; localCorrectionWarnings.push("Character 'name' was missing or invalid; applied hardcoded default."); }
 
+                if (typeof aiChar.class === 'string' && aiChar.class.trim() !== "") draftState.character.class = aiChar.class;
+                else if (originalChar.class) draftState.character.class = originalChar.class;
+                else { draftState.character.class = "Adventurer"; localCorrectionWarnings.push("Character 'class' was missing or invalid; applied hardcoded default."); }
+                
+                if (typeof aiChar.description === 'string' && aiChar.description.trim() !== "") draftState.character.description = aiChar.description;
+                else if (originalChar.description) draftState.character.description = originalChar.description;
+                else { draftState.character.description = "A mysterious adventurer."; localCorrectionWarnings.push("Character 'description' was missing or invalid; applied hardcoded default."); }
+
+                if (typeof aiChar.health === 'number') draftState.character.health = aiChar.health;
+                else if (typeof originalChar.health === 'number') draftState.character.health = originalChar.health;
+                else { draftState.character.health = 100; localCorrectionWarnings.push("Character 'health' was missing or invalid; applied hardcoded default."); }
+
+                if (typeof aiChar.maxHealth === 'number' && aiChar.maxHealth > 0) draftState.character.maxHealth = aiChar.maxHealth;
+                else if (typeof originalChar.maxHealth === 'number' && originalChar.maxHealth > 0) { draftState.character.maxHealth = originalChar.maxHealth; localCorrectionWarnings.push("AI response for 'character.maxHealth' was invalid/missing; restored from previous state."); }
+                else { draftState.character.maxHealth = 100; localCorrectionWarnings.push("AI response for 'character.maxHealth' was invalid/missing; applied hardcoded default.");}
+                
+                if (typeof aiChar.level === 'number') draftState.character.level = aiChar.level;
+                else if (typeof originalChar.level === 'number') draftState.character.level = originalChar.level;
+                else { draftState.character.level = 1; localCorrectionWarnings.push("Character 'level' was missing or invalid; applied hardcoded default."); }
+
+                if (typeof aiChar.experiencePoints === 'number') draftState.character.experiencePoints = aiChar.experiencePoints;
+                else if (typeof originalChar.experiencePoints === 'number') draftState.character.experiencePoints = originalChar.experiencePoints;
+                else { draftState.character.experiencePoints = 0; localCorrectionWarnings.push("Character 'experiencePoints' was missing or invalid; applied hardcoded default."); }
+
+                if (typeof aiChar.experienceToNextLevel === 'number' && aiChar.experienceToNextLevel > 0) draftState.character.experienceToNextLevel = aiChar.experienceToNextLevel;
+                else if (typeof originalChar.experienceToNextLevel === 'number' && originalChar.experienceToNextLevel > 0) { draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel; localCorrectionWarnings.push("AI response for 'character.experienceToNextLevel' was invalid/missing; restored from previous state."); }
+                else { draftState.character.experienceToNextLevel = 100; localCorrectionWarnings.push("AI response for 'character.experienceToNextLevel' was invalid/missing; applied hardcoded default.");}
+
+                // Ensure health doesn't exceed maxHealth
                 if (draftState.character.health > draftState.character.maxHealth) {
                     draftState.character.health = draftState.character.maxHealth;
                 }
+                // Prevent XPToNextLevel from being less than or equal to current XP unless level changed
                  if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) { 
                      draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor(originalChar.experienceToNextLevel * 0.5));
+                     localCorrectionWarnings.push("Corrected 'character.experienceToNextLevel' to be greater than current XP.");
                  }
 
-                const handleOptionalNumber = (aiValue: any, originalValue: number | undefined, defaultValue: number): number => {
+                // Optional numeric fields
+                const handleOptionalNumber = (fieldName: string, aiValue: any, originalValue: number | undefined, defaultValue: number): number => {
                     if (typeof aiValue === 'number') return aiValue;
-                    if (typeof originalValue === 'number') return originalValue;
+                    if (typeof originalValue === 'number') {
+                        localCorrectionWarnings.push(`AI response for 'character.${fieldName}' was invalid/missing; restored from previous state.`);
+                        return originalValue;
+                    }
+                    localCorrectionWarnings.push(`AI response for 'character.${fieldName}' was invalid/missing; applied hardcoded default (${defaultValue}).`);
                     return defaultValue;
                 };
 
-                draftState.character.mana = handleOptionalNumber(aiChar.mana, originalChar.mana, 0);
-                draftState.character.maxMana = handleOptionalNumber(aiChar.maxMana, originalChar.maxMana, 0);
-                draftState.character.strength = handleOptionalNumber(aiChar.strength, originalChar.strength, 10);
-                draftState.character.dexterity = handleOptionalNumber(aiChar.dexterity, originalChar.dexterity, 10);
-                draftState.character.constitution = handleOptionalNumber(aiChar.constitution, originalChar.constitution, 10);
-                draftState.character.intelligence = handleOptionalNumber(aiChar.intelligence, originalChar.intelligence, 10);
-                draftState.character.wisdom = handleOptionalNumber(aiChar.wisdom, originalChar.wisdom, 10);
-                draftState.character.charisma = handleOptionalNumber(aiChar.charisma, originalChar.charisma, 10);
-                draftState.character.currency = handleOptionalNumber(aiChar.currency, originalChar.currency, 0);
-                draftState.character.languageUnderstanding = handleOptionalNumber(aiChar.languageUnderstanding, originalChar.languageUnderstanding, 100);
+                draftState.character.mana = handleOptionalNumber('mana', aiChar.mana, originalChar.mana, 0);
+                draftState.character.maxMana = handleOptionalNumber('maxMana', aiChar.maxMana, originalChar.maxMana, 0);
+                draftState.character.strength = handleOptionalNumber('strength', aiChar.strength, originalChar.strength, 10);
+                draftState.character.dexterity = handleOptionalNumber('dexterity', aiChar.dexterity, originalChar.dexterity, 10);
+                draftState.character.constitution = handleOptionalNumber('constitution', aiChar.constitution, originalChar.constitution, 10);
+                draftState.character.intelligence = handleOptionalNumber('intelligence', aiChar.intelligence, originalChar.intelligence, 10);
+                draftState.character.wisdom = handleOptionalNumber('wisdom', aiChar.wisdom, originalChar.wisdom, 10);
+                draftState.character.charisma = handleOptionalNumber('charisma', aiChar.charisma, originalChar.charisma, 10);
+                draftState.character.currency = handleOptionalNumber('currency', aiChar.currency, originalChar.currency, 0);
+                draftState.character.languageUnderstanding = handleOptionalNumber('languageUnderstanding', aiChar.languageUnderstanding, originalChar.languageUnderstanding, 100);
                 
                 draftState.character.skillsAndAbilities = Array.isArray(aiChar.skillsAndAbilities) ? aiChar.skillsAndAbilities : (originalChar.skillsAndAbilities ?? []);
+                if (!Array.isArray(aiChar.skillsAndAbilities) && originalChar.skillsAndAbilities) {
+                    localCorrectionWarnings.push("AI response for 'character.skillsAndAbilities' was invalid/missing; restored from previous state.");
+                } else if (!Array.isArray(aiChar.skillsAndAbilities) && !originalChar.skillsAndAbilities) {
+                    localCorrectionWarnings.push("AI response for 'character.skillsAndAbilities' was invalid/missing; defaulted to empty array.");
+                }
+
             } else { 
+                 // AI provided no character object, use original entirely
                  draftState.character = {...originalChar}; 
+                 localCorrectionWarnings.push("AI provided no 'character' object in updatedStoryState; using previous state entirely.");
             }
 
-            draftState.currentLocation = aiPartialOutput.updatedStoryState.currentLocation ?? draftState.currentLocation;
+            draftState.currentLocation = (typeof aiPartialOutput.updatedStoryState.currentLocation === 'string' && aiPartialOutput.updatedStoryState.currentLocation.trim() !== "") 
+                ? aiPartialOutput.updatedStoryState.currentLocation 
+                : draftState.currentLocation;
+            if ((typeof aiPartialOutput.updatedStoryState.currentLocation !== 'string' || aiPartialOutput.updatedStoryState.currentLocation.trim() === "") && input.storyState.currentLocation !== aiPartialOutput.updatedStoryState.currentLocation) {
+                 localCorrectionWarnings.push("AI response for 'currentLocation' was invalid/missing; restored from previous state.");
+            }
+            
             draftState.inventory = Array.isArray(aiPartialOutput.updatedStoryState.inventory) ? aiPartialOutput.updatedStoryState.inventory : draftState.inventory;
-            draftState.equippedItems = typeof aiPartialOutput.updatedStoryState.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null ? aiPartialOutput.updatedStoryState.equippedItems : draftState.equippedItems;
+             if (!Array.isArray(aiPartialOutput.updatedStoryState.inventory) && input.storyState.inventory !== aiPartialOutput.updatedStoryState.inventory) {
+                 localCorrectionWarnings.push("AI response for 'inventory' was not an array; restored from previous state.");
+            }
+
+            draftState.equippedItems = (typeof aiPartialOutput.updatedStoryState.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null) 
+                ? aiPartialOutput.updatedStoryState.equippedItems 
+                : draftState.equippedItems;
+            if (!(typeof aiPartialOutput.updatedStoryState.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null) && input.storyState.equippedItems !== aiPartialOutput.updatedStoryState.equippedItems ) {
+                 localCorrectionWarnings.push("AI response for 'equippedItems' was invalid/missing; restored from previous state.");
+            }
+
+
             draftState.quests = Array.isArray(aiPartialOutput.updatedStoryState.quests) ? aiPartialOutput.updatedStoryState.quests : draftState.quests;
+            if (!Array.isArray(aiPartialOutput.updatedStoryState.quests) && input.storyState.quests !== aiPartialOutput.updatedStoryState.quests ) {
+                 localCorrectionWarnings.push("AI response for 'quests' was not an array; restored from previous state.");
+            }
+
             draftState.worldFacts = Array.isArray(aiPartialOutput.updatedStoryState.worldFacts) ? aiPartialOutput.updatedStoryState.worldFacts : draftState.worldFacts;
+            if (!Array.isArray(aiPartialOutput.updatedStoryState.worldFacts) && input.storyState.worldFacts !== aiPartialOutput.updatedStoryState.worldFacts) {
+                 localCorrectionWarnings.push("AI response for 'worldFacts' was not an array; restored from previous state.");
+            }
+            
             draftState.trackedNPCs = Array.isArray(aiPartialOutput.updatedStoryState.trackedNPCs) ? aiPartialOutput.updatedStoryState.trackedNPCs : draftState.trackedNPCs;
+            if (!Array.isArray(aiPartialOutput.updatedStoryState.trackedNPCs) && input.storyState.trackedNPCs !== aiPartialOutput.updatedStoryState.trackedNPCs) {
+                 localCorrectionWarnings.push("AI response for 'trackedNPCs' was not an array; restored from previous state.");
+            }
         }
     });
 
@@ -459,6 +523,7 @@ Ensure 'updatedStorySummary' is provided.
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreEntries ?? undefined,
         updatedStorySummary: aiPartialOutput.updatedStorySummary ?? mergedStoryState.storySummary ?? input.storyState.storySummary ?? "Summary unavailable.",
+        dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? localCorrectionWarnings : undefined,
     };
     
     if (!output.generatedMessages || !Array.isArray(output.generatedMessages) || output.generatedMessages.length === 0) {
@@ -479,9 +544,10 @@ Ensure 'updatedStorySummary' is provided.
       }
     }
     
+    // Final sanitation pass on the fully merged and defaulted state
     if (output.updatedStoryState.character) {
       const updatedChar = output.updatedStoryState.character;
-      const originalChar = input.storyState.character; 
+      const originalChar = input.storyState.character; // For comparison if needed, though most defaults are now from draftState logic
 
       updatedChar.name = (typeof updatedChar.name === 'string' && updatedChar.name.trim() !== "") ? updatedChar.name : (originalChar.name || "Unnamed Character");
       updatedChar.class = (typeof updatedChar.class === 'string' && updatedChar.class.trim() !== "") ? updatedChar.class : (originalChar.class || "Adventurer");
@@ -499,7 +565,7 @@ Ensure 'updatedStorySummary' is provided.
 
       const handleOptionalNumberFinalPass = (currentValue: any, originalValue: number | undefined, defaultValue: number): number => {
           if (typeof currentValue === 'number') return currentValue;
-          if (typeof originalValue === 'number') return originalValue;
+          // originalValue is already incorporated in mergedStoryState, so direct default is fine if currentValue isn't a number.
           return defaultValue;
       };
 
@@ -519,7 +585,7 @@ Ensure 'updatedStorySummary' is provided.
       if (updatedChar.languageUnderstanding > 100) updatedChar.languageUnderstanding = 100;
       
       let originalXpToNextLevel = originalChar.experienceToNextLevel;
-      if (originalXpToNextLevel <=0) originalXpToNextLevel = 100; 
+      if (!originalXpToNextLevel || originalXpToNextLevel <=0) originalXpToNextLevel = 100; 
 
       const didLevelUp = updatedChar.level > originalChar.level || 
                          (originalChar.experiencePoints >= originalXpToNextLevel && updatedChar.level === originalChar.level +1);
@@ -717,7 +783,11 @@ Ensure 'updatedStorySummary' is provided.
             if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '' || typeof processedNpc.shortTermGoal === 'undefined') delete processedNpc.shortTermGoal;
 
             if (processedNpc.buysItemTypes === null || typeof processedNpc.buysItemTypes === 'undefined') delete processedNpc.buysItemTypes;
+            else if (Array.isArray(processedNpc.buysItemTypes) && processedNpc.buysItemTypes.length === 0) delete processedNpc.buysItemTypes;
+            
             if (processedNpc.sellsItemTypes === null || typeof processedNpc.sellsItemTypes === 'undefined') delete processedNpc.sellsItemTypes;
+            else if (Array.isArray(processedNpc.sellsItemTypes) && processedNpc.sellsItemTypes.length === 0) delete processedNpc.sellsItemTypes;
+
 
             processedNpc.name = processedNpc.name || "Unnamed NPC";
             processedNpc.description = processedNpc.description || "No description provided.";
@@ -782,6 +852,11 @@ Ensure 'updatedStorySummary' is provided.
         output.newLoreEntries.forEach(lore => { if (lore.category === null || (lore.category as unknown) === '' || typeof lore.category === 'undefined') delete lore.category; });
         if (output.newLoreEntries.length === 0) delete output.newLoreEntries;
     }
+    if (localCorrectionWarnings.length > 0) {
+        output.dataCorrectionWarnings = [...(output.dataCorrectionWarnings || []), ...localCorrectionWarnings];
+    }
+
+
     return output;
   }
 );
