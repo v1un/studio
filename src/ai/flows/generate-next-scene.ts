@@ -280,7 +280,7 @@ Player Input: {{userInput}}
 Current Player Character:
 - Name: {{storyState.character.name}}, the {{storyState.character.class}} (Level: {{storyState.character.level}})
 - Health: {{storyState.character.health}}/{{storyState.character.maxHealth}}
-- Mana: {{#if storyState.character.mana}}{{storyState.character.mana}}/{{storyState.character.maxMana}}{{else}}N/A{{/if}}
+- Mana: {{storyState.character.mana}}/{{storyState.character.maxMana}}
 - Language Understanding: {{storyState.character.languageUnderstanding}}/100 (0=None, 10-40=Basic, 41-70=Conversational, 71-99=Good, 100=Fluent)
 - Currency: {{storyState.character.currency}}
 - XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
@@ -339,7 +339,6 @@ If character has such an ability and faces a 'fatal' event:
 4. Reflect emotional toll/consequences in 'updatedStoryState' (e.g., languageUnderstanding might be temporarily affected if trauma is severe, or specific worldFacts related to the cause of death might appear).
 
 **Skill Usage:** Narrate activation & consequences. Reflect effects in 'updatedStoryState'.
-
 **NPC Management:** Create/update profiles. Relationship dynamics. NPC memory & proactivity. If merchant: handle wares, buying/selling (deduct/add currency, items from/to inventories).
 **Environmental Interaction & Item Use:** Narrate outcomes. If item found, add to inventory (with unique ID, basePrice). Update worldFacts/quests.
 **Character Progression:** Award skills/stats for quests/milestones.
@@ -393,15 +392,12 @@ Ensure 'updatedStorySummary' is provided.
     let mergedStoryState = produce(input.storyState, draftState => {
         if (aiPartialOutput?.updatedStoryState) {
             const aiChar = aiPartialOutput.updatedStoryState.character;
-            const originalChar = input.storyState.character; // Keep a direct reference
+            const originalChar = input.storyState.character; 
 
             if (aiChar) {
-                // REQUIRED String fields
                 draftState.character.name = (typeof aiChar.name === 'string' && aiChar.name.trim() !== "") ? aiChar.name : originalChar.name;
                 draftState.character.class = (typeof aiChar.class === 'string' && aiChar.class.trim() !== "") ? aiChar.class : originalChar.class;
                 draftState.character.description = (typeof aiChar.description === 'string' && aiChar.description.trim() !== "") ? aiChar.description : originalChar.description;
-
-                // REQUIRED Number fields
                 draftState.character.health = typeof aiChar.health === 'number' ? aiChar.health : originalChar.health;
                 draftState.character.maxHealth = typeof aiChar.maxHealth === 'number' && aiChar.maxHealth > 0 ? aiChar.maxHealth : originalChar.maxHealth;
                 draftState.character.level = typeof aiChar.level === 'number' ? aiChar.level : originalChar.level;
@@ -418,8 +414,6 @@ Ensure 'updatedStorySummary' is provided.
                 if (typeof draftState.character.experiencePoints !== 'number') draftState.character.experiencePoints = originalChar.experiencePoints || 0;
                 if (typeof draftState.character.experienceToNextLevel !== 'number' || draftState.character.experienceToNextLevel <=0) draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel || 100;
 
-
-                // Cap health at maxHealth
                 if (draftState.character.health > draftState.character.maxHealth) {
                     draftState.character.health = draftState.character.maxHealth;
                 }
@@ -427,18 +421,22 @@ Ensure 'updatedStorySummary' is provided.
                      draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor(originalChar.experienceToNextLevel * 0.5));
                  }
 
+                const handleOptionalNumber = (aiValue: any, originalValue: number | undefined, defaultValue: number): number => {
+                    if (typeof aiValue === 'number') return aiValue;
+                    if (typeof originalValue === 'number') return originalValue;
+                    return defaultValue;
+                };
 
-                // Optional fields with defaults (prefer AI if valid, then original, then hardcoded)
-                draftState.character.mana = typeof aiChar.mana === 'number' ? aiChar.mana : (originalChar.mana ?? 0);
-                draftState.character.maxMana = typeof aiChar.maxMana === 'number' ? aiChar.maxMana : (originalChar.maxMana ?? 0);
-                draftState.character.strength = typeof aiChar.strength === 'number' ? aiChar.strength : (originalChar.strength ?? 10);
-                draftState.character.dexterity = typeof aiChar.dexterity === 'number' ? aiChar.dexterity : (originalChar.dexterity ?? 10);
-                draftState.character.constitution = typeof aiChar.constitution === 'number' ? aiChar.constitution : (originalChar.constitution ?? 10);
-                draftState.character.intelligence = typeof aiChar.intelligence === 'number' ? aiChar.intelligence : (originalChar.intelligence ?? 10);
-                draftState.character.wisdom = typeof aiChar.wisdom === 'number' ? aiChar.wisdom : (originalChar.wisdom ?? 10);
-                draftState.character.charisma = typeof aiChar.charisma === 'number' ? aiChar.charisma : (originalChar.charisma ?? 10);
-                draftState.character.currency = typeof aiChar.currency === 'number' ? aiChar.currency : (originalChar.currency ?? 0);
-                draftState.character.languageUnderstanding = typeof aiChar.languageUnderstanding === 'number' ? aiChar.languageUnderstanding : (originalChar.languageUnderstanding ?? 100);
+                draftState.character.mana = handleOptionalNumber(aiChar.mana, originalChar.mana, 0);
+                draftState.character.maxMana = handleOptionalNumber(aiChar.maxMana, originalChar.maxMana, 0);
+                draftState.character.strength = handleOptionalNumber(aiChar.strength, originalChar.strength, 10);
+                draftState.character.dexterity = handleOptionalNumber(aiChar.dexterity, originalChar.dexterity, 10);
+                draftState.character.constitution = handleOptionalNumber(aiChar.constitution, originalChar.constitution, 10);
+                draftState.character.intelligence = handleOptionalNumber(aiChar.intelligence, originalChar.intelligence, 10);
+                draftState.character.wisdom = handleOptionalNumber(aiChar.wisdom, originalChar.wisdom, 10);
+                draftState.character.charisma = handleOptionalNumber(aiChar.charisma, originalChar.charisma, 10);
+                draftState.character.currency = handleOptionalNumber(aiChar.currency, originalChar.currency, 0);
+                draftState.character.languageUnderstanding = handleOptionalNumber(aiChar.languageUnderstanding, originalChar.languageUnderstanding, 100);
                 
                 draftState.character.skillsAndAbilities = Array.isArray(aiChar.skillsAndAbilities) ? aiChar.skillsAndAbilities : (originalChar.skillsAndAbilities ?? []);
             } else { 
@@ -451,21 +449,18 @@ Ensure 'updatedStorySummary' is provided.
             draftState.quests = Array.isArray(aiPartialOutput.updatedStoryState.quests) ? aiPartialOutput.updatedStoryState.quests : draftState.quests;
             draftState.worldFacts = Array.isArray(aiPartialOutput.updatedStoryState.worldFacts) ? aiPartialOutput.updatedStoryState.worldFacts : draftState.worldFacts;
             draftState.trackedNPCs = Array.isArray(aiPartialOutput.updatedStoryState.trackedNPCs) ? aiPartialOutput.updatedStoryState.trackedNPCs : draftState.trackedNPCs;
-            // storySummary is handled directly in the output object construction later
         }
     });
 
 
-    // Construct the final output object, ensuring all top-level required fields are present
     const output: GenerateNextSceneOutput = {
         generatedMessages: aiPartialOutput.generatedMessages ?? [{ speaker: 'GM', content: "(AI response issue: No messages generated.)" }],
-        updatedStoryState: mergedStoryState as StructuredStoryState, // Cast after merging and defaulting
+        updatedStoryState: mergedStoryState as StructuredStoryState, 
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreEntries ?? undefined,
         updatedStorySummary: aiPartialOutput.updatedStorySummary ?? mergedStoryState.storySummary ?? input.storyState.storySummary ?? "Summary unavailable.",
     };
     
-    // Sanitation for generatedMessages
     if (!output.generatedMessages || !Array.isArray(output.generatedMessages) || output.generatedMessages.length === 0) {
       output.generatedMessages = [{ speaker: 'GM', content: "(AI response issue: No messages generated.)" }];
     } else {
@@ -475,7 +470,6 @@ Ensure 'updatedStorySummary' is provided.
         });
     }
 
-    // Sanitation for newLoreEntries (if any)
     if (output.newLoreEntries && Array.isArray(output.newLoreEntries)) {
       for (const lore of output.newLoreEntries) {
         if (lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") {
@@ -485,12 +479,10 @@ Ensure 'updatedStorySummary' is provided.
       }
     }
     
-    // Detailed Sanitation for Character Profile (final pass after merging)
     if (output.updatedStoryState.character) {
       const updatedChar = output.updatedStoryState.character;
-      const originalChar = input.storyState.character; // For fallback, again, if needed
+      const originalChar = input.storyState.character; 
 
-      // Ensure required fields are definitively present and correctly typed
       updatedChar.name = (typeof updatedChar.name === 'string' && updatedChar.name.trim() !== "") ? updatedChar.name : (originalChar.name || "Unnamed Character");
       updatedChar.class = (typeof updatedChar.class === 'string' && updatedChar.class.trim() !== "") ? updatedChar.class : (originalChar.class || "Adventurer");
       updatedChar.description = (typeof updatedChar.description === 'string' && updatedChar.description.trim() !== "") ? updatedChar.description : (originalChar.description || "A mysterious adventurer.");
@@ -505,19 +497,24 @@ Ensure 'updatedStorySummary' is provided.
         updatedChar.health = updatedChar.maxHealth;
       }
 
-      // Default optional fields if they are still not numbers after merging
-      updatedChar.mana = typeof updatedChar.mana === 'number' ? updatedChar.mana : (originalChar.mana ?? 0);
-      updatedChar.maxMana = typeof updatedChar.maxMana === 'number' ? updatedChar.maxMana : (originalChar.maxMana ?? 0);
-      updatedChar.strength = typeof updatedChar.strength === 'number' ? updatedChar.strength : (originalChar.strength ?? 10);
-      updatedChar.dexterity = typeof updatedChar.dexterity === 'number' ? updatedChar.dexterity : (originalChar.dexterity ?? 10);
-      updatedChar.constitution = typeof updatedChar.constitution === 'number' ? updatedChar.constitution : (originalChar.constitution ?? 10);
-      updatedChar.intelligence = typeof updatedChar.intelligence === 'number' ? updatedChar.intelligence : (originalChar.intelligence ?? 10);
-      updatedChar.wisdom = typeof updatedChar.wisdom === 'number' ? updatedChar.wisdom : (originalChar.wisdom ?? 10);
-      updatedChar.charisma = typeof updatedChar.charisma === 'number' ? updatedChar.charisma : (originalChar.charisma ?? 10);
-      updatedChar.currency = typeof updatedChar.currency === 'number' ? updatedChar.currency : (originalChar.currency ?? 0);
+      const handleOptionalNumberFinalPass = (currentValue: any, originalValue: number | undefined, defaultValue: number): number => {
+          if (typeof currentValue === 'number') return currentValue;
+          if (typeof originalValue === 'number') return originalValue;
+          return defaultValue;
+      };
+
+      updatedChar.mana = handleOptionalNumberFinalPass(updatedChar.mana, originalChar.mana, 0);
+      updatedChar.maxMana = handleOptionalNumberFinalPass(updatedChar.maxMana, originalChar.maxMana, 0);
+      updatedChar.strength = handleOptionalNumberFinalPass(updatedChar.strength, originalChar.strength, 10);
+      updatedChar.dexterity = handleOptionalNumberFinalPass(updatedChar.dexterity, originalChar.dexterity, 10);
+      updatedChar.constitution = handleOptionalNumberFinalPass(updatedChar.constitution, originalChar.constitution, 10);
+      updatedChar.intelligence = handleOptionalNumberFinalPass(updatedChar.intelligence, originalChar.intelligence, 10);
+      updatedChar.wisdom = handleOptionalNumberFinalPass(updatedChar.wisdom, originalChar.wisdom, 10);
+      updatedChar.charisma = handleOptionalNumberFinalPass(updatedChar.charisma, originalChar.charisma, 10);
+      updatedChar.currency = handleOptionalNumberFinalPass(updatedChar.currency, originalChar.currency, 0);
       if (updatedChar.currency < 0) updatedChar.currency = 0;
 
-      updatedChar.languageUnderstanding = typeof updatedChar.languageUnderstanding === 'number' ? updatedChar.languageUnderstanding : (originalChar.languageUnderstanding ?? 100);
+      updatedChar.languageUnderstanding = handleOptionalNumberFinalPass(updatedChar.languageUnderstanding, originalChar.languageUnderstanding, 100);
       if (updatedChar.languageUnderstanding < 0) updatedChar.languageUnderstanding = 0;
       if (updatedChar.languageUnderstanding > 100) updatedChar.languageUnderstanding = 100;
       
@@ -566,7 +563,6 @@ Ensure 'updatedStorySummary' is provided.
       });
     }
 
-    // Detailed Sanitation for other parts of storyState
      if (output.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
         const invItemIds = new Set<string>();
@@ -714,17 +710,14 @@ Ensure 'updatedStorySummary' is provided.
             const processedNpc: Partial<NPCProfileType> = { ...npc }; 
             delete (processedNpc as any).currentGoal; 
 
-            if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '') delete processedNpc.classOrRole;
-            if (processedNpc.firstEncounteredLocation === null || (processedNpc.firstEncounteredLocation as unknown) === '') delete processedNpc.firstEncounteredLocation;
-            if (processedNpc.lastKnownLocation === null || (processedNpc.lastKnownLocation as unknown) === '') delete processedNpc.lastKnownLocation;
-            if (processedNpc.seriesContextNotes === null || (processedNpc.seriesContextNotes as unknown) === '') delete processedNpc.seriesContextNotes;
-            if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '') delete processedNpc.shortTermGoal;
+            if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '' || typeof processedNpc.classOrRole === 'undefined') delete processedNpc.classOrRole;
+            if (processedNpc.firstEncounteredLocation === null || (processedNpc.firstEncounteredLocation as unknown) === '' || typeof processedNpc.firstEncounteredLocation === 'undefined') delete processedNpc.firstEncounteredLocation;
+            if (processedNpc.lastKnownLocation === null || (processedNpc.lastKnownLocation as unknown) === '' || typeof processedNpc.lastKnownLocation === 'undefined') delete processedNpc.lastKnownLocation;
+            if (processedNpc.seriesContextNotes === null || (processedNpc.seriesContextNotes as unknown) === '' || typeof processedNpc.seriesContextNotes === 'undefined') delete processedNpc.seriesContextNotes;
+            if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '' || typeof processedNpc.shortTermGoal === 'undefined') delete processedNpc.shortTermGoal;
 
-            if (processedNpc.buysItemTypes === null) delete processedNpc.buysItemTypes;
-            else processedNpc.buysItemTypes = processedNpc.buysItemTypes ?? undefined;
-
-            if (processedNpc.sellsItemTypes === null) delete processedNpc.sellsItemTypes;
-            else processedNpc.sellsItemTypes = processedNpc.sellsItemTypes ?? undefined;
+            if (processedNpc.buysItemTypes === null || typeof processedNpc.buysItemTypes === 'undefined') delete processedNpc.buysItemTypes;
+            if (processedNpc.sellsItemTypes === null || typeof processedNpc.sellsItemTypes === 'undefined') delete processedNpc.sellsItemTypes;
 
             processedNpc.name = processedNpc.name || "Unnamed NPC";
             processedNpc.description = processedNpc.description || "No description provided.";
@@ -786,7 +779,7 @@ Ensure 'updatedStorySummary' is provided.
     output.newLoreEntries = output.newLoreEntries && Array.isArray(output.newLoreEntries) ? output.newLoreEntries : undefined;
     if (output.newLoreEntries) {
         output.newLoreEntries = output.newLoreEntries.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "");
-        output.newLoreEntries.forEach(lore => { if (lore.category === null || (lore.category as unknown) === '') delete lore.category; });
+        output.newLoreEntries.forEach(lore => { if (lore.category === null || (lore.category as unknown) === '' || typeof lore.category === 'undefined') delete lore.category; });
         if (output.newLoreEntries.length === 0) delete output.newLoreEntries;
     }
     return output;
