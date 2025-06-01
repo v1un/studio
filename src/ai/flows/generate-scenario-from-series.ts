@@ -168,6 +168,7 @@ const Foundation_InitialWorldFactsOutputSchema = z.object({
 const Foundation_SeriesPlotSummaryInputSchema = z.object({
     seriesName: z.string(),
     characterNameInput: z.string().optional(),
+    usePremiumAI: z.boolean().optional(), // Added to allow separate token config
 });
 const Foundation_SeriesPlotSummaryOutputSchema = z.object({
     plotSummary: z.string().describe("REQUIRED."),
@@ -193,13 +194,18 @@ const foundationFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFoundationFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: mainInput.usePremiumAI ? 32000 : 8000 };
+    // General model config for this flow
+    const generalModelConfig = { maxOutputTokens: mainInput.usePremiumAI ? 32000 : 8000 };
+    // Specific, potentially larger, config for plot summary when premium is used
+    const plotSummaryModelConfig = mainInput.usePremiumAI
+        ? { maxOutputTokens: 32000 } // Keep high for premium, as requested for comprehensiveness
+        : { maxOutputTokens: 8000 }; // Standard model token limit for summary
 
     let step1StartTime = Date.now();
     console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
 
     const foundation_characterAndScenePrompt = ai.definePrompt({
-        name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: modelConfig,
+        name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
 You are a master storyteller for "{{seriesName}}".
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
@@ -216,10 +222,10 @@ Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchem
         prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string (""). Output ONLY the summary string or empty string.`,
     });
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig,
+        name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: plotSummaryModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_SeriesPlotSummaryOutputSchema'. The 'plotSummary' field is REQUIRED.
-For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': A comprehensive and detailed summary of the entire known storyline for "{{seriesName}}". This should cover all major story arcs, pivotal plot points, significant character developments for main characters, major antagonists, critical lore reveals, and world-altering events, from the beginning of the series to the most recently known events. Structure the summary chronologically, ideally breaking it down by major story arcs if applicable. Aim for as much detail as possible while maintaining a summary format. This summary will be the primary guide for generating the game's narrative structure.
-Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
+For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': An **extremely comprehensive and exhaustive** summary of the **entire known storyline** for "{{seriesName}}", from the **absolute beginning to the most recent known point in the canon**. This MUST cover **all major and minor story arcs**, all pivotal plot points, significant and subtle character developments for **all key main and supporting characters**, details about major and minor antagonists, all critical lore reveals (including world-building, magic systems, historical events), and all world-altering events. Structure the summary chronologically, ideally breaking it down by distinct, named story arcs from the series. **Utilize your available token budget to be as detailed and thorough as possible within a single summary string.** This summary is the canonical backbone for the entire game's narrative.
+Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema. Do not include any other conversational text.`,
     });
 
     let charSceneResult, styleGuideResult, seriesPlotSummaryResult;
@@ -227,7 +233,7 @@ Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
         [charSceneResult, styleGuideResult, seriesPlotSummaryResult] = await Promise.all([
             foundation_characterAndScenePrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput, characterClassInput: mainInput.characterClassInput, usePremiumAI: mainInput.usePremiumAI }),
             foundation_styleGuidePrompt({ seriesName: mainInput.seriesName }),
-            foundation_seriesPlotSummaryPrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput })
+            foundation_seriesPlotSummaryPrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput, usePremiumAI: mainInput.usePremiumAI })
         ]);
     } catch (e: any) {
         console.error(`[${new Date().toISOString()}] generateScenarioFoundationFlow: STEP 1 FAILED. Error: ${e.message}`);
@@ -254,7 +260,7 @@ Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
     let step2StartTime = Date.now();
     console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 2 - Calling foundation_initialCharacterSkillsPrompt.`);
     const foundation_initialCharacterSkillsPrompt = ai.definePrompt({
-        name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig,
+        name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object. If 'skillsAndAbilities' are provided, each skill MUST have a unique 'id', 'name', 'description', and 'type'.
 For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
 Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills. Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
@@ -292,35 +298,35 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
     };
 
     const foundation_initialInventoryPrompt = ai.definePrompt({
-        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig,
+        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialInventoryOutputSchema'. The 'inventory' array is REQUIRED (can be empty). Each item MUST have 'id', 'name', 'description'. 'basePrice' (number) is optional.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'inventory': 0-3 unequipped items. Include optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
 Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are present. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
-        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig,
+        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialMainGearOutputSchema'. Each item ('weapon', 'shield', 'body') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig,
+        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialSecondaryGearOutputSchema'. Each item ('head', 'legs', 'feet', 'hands') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig,
+        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialAccessoryGearOutputSchema'. Each item ('neck', 'ring1', 'ring2') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
-        name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig,
+        name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialWorldFactsOutputSchema'. The 'worldFacts' array is REQUIRED (can be empty).
 For "{{seriesName}}" (Char: {{character.name}} - Desc: {{character.description}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'worldFacts': 3-5 key facts.
@@ -825,3 +831,5 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     return output;
   }
 );
+
+    
