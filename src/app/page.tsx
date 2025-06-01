@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
-import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment } from "@/types/story";
+import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment, DisplayMessage } from "@/types/story";
 import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
@@ -17,7 +17,7 @@ import LorebookDisplay from "@/components/story-forge/lorebook-display";
 import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-log-display";
 
-import { simpleTestAction } from '@/ai/actions/simple-test-action'; // Import the test action
+import { simpleTestAction } from '@/ai/actions/simple-test-action'; 
 
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon } from "lucide-react";
@@ -92,14 +92,14 @@ export default function StoryForgePage() {
             setStoryHistory(session.storyHistory);
             setCurrentSession(session);
           } else {
-            console.warn("Old session format detected or missing story history. Clearing.");
+            console.warn("CLIENT: Old session format detected or missing story history. Clearing.");
             localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
             localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
             setCurrentSession(null);
             setStoryHistory([]);
           }
         } catch (e) {
-          console.error("Failed to parse saved session:", e);
+          console.error("CLIENT: Failed to parse saved session:", e);
           localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
           localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
           setCurrentSession(null);
@@ -142,14 +142,17 @@ export default function StoryForgePage() {
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
     setLoadingType('scenario'); 
+    const input: GenerateScenarioFromSeriesInput = {
+      seriesName: data.seriesName,
+      characterNameInput: data.characterName,
+      characterClassInput: data.characterClass,
+      usePremiumAI: data.usePremiumAI,
+    };
+    console.log("CLIENT: Starting scenario generation with input:", input);
+
     try {
-      const input: GenerateScenarioFromSeriesInput = {
-        seriesName: data.seriesName,
-        characterNameInput: data.characterName,
-        characterClassInput: data.characterClass,
-        usePremiumAI: data.usePremiumAI,
-      };
       const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
+      console.log("CLIENT: Scenario generation successful. Result:", result);
       
       clearLorebook(); 
       if (result.initialLoreEntries) {
@@ -198,7 +201,7 @@ export default function StoryForgePage() {
         description: `Playing as ${newSession.characterName}. ${data.usePremiumAI ? "(Premium AI Active)" : ""}`,
       });
     } catch (error: any) {
-      console.error("Failed to start story from series:", error);
+      console.error("CLIENT: Failed to start story from series:", error);
       toast({
         title: "Error Starting Scenario",
         description: `The AI encountered an issue: ${error.message || "Please try a different series or adjust inputs."}`,
@@ -214,6 +217,8 @@ export default function StoryForgePage() {
     if (!currentStoryState || !currentSession || !character) return;
     setIsLoadingInteraction(true);
     setLoadingType('nextScene');
+    console.log("CLIENT: User action submitted:", userInput);
+
 
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
@@ -248,6 +253,7 @@ export default function StoryForgePage() {
         .join("\n...\n"); 
 
       const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
+      console.log("CLIENT: Calling generateNextScene with context:", { currentSceneContext, userInput, currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial' });
 
 
       const result = await generateNextScene({
@@ -259,6 +265,8 @@ export default function StoryForgePage() {
         currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
         usePremiumAI: currentSession.isPremiumSession,
       });
+      console.log("CLIENT: generateNextScene successful. Result:", result);
+
 
       const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
         const isGM = aiMsg.speaker.toUpperCase() === 'GM'; 
@@ -329,7 +337,7 @@ export default function StoryForgePage() {
 
 
     } catch (error: any) {
-      console.error("Failed to generate next scene:", error);
+      console.error("CLIENT: Failed to generate next scene:", error);
       toast({
         title: "Error Generating Scene",
         description: `The AI encountered an issue: ${error.message || "Please try again."}`,
@@ -379,24 +387,24 @@ export default function StoryForgePage() {
   };
 
   const handleTestSimpleAction = async () => {
-    console.log("CLIENT: Calling simpleTestAction..."); // Client-side log
-    setIsLoadingInteraction(true); // Optional: show loading state
+    console.log("CLIENT: Calling simpleTestAction..."); 
+    setIsLoadingInteraction(true); 
     try {
       const result = await simpleTestAction({ name: "StoryForge User" });
-      console.log("CLIENT: simpleTestAction result:", result); // Client-side log
+      console.log("CLIENT: simpleTestAction result:", result); 
       toast({
         title: "Simple Test Action Successful",
         description: `Greeting: ${result.greeting} (Server Time: ${new Date(result.timestamp).toLocaleTimeString()})`,
       });
     } catch (error: any) {
-      console.error("CLIENT: Error calling simpleTestAction:", error); // Client-side log
+      console.error("CLIENT: Error calling simpleTestAction:", error); 
       toast({
         title: "Simple Test Action Failed",
         description: error.message || "Unknown error",
         variant: "destructive",
       });
     }
-    setIsLoadingInteraction(false); // Optional: hide loading state
+    setIsLoadingInteraction(false); 
   };
   
   if (isLoadingPage) {
