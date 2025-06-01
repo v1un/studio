@@ -423,7 +423,7 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
         - If merchant: \`isMerchant: true\`, populate \`merchantInventory\` with items (each with unique \`id\`, \`name\`, \`description\`, \`basePrice\` (MUST BE a number), and merchant \`price\` (MUST BE a number). OMIT 'equipSlot' for non-equippable items in inventory.). All item fields are required if an item is present.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): For '{{seriesName}}', **prioritize** pre-populating profiles for 2-4 other major, well-known characters canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series.
         - Required Details: 'id' (unique), 'name', 'description', 'relationshipStatus' (MUST BE a number).
-        - Contextual Details: 'firstEncounteredLocation' (canonical), 'lastKnownLocation'.
+        - Contextual Details: 'firstEncounteredLocation' (their canonical location or a general "Known from series lore"; DO NOT use '{{currentLocation}}' unless they are explicitly described as being present in the 'Initial Scene' input). 'lastKnownLocation' (their canonical location, or '{{currentLocation}}' ONLY if they are explicitly in the 'Initial Scene').
         - If merchant: include merchant data as above.
     - For ALL NPCs: 'firstEncounteredTurnId' & 'lastSeenTurnId' = "initial_turn_0". Empty dialogue history. Optional 'seriesContextNotes', 'shortTermGoal', 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number).
 Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all fields are correctly populated and typed, especially numeric ones.

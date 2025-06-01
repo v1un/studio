@@ -432,7 +432,11 @@ Tracked NPCs:
 **Your Task:**
 Your primary task is to generate a response adhering to the 'NarrativeAndEventsOutputSchema' structure (partially, as it's a deepPartial output). Prioritize clear narrative and accurate event descriptions. DO NOT return a full 'updatedStoryState' object in this first AI call; focus on describing the events that TypeScript will use to update the state.
 
-1.  **Generate Narrative (generatedMessages):** Write the story's continuation, including GM narration and any NPC dialogue. Ensure NPC speaker names match those in 'Tracked NPCs' if they are speaking.
+1.  **Generate Narrative (generatedMessages):** Write the story's continuation, including GM narration and any NPC dialogue. Ensure NPC speaker names match those in 'Tracked NPCs' if they are speaking. **Crucially, only have NPCs speak or act if their presence is justified by:**
+    *   Being explicitly mentioned in the 'Context from Previous Scene/Messages (Summary)'.
+    *   Being introduced by your narrative *in this current turn*.
+    *   Their presence being strongly implied by the 'Player Input' and the 'Current Location'.
+    **Do not make pre-populated NPCs from the 'Tracked NPCs' list spontaneously appear or speak without strong narrative justification within the current scene's context.** If an NPC is to be introduced, describe their arrival or presence first.
 2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Be specific and ensure ALL required fields for each event type are present and correctly typed. ALL numeric fields (amounts, prices, levels, stats, etc.) MUST be actual numbers.
     - For 'itemFound' events, ensure 'suggestedBasePrice' (a number, can be 0) is always included. 'equipSlot' should ONLY be present if the item is inherently equippable gear (e.g., a sword); for items like potions or keys, 'equipSlot' MUST BE OMITTED.
     - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0). 'objectives' MUST have 'isCompleted: false'.
@@ -579,12 +583,17 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                         localCorrectionWarnings.push(`Event: Language understanding improved by ${event.amount} to ${draftState.character.languageUnderstanding}. Reason: ${event.reason || 'unspecified'}`);
                          if (draftState.character.languageUnderstanding >= 40) {
                             const factsBeforeFilter = [...(draftState.worldFacts || [])];
-                            draftState.worldFacts = factsBeforeFilter.filter(fact =>
-                                !fact.toLowerCase().includes("language barrier") &&
-                                !fact.toLowerCase().includes("cannot understand") &&
-                                !fact.toLowerCase().includes("incomprehensible")
+                            const languageBarrierFactExists = factsBeforeFilter.some(fact =>
+                                fact.toLowerCase().includes("language barrier") ||
+                                fact.toLowerCase().includes("cannot understand") ||
+                                fact.toLowerCase().includes("incomprehensible")
                             );
-                            if (draftState.worldFacts.length < factsBeforeFilter.length) {
+                            if (languageBarrierFactExists) {
+                                draftState.worldFacts = factsBeforeFilter.filter(fact =>
+                                    !fact.toLowerCase().includes("language barrier") &&
+                                    !fact.toLowerCase().includes("cannot understand") &&
+                                    !fact.toLowerCase().includes("incomprehensible")
+                                );
                                 localCorrectionWarnings.push("Removed 'language barrier' world fact due to improved understanding.");
                             }
                         }
@@ -1118,7 +1127,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
             if (quest.rewards) {
                 quest.rewards.items = quest.rewards.items ?? [];
                 quest.rewards.items.forEach((rItem, rIndex) => {
-                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${index}`; // Corrected index to rIndex for uniqueness
+                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${rIndex}`; // Corrected index to rIndex for uniqueness
                     rItem.name = rItem.name || "Unnamed Reward Item";
                     rItem.description = rItem.description || "No description.";
                     rItem.basePrice = rItem.basePrice ?? 0;
@@ -1282,3 +1291,4 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     return finalOutput;
   }
 );
+
