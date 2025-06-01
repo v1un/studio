@@ -8,7 +8,7 @@
  * a set of pre-populated lorebook entries relevant to the series, a brief series style guide,
  * initial profiles for any NPCs introduced in the starting scene or known major characters from the series (including merchant data, and optional health/mana for combatants),
  * and starting skills/abilities for the character.
- * This flow uses a multi-step generation process and supports model selection.
+ * This flow uses a multi-step generation process with parallelized AI calls and supports model selection.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
  * - GenerateScenarioFromSeriesInput - Input type (series name, optional character name/class, usePremiumAI).
@@ -264,18 +264,15 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
   },
   async (mainInput: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
     const flowStartTime = Date.now();
-    console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFromSeriesFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}`);
+    console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFromSeriesFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Using model: ${modelName}`);
     const modelConfig = { maxOutputTokens: 8000 };
 
+    // Define all prompts first
     const characterAndScenePrompt = ai.definePrompt({
-        name: 'characterAndScenePrompt',
-        model: modelName,
-        input: { schema: CharacterAndSceneInputSchema },
-        output: { schema: CharacterAndSceneOutputSchema },
-        config: modelConfig,
+        name: 'characterAndScenePrompt', model: modelName, input: { schema: CharacterAndSceneInputSchema }, output: { schema: CharacterAndSceneOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CharacterAndSceneOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 You are a master storyteller setting up an interactive text adventure in the series: "{{seriesName}}".
 Your output MUST be a JSON object strictly conforming to the 'CharacterAndSceneOutputSchema'. ALL fields specified as required in the schema ('sceneDescription', 'characterCore', 'currentLocation', and required fields within 'characterCore' like 'name', 'class', 'health', 'maxHealth', 'level', 'experiencePoints', 'experienceToNextLevel', 'description') MUST be present and correctly typed (e.g., numbers for stats, currency). Optional fields should only be included if applicable and must also be correctly typed.
@@ -303,11 +300,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const initialCharacterSkillsPrompt = ai.definePrompt({
-        name: 'initialCharacterSkillsPrompt',
-        model: modelName,
-        input: { schema: InitialCharacterSkillsInputSchema },
-        output: { schema: InitialCharacterSkillsOutputSchema },
-        config: modelConfig,
+        name: 'initialCharacterSkillsPrompt', model: modelName, input: { schema: InitialCharacterSkillsInputSchema }, output: { schema: InitialCharacterSkillsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialCharacterSkillsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a character in the series "{{seriesName}}":
 Name: {{characterName}}
@@ -320,13 +313,9 @@ Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills.
 Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }. If no skills, output { "skillsAndAbilities": [] }.
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialCharacterSkillsOutputSchema definition provided earlier in this prompt.`,
     });
-
+    
     const initialInventoryPrompt = ai.definePrompt({
-        name: 'initialInventoryPrompt',
-        model: modelName,
-        input: { schema: MinimalContextForItemsFactsInputSchema },
-        output: { schema: InitialInventoryOutputSchema },
-        config: modelConfig,
+        name: 'initialInventoryPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialInventoryOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialInventoryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -342,11 +331,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const initialMainGearPrompt = ai.definePrompt({
-        name: 'initialMainGearPrompt',
-        model: modelName,
-        input: { schema: MinimalContextForItemsFactsInputSchema },
-        output: { schema: InitialMainGearOutputSchema },
-        config: modelConfig,
+        name: 'initialMainGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialMainGearOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialMainGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -360,11 +345,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'initialSecondaryGearPrompt',
-        model: modelName,
-        input: { schema: MinimalContextForItemsFactsInputSchema },
-        output: { schema: InitialSecondaryGearOutputSchema },
-        config: modelConfig,
+        name: 'initialSecondaryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialSecondaryGearOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialSecondaryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -378,11 +359,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'initialAccessoryGearPrompt',
-        model: modelName,
-        input: { schema: MinimalContextForItemsFactsInputSchema },
-        output: { schema: InitialAccessoryGearOutputSchema },
-        config: modelConfig,
+        name: 'initialAccessoryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialAccessoryGearOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialAccessoryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -396,11 +373,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
     
     const initialWorldFactsPrompt = ai.definePrompt({
-        name: 'initialWorldFactsPrompt',
-        model: modelName,
-        input: { schema: MinimalContextForItemsFactsInputSchema },
-        output: { schema: InitialWorldFactsOutputSchema },
-        config: modelConfig,
+        name: 'initialWorldFactsPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialWorldFactsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialWorldFactsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -414,11 +387,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const initialQuestsPrompt = ai.definePrompt({
-        name: 'initialQuestsPrompt',
-        model: modelName,
-        input: { schema: InitialQuestsInputSchema },
-        output: { schema: InitialQuestsOutputSchema },
-        config: modelConfig,
+        name: 'initialQuestsPrompt', model: modelName, input: { schema: InitialQuestsInputSchema }, output: { schema: InitialQuestsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialQuestsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) - {{character.description}}
@@ -440,11 +409,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const initialTrackedNPCsPrompt = ai.definePrompt({
-        name: 'initialTrackedNPCsPrompt',
-        model: modelName,
-        input: { schema: InitialTrackedNPCsInputSchema },
-        output: { schema: InitialTrackedNPCsOutputSchema },
-        config: modelConfig,
+        name: 'initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialTrackedNPCsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For a story in "{{seriesName}}" starting with:
 Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Language: {{character.languageUnderstanding}}/100) -
@@ -466,11 +431,7 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const loreEntriesPrompt = ai.definePrompt({
-        name: 'generateLoreEntriesPrompt',
-        model: modelName,
-        input: { schema: LoreGenerationInputSchema },
-        output: { schema: z.array(RawLoreEntrySchemaInternal) },
-        config: modelConfig,
+        name: 'generateLoreEntriesPrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: z.array(RawLoreEntrySchemaInternal) }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON array conforming to the output schema (an array of RawLoreEntrySchemaInternal objects). Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 You are a lore master for "{{seriesName}}".
 Context: Character "{{characterName}}" ({{characterClass}}).
@@ -482,38 +443,42 @@ Ensure all field names and values in your JSON response strictly match the types
     });
 
     const styleGuidePrompt = ai.definePrompt({
-        name: 'generateSeriesStyleGuidePrompt',
-        model: modelName,
-        input: { schema: StyleGuideInputSchema },
-        output: { schema: z.string().nullable() },
-        config: modelConfig,
+        name: 'generateSeriesStyleGuidePrompt', model: modelName, input: { schema: StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single string (for the style guide) or an empty string (""). Do not include JSON structure unless the string itself is JSON (which is not expected here).
 For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string ("").
 Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     });
 
+
+    // --- Step 1: Initial Parallel Batch (Character/Scene and Style Guide) ---
     let stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Calling characterAndScenePrompt.`);
-    const { output: charSceneOutput } = await characterAndScenePrompt({
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene & Style Guide).`);
+    
+    const characterAndScenePromise = characterAndScenePrompt({
         seriesName: mainInput.seriesName,
         characterNameInput: mainInput.characterNameInput,
         characterClassInput: mainInput.characterClassInput,
         usePremiumAI: mainInput.usePremiumAI,
     });
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - characterAndScenePrompt completed in ${Date.now() - stepStartTime}ms.`);
-    
+    const styleGuidePromise = styleGuidePrompt({ seriesName: mainInput.seriesName });
+
+    const [charSceneResult, styleGuideResult] = await Promise.all([characterAndScenePromise, styleGuidePromise]);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Initial Parallel Batch completed in ${Date.now() - stepStartTime}ms.`);
+
+    const charSceneOutput = charSceneResult.output;
+    const styleGuideRaw = styleGuideResult.output;
+
     if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.characterCore || !charSceneOutput.currentLocation) {
       console.error("Character/Scene generation failed or returned invalid structure:", charSceneOutput);
       throw new Error('Failed to generate character core, scene, or location.');
     }
-    
     let { characterCore, sceneDescription, currentLocation } = charSceneOutput;
-
     characterCore.mana = characterCore.mana ?? 0;
     characterCore.maxMana = characterCore.maxMana ?? 0;
     characterCore.currency = characterCore.currency ?? 0;
     characterCore.languageUnderstanding = characterCore.languageUnderstanding ?? 100;
 
+    // --- Step 2: Skills Generation (Sequential) ---
     stepStartTime = Date.now();
     console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
     const skillsInput: z.infer<typeof InitialCharacterSkillsInputSchema> = {
@@ -525,142 +490,95 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     const { output: skillsOutput } = await initialCharacterSkillsPrompt(skillsInput);
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - initialCharacterSkillsPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
-
     const fullCharacterProfile: z.infer<typeof CharacterProfileSchemaInternal> = {
         ...characterCore, 
         skillsAndAbilities: characterSkills,
     };
-    
+
+    // --- Step 3: Main Parallel Batch (Inventory, Gear, Facts, Quests, NPCs, Lore) ---
+    stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Starting Main Parallel Batch.`);
+
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: { name: fullCharacterProfile.name, class: fullCharacterProfile.class, description: fullCharacterProfile.description, currency: fullCharacterProfile.currency, languageUnderstanding: fullCharacterProfile.languageUnderstanding },
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
     };
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Calling initialInventoryPrompt.`);
-    const { output: inventoryOutput } = await initialInventoryPrompt(minimalContextForItemsFactsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - initialInventoryPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    if (!inventoryOutput || !inventoryOutput.inventory) {
-        console.error("Inventory generation failed or returned invalid structure:", inventoryOutput);
-        throw new Error('Failed to generate initial inventory.');
-    }
-    const inventory = inventoryOutput.inventory;
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 4 - Calling initialMainGearPrompt.`);
-    const { output: mainGearRaw } = await initialMainGearPrompt(minimalContextForItemsFactsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 4 - initialMainGearPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    const mainGearOutput = mainGearRaw || { weapon: null, shield: null, body: null };
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 5 - Calling initialSecondaryGearPrompt.`);
-    const { output: secondaryGearRaw } = await initialSecondaryGearPrompt(minimalContextForItemsFactsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 5 - initialSecondaryGearPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    const secondaryGearOutput = secondaryGearRaw || { head: null, legs: null, feet: null, hands: null };
-    
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 6 - Calling initialAccessoryGearPrompt.`);
-    const { output: accessoryGearRaw } = await initialAccessoryGearPrompt(minimalContextForItemsFactsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 6 - initialAccessoryGearPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    const accessoryGearOutput = accessoryGearRaw || { neck: null, ring1: null, ring2: null };
-
-    const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
-        weapon: mainGearOutput.weapon ?? null,
-        shield: mainGearOutput.shield ?? null,
-        body: mainGearOutput.body ?? null,
-        head: secondaryGearOutput.head ?? null,
-        legs: secondaryGearOutput.legs ?? null,
-        feet: secondaryGearOutput.feet ?? null,
-        hands: secondaryGearOutput.hands ?? null,
-        neck: accessoryGearOutput.neck ?? null,
-        ring1: accessoryGearOutput.ring1 ?? null,
-        ring2: accessoryGearOutput.ring2 ?? null,
-    };
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 7 - Calling initialWorldFactsPrompt.`);
-    const { output: worldFactsOutput } = await initialWorldFactsPrompt(minimalContextForItemsFactsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 7 - initialWorldFactsPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    if (!worldFactsOutput || !worldFactsOutput.worldFacts) {
-        console.error("World facts generation failed or returned invalid structure:", worldFactsOutput);
-        throw new Error('Failed to generate initial world facts.');
-    }
-    const worldFacts = worldFactsOutput.worldFacts;
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 8 - Calling initialQuestsPrompt.`);
     const questsInput: z.infer<typeof InitialQuestsInputSchema> = {
-        seriesName: mainInput.seriesName,
-        character: fullCharacterProfile, 
-        sceneDescription: sceneDescription,
-        currentLocation: currentLocation,
-        characterNameInput: mainInput.characterNameInput,
+        seriesName: mainInput.seriesName, character: fullCharacterProfile, sceneDescription: sceneDescription, currentLocation: currentLocation, characterNameInput: mainInput.characterNameInput,
     };
-    const { output: questsOutput } = await initialQuestsPrompt(questsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 8 - initialQuestsPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    if (!questsOutput || !questsOutput.quests) {
-        console.error("Quests generation failed or returned invalid structure:", questsOutput);
-        throw new Error('Failed to generate initial quests.');
-    }
-    const quests = questsOutput.quests;
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 9 - Calling initialTrackedNPCsPrompt.`);
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
-        seriesName: mainInput.seriesName,
-        character: fullCharacterProfile, 
-        sceneDescription: sceneDescription,
-        currentLocation: currentLocation,
-        characterNameInput: mainInput.characterNameInput,
+        seriesName: mainInput.seriesName, character: fullCharacterProfile, sceneDescription: sceneDescription, currentLocation: currentLocation, characterNameInput: mainInput.characterNameInput,
     };
-    const { output: npcsOutput } = await initialTrackedNPCsPrompt(npcsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 9 - initialTrackedNPCsPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    if (!npcsOutput || !npcsOutput.trackedNPCs) {
-        console.error("NPCs generation failed or returned invalid structure:", npcsOutput);
-        throw new Error('Failed to generate initial tracked NPCs.');
-    }
-    const trackedNPCs = npcsOutput.trackedNPCs;
-
-    const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
-        character: fullCharacterProfile,
-        currentLocation: currentLocation,
-        inventory: inventory,
-        equippedItems: equippedItemsIntermediate as Required<typeof equippedItemsIntermediate>, 
-        quests: quests,
-        worldFacts: worldFacts,
-        trackedNPCs: trackedNPCs,
-        storySummary: `The adventure begins for ${fullCharacterProfile.name} in ${mainInput.seriesName}, at ${currentLocation}. Initial scene: ${sceneDescription.substring(0,100)}...`,
-    };
-
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 10 - Calling loreEntriesPrompt.`);
     const loreInput: z.infer<typeof LoreGenerationInputSchema> = {
-      seriesName: mainInput.seriesName,
-      characterName: storyState.character.name,
-      characterClass: storyState.character.class,
-      sceneDescription: sceneDescription,
-      characterDescription: storyState.character.description,
+      seriesName: mainInput.seriesName, characterName: fullCharacterProfile.name, characterClass: fullCharacterProfile.class, sceneDescription: sceneDescription, characterDescription: fullCharacterProfile.description,
     };
-    const { output: loreEntries } = await loreEntriesPrompt(loreInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 10 - loreEntriesPrompt completed in ${Date.now() - stepStartTime}ms.`);
-    const initialLoreEntries = loreEntries || [];
 
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 11 - Calling styleGuidePrompt.`);
-    const { output: styleGuideRaw } = await styleGuidePrompt({ seriesName: mainInput.seriesName });
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 11 - styleGuidePrompt completed in ${Date.now() - stepStartTime}ms.`);
+    const mainBatchPromises = [
+        initialInventoryPrompt(minimalContextForItemsFactsInput),
+        initialMainGearPrompt(minimalContextForItemsFactsInput),
+        initialSecondaryGearPrompt(minimalContextForItemsFactsInput),
+        initialAccessoryGearPrompt(minimalContextForItemsFactsInput),
+        initialWorldFactsPrompt(minimalContextForItemsFactsInput),
+        initialQuestsPrompt(questsInput),
+        initialTrackedNPCsPrompt(npcsInput),
+        loreEntriesPrompt(loreInput),
+    ];
+
+    const [
+        inventoryResult,
+        mainGearResult,
+        secondaryGearResult,
+        accessoryGearResult,
+        worldFactsResult,
+        questsResult,
+        npcsResult,
+        loreResult,
+    ] = await Promise.all(mainBatchPromises);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Main Parallel Batch completed in ${Date.now() - stepStartTime}ms.`);
+
+    const inventoryOutput = inventoryResult.output;
+    const mainGearRaw = mainGearResult.output;
+    const secondaryGearRaw = secondaryGearResult.output;
+    const accessoryGearRaw = accessoryGearResult.output;
+    const worldFactsOutput = worldFactsResult.output;
+    const questsOutput = questsResult.output;
+    const npcsOutput = npcsResult.output;
+    const loreEntries = loreResult.output || [];
+
+
+    if (!inventoryOutput || !inventoryOutput.inventory) { throw new Error('Failed to generate initial inventory.'); }
+    const inventory = inventoryOutput.inventory;
+    const mainGearOutput = mainGearRaw || { weapon: null, shield: null, body: null };
+    const secondaryGearOutput = secondaryGearRaw || { head: null, legs: null, feet: null, hands: null };
+    const accessoryGearOutput = accessoryGearRaw || { neck: null, ring1: null, ring2: null };
+    if (!worldFactsOutput || !worldFactsOutput.worldFacts) { throw new Error('Failed to generate initial world facts.'); }
+    const worldFacts = worldFactsOutput.worldFacts;
+    if (!questsOutput || !questsOutput.quests) { throw new Error('Failed to generate initial quests.'); }
+    const quests = questsOutput.quests;
+    if (!npcsOutput || !npcsOutput.trackedNPCs) { throw new Error('Failed to generate initial tracked NPCs.'); }
+    const trackedNPCs = npcsOutput.trackedNPCs;
+    
+    const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
+        weapon: mainGearOutput.weapon ?? null, shield: mainGearOutput.shield ?? null, body: mainGearOutput.body ?? null,
+        head: secondaryGearOutput.head ?? null, legs: secondaryGearOutput.legs ?? null, feet: secondaryGearOutput.feet ?? null, hands: secondaryGearOutput.hands ?? null,
+        neck: accessoryGearOutput.neck ?? null, ring1: accessoryGearOutput.ring1 ?? null, ring2: accessoryGearOutput.ring2 ?? null,
+    };
     const seriesStyleGuide = styleGuideRaw === null ? undefined : styleGuideRaw;
 
-    let finalOutput: GenerateScenarioFromSeriesOutput = {
-      sceneDescription: sceneDescription,
-      storyState: storyState,
-      initialLoreEntries: initialLoreEntries,
-      seriesStyleGuide: seriesStyleGuide,
+    const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
+        character: fullCharacterProfile, currentLocation: currentLocation, inventory: inventory,
+        equippedItems: equippedItemsIntermediate as Required<typeof equippedItemsIntermediate>, 
+        quests: quests, worldFacts: worldFacts, trackedNPCs: trackedNPCs,
+        storySummary: `The adventure begins for ${fullCharacterProfile.name} in ${mainInput.seriesName}, at ${currentLocation}. Initial scene: ${sceneDescription.substring(0,100)}...`,
     };
     
-    // Final sanitation pass AFTER all AI calls and initial object assembly
+    let finalOutput: GenerateScenarioFromSeriesOutput = {
+      sceneDescription: sceneDescription, storyState: storyState, initialLoreEntries: loreEntries, seriesStyleGuide: seriesStyleGuide,
+    };
+    
+    // --- Final Sanitation Pass ---
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Performing final data sanitation.`);
     if (finalOutput.storyState.character) {
       const char = finalOutput.storyState.character;
