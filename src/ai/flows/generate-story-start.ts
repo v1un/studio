@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -32,7 +31,7 @@ const ItemSchemaInternal = z.object({
 const SkillSchemaInternal = z.object({
     id: z.string().describe("A unique identifier for the skill, e.g., 'skill_basic_strike_001'."),
     name: z.string().describe("The name of the skill or ability."),
-    description: z.string().describe("A clear description of what the skill does, its narrative impact, or basic effect."),
+    description: z.string().describe("A clear description of what the skill does, its narrative impact, or its basic effect."),
     type: z.string().describe("A category for the skill, e.g., 'Combat', 'Utility', 'Passive', 'Racial Trait'.")
 });
 
@@ -55,7 +54,7 @@ const CharacterProfileSchemaInternal = z.object({
   experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 1-2 starting skills or abilities appropriate for the character's class. Each skill requires an id, name, description, and type."),
   currency: z.number().optional().describe("Character's starting currency (e.g., gold). Initialize to a small amount like 50, or 0."),
-  languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier."),
+  languageUnderstanding: z.number().optional().describe("Character's understanding of the local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and can't understand anyone'), then set to a low value like 0-10."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -173,7 +172,7 @@ Generate:
     - Name, class (invent if needed). Backstory.
     - Health/MaxHealth (e.g., 100). Mana/MaxMana (0 if non-magic). Core stats (5-15).
     - Level 1, 0 XP, XPToNextLevel (e.g., 100). Currency (e.g., 20-50).
-    - 'languageUnderstanding': (0-100). Default to 100 unless prompt strongly implies a barrier (e.g., "lost in a foreign land and can't understand anyone"), then set to 0-10.
+    - 'languageUnderstanding': (0-100). Default to 100 unless the prompt strongly implies a language barrier (e.g., "lost in a foreign land and can't understand anyone"), then set to an appropriate low value (e.g., 0-10).
     - 'skillsAndAbilities': 1-2 starting skills (unique 'id', 'name', 'description', 'type').
 3.  Initial story state:
     - Character profile. Starting location. Empty inventory array [].
@@ -207,6 +206,7 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
       
+      // Prioritize AI's output for languageUnderstanding. If missing, default to 100.
       char.languageUnderstanding = char.languageUnderstanding ?? 100;
       if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
       if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
@@ -334,3 +334,4 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
     return output!;
   }
 );
+

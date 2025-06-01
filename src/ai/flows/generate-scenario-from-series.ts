@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -45,7 +44,7 @@ const SkillSchemaInternal = z.object({
 const CharacterCoreProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the main character, appropriate for the series. This might be an existing character or an original character fitting the series, based on user input if provided.'),
   class: z.string().describe('The class, role, or archetype of the character within the series (e.g., "Shinobi", "Alchemist", "Keyblade Wielder"), based on user input if provided.'),
-  description: z.string().describe('A brief backstory or description of the character, consistent with the series lore and their starting situation. If it is an Original Character (OC), explain their place or origin within the series. For characters like Subaru from Re:Zero, explicitly mention if they initially do not understand the local language.'),
+  description: z.string().describe('A brief backstory or description of the character, consistent with the series lore and their starting situation. If it is an Original Character (OC), explain their place or origin within the series. For characters who canonically start with language barriers, this description MUST reflect that initial inability to understand the local language.'),
   health: z.number().describe('Current health points of the character.'),
   maxHealth: z.number().describe('Maximum health points of the character.'),
   mana: z.number().optional().describe('Current mana or energy points (e.g., Chakra, Reiatsu, Magic Points). Assign 0 if not applicable, or omit if truly not part of the character concept.'),
@@ -60,7 +59,7 @@ const CharacterCoreProfileSchemaInternal = z.object({
   experiencePoints: z.number().describe('Initialize to 0.'),
   experienceToNextLevel: z.number().describe('Initialize to a starting value, e.g., 100.'),
   currency: z.number().optional().describe("Character's starting currency (e.g., gold, credits). Initialize to a small amount like 50, or 0."),
-  languageUnderstanding: z.number().optional().describe("Character's understanding of the current primary local language, on a scale of 0 (none) to 100 (fluent). Initialize appropriately for the series/character start (e.g., 0 for Subaru in Re:Zero initially, 100 for most others unless specified)."),
+  languageUnderstanding: z.number().optional().describe("Character's understanding of the current primary local language, on a scale of 0 (none) to 100 (fluent). Initialize appropriately for the series/character start (e.g., 0 for characters canonically starting with no understanding, 100 for most others unless specified otherwise by series lore)."),
 });
 
 const CharacterProfileSchemaInternal = CharacterCoreProfileSchemaInternal.extend({
@@ -168,7 +167,7 @@ export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFr
 const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
 const CharacterAndSceneOutputSchema = z.object({
     sceneDescription: GenerateScenarioFromSeriesOutputSchemaInternal.shape.sceneDescription,
-    characterCore: CharacterCoreProfileSchemaInternal.describe("The character's core profile, EXCLUDING skills and abilities, which will be generated in a subsequent step. Crucially, initialize 'languageUnderstanding' to 0 if 'seriesName' is 'Re:Zero' and character is 'Subaru Natsuki', or if the series implies an initial language barrier for the protagonist. Default to 100 otherwise."),
+    characterCore: CharacterCoreProfileSchemaInternal.describe("The character's core profile, EXCLUDING skills and abilities, which will be generated in a subsequent step. Crucially, initialize 'languageUnderstanding' based on series canon. For example, if the `seriesName` and `characterNameInput` (if provided) suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments), `languageUnderstanding` MUST be set to 0. The `description` field should also reflect this. Otherwise, set to 100 (fluent) or a series-appropriate value if known. If the AI omits `languageUnderstanding`, it will be defaulted to 100 later unless specific series logic dictates otherwise."),
     currentLocation: StructuredStoryStateSchemaInternal.shape.currentLocation,
 });
 
@@ -274,16 +273,16 @@ User's character preferences:
 
 You MUST generate an object with 'sceneDescription', 'characterCore', and 'currentLocation'.
 
-1.  'sceneDescription': A vivid initial scene. If 'characterNameInput' is "Subaru Natsuki" and 'seriesName' is "Re:Zero", the scene MUST reflect his initial confusion and inability to understand the language (e.g., signs are gibberish, speech is incomprehensible sounds).
+1.  'sceneDescription': A vivid initial scene. If the character's 'languageUnderstanding' (see below) is set to 0, the scene MUST reflect this (e.g., signs are gibberish, speech is incomprehensible sounds).
 2.  'characterCore': CharacterCoreProfile object (EXCLUDING 'skillsAndAbilities').
     - If 'characterNameInput' is a known character, create their profile authentically.
     - For Original Characters (OCs) or unspecified characters, create a fitting protagonist.
-    - Profile MUST include: 'name', 'class', 'description'.
+    - Profile MUST include: 'name', 'class', 'description'. The 'description' MUST reflect any initial language barrier if 'languageUnderstanding' is 0.
     - Health/MaxHealth (e.g., 100). Mana/MaxMana (0 if not applicable). Stats (5-15). Level 1, 0 XP, XPToNextLevel (e.g., 100). Currency (e.g., 25-50).
     - **'languageUnderstanding'**:
-        - If 'seriesName' is "Re:Zero" AND 'characterNameInput' is "Subaru Natsuki" (or strongly implied to be him), 'languageUnderstanding' MUST be 0. The 'description' field should also state this.
-        - For other characters/series, if the series canon implies an initial language barrier for the protagonist, set 'languageUnderstanding' to 0 or a low value.
-        - Otherwise, default 'languageUnderstanding' to 100 (fluent).
+        - If the \`seriesName\` and \`characterNameInput\` (if provided) strongly suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments, or a character known to be in a foreign land without prior knowledge of the local language), \`languageUnderstanding\` MUST be set to 0.
+        - For other characters/series, if the series canon implies an initial language barrier for the protagonist, set 'languageUnderstanding' to 0 or a low value appropriate to the canon.
+        - Otherwise, if not specified by canon for the starting situation, default 'languageUnderstanding' to 100 (fluent). If the AI omits 'languageUnderstanding', it will be defaulted to 100 in post-processing.
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
 
 Output ONLY the JSON object for CharacterAndSceneOutputSchema.`,
@@ -301,7 +300,7 @@ Description: {{characterDescription}}
 
 Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills.
 - Each skill: unique 'id', 'name', 'description', 'type'.
-- For "Re:Zero" and Subaru, "Return by Death" MUST be included.
+- For characters known for specific signature abilities relevant at the start (e.g., for "Re:Zero" and Subaru, "Return by Death" MUST be included if appropriate for the scenario start), ensure they are present.
 Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }. If no skills, output { "skillsAndAbilities": [] }.`,
     });
 
@@ -378,7 +377,7 @@ Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 Generate ONLY 'worldFacts': An array of 3-5 key world facts.
-- If 'character.languageUnderstanding' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "You ({{character.name}}) currently cannot understand the local spoken or written language, making interaction and reading impossible." or "Signs are unreadable and speech is incomprehensible."
+- If 'character.languageUnderstanding' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot understand the local spoken or written language, making interaction and reading impossible." or "Signs are unreadable and speech is incomprehensible."
 Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.`,
     });
 
@@ -394,9 +393,9 @@ Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
 **Contextual Quest Generation Guidance:**
--   Consider the character's immediate situation and background.
--   If 'character.languageUnderstanding' is very low (e.g., < 10, like for Subaru in Re:Zero), initial quests MUST relate to this barrier or basic orientation, e.g., "Try to understand what's happening", "Find a way to communicate", "Seek immediate shelter or safety". Avoid quests requiring complex interaction or understanding tasks from unknown entities.
--   For other characters, quests should feel like natural next steps from the 'sceneDescription' and 'currentLocation'.
+-   Consider the character's immediate situation, background, and the canonical starting point of the series for this character, if known.
+-   If 'character.languageUnderstanding' is very low (e.g., < 10, common for characters new to a world), initial quests MUST relate to this barrier or basic orientation, e.g., "Try to understand what's happening", "Find a way to communicate", "Seek immediate shelter or safety." Avoid quests requiring complex interaction or understanding tasks from unknown entities unless that is a core part of the canonical start.
+-   For other characters, quests should feel like natural next steps from the 'sceneDescription' and 'currentLocation', and align with the series' initial plot if applicable.
 
 Generate ONLY 'quests': 1-2 initial quests.
     - Each quest: 'id', 'description', 'status' ('active').
@@ -419,7 +418,7 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
     - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
         - Details: 'firstEncounteredLocation' ('{{currentLocation}}'), 'relationshipStatus', 'knownFacts', 'lastKnownLocation' ('{{currentLocation}}').
         - If merchant: \`isMerchant: true\`, populate \`merchantInventory\` with items (each with unique \`id\`, \`name\`, \`description\`, \`basePrice\`, and merchant \`price\`).
-    - PRE-POPULATED MAJOR NPCs (NOT in scene): For '{{seriesName}}', **prioritize** pre-populating profiles for 2-4 other major, well-known characters canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context (e.g., for Re:Zero with Subaru, this MUST include Emilia if she's not in the very first scene).
+    - PRE-POPULATED MAJOR NPCs (NOT in scene): For '{{seriesName}}', **prioritize** pre-populating profiles for 2-4 other major, well-known characters canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series (e.g., for a character who is known to meet certain key individuals immediately upon starting their journey in the series, those individuals should be included).
         - Details: 'firstEncounteredLocation' (canonical), 'relationshipStatus', 'knownFacts', 'lastKnownLocation'.
         - If merchant: include merchant data.
     - For ALL NPCs: Unique 'id', 'name', 'description'. 'firstEncounteredTurnId' & 'lastSeenTurnId' = "initial_turn_0". Empty dialogue history. Optional 'seriesContextNotes', 'shortTermGoal'.
@@ -474,12 +473,9 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         skillsAndAbilities: characterSkills,
     };
     
-    // Ensure languageUnderstanding has a default if AI missed it
-    if (mainInput.seriesName === "Re:Zero" && fullCharacterProfile.name.includes("Subaru")) {
-        fullCharacterProfile.languageUnderstanding = fullCharacterProfile.languageUnderstanding ?? 0;
-    } else {
-        fullCharacterProfile.languageUnderstanding = fullCharacterProfile.languageUnderstanding ?? 100;
-    }
+    // Post-processing ensures languageUnderstanding is set if AI missed it,
+    // defaulting to 100 unless AI provided a specific value (e.g., 0 for a language barrier context).
+    fullCharacterProfile.languageUnderstanding = fullCharacterProfile.languageUnderstanding ?? 100;
 
 
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
@@ -588,11 +584,9 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
       
-      if (mainInput.seriesName === "Re:Zero" && char.name.includes("Subaru")) {
-        char.languageUnderstanding = char.languageUnderstanding ?? 0;
-      } else {
-        char.languageUnderstanding = char.languageUnderstanding ?? 100;
-      }
+      // Prioritize AI's output for languageUnderstanding. If missing, default to 100.
+      // This allows AI to set to 0 or other values based on series/character canon as per prompt.
+      char.languageUnderstanding = char.languageUnderstanding ?? 100;
       if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
       if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
       
@@ -759,3 +753,4 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     return finalOutput;
   }
 );
+
