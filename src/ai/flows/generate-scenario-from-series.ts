@@ -10,7 +10,7 @@
 
 import { ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME } from '@/ai/genkit';
 import { z } from 'zod';
-import type { EquipmentSlot, Item as ItemType, CharacterProfile as CharacterProfileType, Skill as SkillType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType, Quest as QuestType, NPCProfile as NPCProfileType, StoryArc as StoryArcType, RawLoreEntry } from '@/types/story'; // StoryArcType
+import type { EquipmentSlot, Item as ItemType, CharacterProfile as CharacterProfileType, Skill as SkillType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType, Quest as QuestType, NPCProfile as NPCProfileType, StoryArc as StoryArcType, RawLoreEntry } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
@@ -218,7 +218,7 @@ Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchem
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
         name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_SeriesPlotSummaryOutputSchema'. The 'plotSummary' field is REQUIRED.
-For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph.
+For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': A comprehensive and detailed summary of the entire known storyline for "{{seriesName}}". This should cover all major story arcs, pivotal plot points, significant character developments for main characters, major antagonists, critical lore reveals, and world-altering events, from the beginning of the series to the most recently known events. Structure the summary chronologically, ideally breaking it down by major story arcs if applicable. Aim for as much detail as possible while maintaining a summary format. This summary will be the primary guide for generating the game's narrative structure.
 Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
     });
 
@@ -516,17 +516,16 @@ const Narrative_QuestSchemaInternal = z.object({
   id: z.string().describe("REQUIRED."),
   title: z.string().optional().describe("REQUIRED if no detailed description provided."),
   description: z.string().describe("REQUIRED."),
-  type: z.enum(['main', 'side', 'dynamic', 'arc_goal']).describe("REQUIRED."), // arc_goal
+  type: z.enum(['main', 'side', 'dynamic', 'arc_goal']).describe("REQUIRED."),
   status: Narrative_QuestStatusEnumInternal.describe("REQUIRED."),
-  storyArcId: z.string().optional().describe("ID of the Story Arc this quest belongs to. REQUIRED for 'main' quests."), // storyArcId
-  orderInStoryArc: z.number().optional().describe("Sequence within the Story Arc. REQURIED for 'main' quests."), // orderInStoryArc
+  storyArcId: z.string().optional().describe("ID of the Story Arc this quest belongs to. REQUIRED for 'main' quests."),
+  orderInStoryArc: z.number().optional().describe("Sequence within the Story Arc. REQURIED for 'main' quests."),
   category: z.string().optional(),
   objectives: z.array(Narrative_QuestObjectiveSchemaInternal).optional(),
   rewards: Narrative_QuestRewardsSchemaInternal.optional(),
   updatedAt: z.string().optional(),
 });
 
-// Renamed from ChapterSchemaInternal
 const Narrative_StoryArcSchemaInternal = z.object({
     id: z.string().describe("REQUIRED."),
     title: z.string().describe("REQUIRED."),
@@ -592,7 +591,7 @@ export type GenerateScenarioNarrativeElementsInput = z.infer<typeof GenerateScen
 
 const GenerateScenarioNarrativeElementsOutputSchema = z.object({
   quests: z.array(Narrative_QuestSchemaInternal).describe("REQUIRED (can be empty array). Each quest needs id, description, type, status."),
-  storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED (can be empty array). Each story arc needs id, title, description, order, mainQuestIds, isCompleted."), // Renamed from chapters
+  storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED (can be empty array). Each story arc needs id, title, description, order, mainQuestIds, isCompleted."),
   trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal).describe("REQUIRED (can be empty array). Each NPC needs id, name, description, relationshipStatus, knownFacts."),
   initialLoreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema).describe("REQUIRED (can be empty array). Each entry needs keyword, content."),
 });
@@ -600,14 +599,12 @@ export type GenerateScenarioNarrativeElementsOutput = z.infer<typeof GenerateSce
 
 
 // Schemas for internal AI calls
-// Renamed from InitialQuestsAndChaptersInputSchema
 const InitialQuestsAndStoryArcsInputSchema = GenerateScenarioNarrativeElementsInputSchema.pick({
     seriesName: true, seriesPlotSummary: true, characterProfile: true, sceneDescription: true, currentLocation: true, characterNameInput: true
 });
-// Renamed from InitialQuestsAndChaptersOutputSchema
 const InitialQuestsAndStoryArcsOutputSchema = z.object({
     quests: z.array(Narrative_QuestSchemaInternal).describe("REQUIRED. Each quest needs id, description, type, status, storyArcId, orderInStoryArc."),
-    storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED. Each story arc needs id, title, description, order, mainQuestIds, isCompleted."), // Renamed from chapters
+    storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED. Each story arc needs id, title, description, order, mainQuestIds, isCompleted."),
 });
 
 const InitialTrackedNPCsInputSchema = GenerateScenarioNarrativeElementsInputSchema.pick({
@@ -648,7 +645,6 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
     const modelConfig = { maxOutputTokens: input.usePremiumAI ? 32000 : 8000 };
 
     // --- Define Prompts ---
-    // Renamed from narrative_initialQuestsAndChaptersPrompt
     const narrative_initialQuestsAndStoryArcsPrompt = ai.definePrompt({
         name: 'narrative_initialQuestsAndStoryArcsPrompt', model: modelName, input: { schema: InitialQuestsAndStoryArcsInputSchema }, output: { schema: InitialQuestsAndStoryArcsOutputSchema }, config: modelConfig,
         tools: [lookupLoreTool],
@@ -709,7 +705,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
 
 
     // --- Prepare Inputs for Prompts ---
-    const questsAndStoryArcsInput: z.infer<typeof InitialQuestsAndStoryArcsInputSchema> = { // Renamed
+    const questsAndStoryArcsInput: z.infer<typeof InitialQuestsAndStoryArcsInputSchema> = {
         seriesName: input.seriesName,
         seriesPlotSummary: input.seriesPlotSummary,
         characterProfile: input.characterProfile,
@@ -733,11 +729,11 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     };
 
     // --- Execute Prompts in Parallel ---
-    let questsAndStoryArcsResult, npcsResult, charLore, locLore, factLore, itemLore, eventLore; // Renamed
+    let questsAndStoryArcsResult, npcsResult, charLore, locLore, factLore, itemLore, eventLore;
     try {
         console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: Firing parallel AI calls.`);
         [
-            questsAndStoryArcsResult, // Renamed
+            questsAndStoryArcsResult,
             npcsResult,
             charLore,
             locLore,
@@ -745,7 +741,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
             itemLore,
             eventLore
         ] = await Promise.all([
-            narrative_initialQuestsAndStoryArcsPrompt(questsAndStoryArcsInput).then(r => r.output), // Renamed
+            narrative_initialQuestsAndStoryArcsPrompt(questsAndStoryArcsInput).then(r => r.output),
             narrative_initialTrackedNPCsPrompt(npcsInput).then(r => r.output),
             narrative_characterLorePrompt(loreBaseInput).then(r => r.output),
             narrative_locationLorePrompt(loreBaseInput).then(r => r.output),
@@ -759,7 +755,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     }
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: Parallel AI calls completed.`);
 
-    if (!questsAndStoryArcsResult || !questsAndStoryArcsResult.quests || !questsAndStoryArcsResult.storyArcs) { // Renamed
+    if (!questsAndStoryArcsResult || !questsAndStoryArcsResult.quests || !questsAndStoryArcsResult.storyArcs) {
       throw new Error('Failed to generate initial quests and story arcs (REQUIRED fields missing).');
     }
     if (!npcsResult || !npcsResult.trackedNPCs) {
@@ -801,7 +797,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
         return item as ItemType;
     };
 
-    questsAndStoryArcsResult.quests.forEach(quest => { // Renamed
+    questsAndStoryArcsResult.quests.forEach(quest => {
         if (quest.rewards?.items) {
             quest.rewards.items.forEach((item, index) => sanitizeItem(item, `item_reward_narrative_${quest.id}`, index));
         }
@@ -819,8 +815,8 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
 
 
     const output: GenerateScenarioNarrativeElementsOutput = {
-      quests: questsAndStoryArcsResult.quests, // Renamed
-      storyArcs: questsAndStoryArcsResult.storyArcs, // Renamed
+      quests: questsAndStoryArcsResult.quests,
+      storyArcs: questsAndStoryArcsResult.storyArcs,
       trackedNPCs: npcsResult.trackedNPCs,
       initialLoreEntries: allLoreEntries.filter(entry => entry.keyword && entry.content),
     };
