@@ -30,6 +30,21 @@ const SESSION_KEY_PREFIX = "storyForgeSession_";
 const GM_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 const PLAYER_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 
+const scenarioGenerationSteps = [
+  "Initializing AI Forge...",
+  "Drafting initial scene and character concept...",
+  "Defining character's core attributes...",
+  "Forging starting skills & abilities...",
+  "Gathering initial inventory items...",
+  "Equipping character for adventure...",
+  "Establishing key world facts...",
+  "Unveiling first quests...",
+  "Populating the world with notable figures...",
+  "Compiling essential series lore...",
+  "Crafting a unique style guide for your story...",
+  "Finalizing scenario details..."
+];
+
 export default function StoryForgePage() {
   const [storyHistory, setStoryHistory] = useState<StoryTurn[]>([]);
   const [currentSession, setCurrentSession] = useState<GameSession | null>(null);
@@ -38,6 +53,23 @@ export default function StoryForgePage() {
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (isLoadingInteraction && loadingMessage?.startsWith("AI is forging")) { // Only cycle for scenario generation
+      let stepIndex = 0;
+      setLoadingMessage(scenarioGenerationSteps[stepIndex]); // Set initial step message
+      intervalId = setInterval(() => {
+        stepIndex = (stepIndex + 1) % scenarioGenerationSteps.length;
+        setLoadingMessage(scenarioGenerationSteps[stepIndex]);
+      }, 2500); // Change message every 2.5 seconds
+    } else if (isLoadingInteraction && !loadingMessage?.startsWith("AI is forging")) {
+      // For "AI is crafting the next part of your tale..."
+      // We can keep it simple or add a simple spinner text here too if desired
+    }
+    return () => clearInterval(intervalId);
+  }, [isLoadingInteraction, loadingMessage]);
+
 
   const loadSession = useCallback(() => {
     setIsLoadingPage(true);
@@ -100,7 +132,7 @@ export default function StoryForgePage() {
 
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
-    setLoadingMessage("AI is forging your initial world and character...");
+    setLoadingMessage("AI is forging your initial world and character..."); // Initial generic message, will be overridden by useEffect
     try {
       const input: GenerateScenarioFromSeriesInput = {
         seriesName: data.seriesName,
@@ -115,20 +147,20 @@ export default function StoryForgePage() {
         initializeLorebook(result.initialLoreEntries);
       }
 
-      const initialMessage: DisplayMessage = {
+      const initialGMMessage: DisplayMessage = {
         id: crypto.randomUUID(),
         speakerType: 'GM',
         speakerNameLabel: 'GAME-MASTER',
         speakerDisplayName: "admin",
         content: result.sceneDescription,
         avatarSrc: GM_AVATAR_PLACEHOLDER,
-        avatarHint: "profile male",
+        avatarHint: "wizard staff",
         isPlayer: false,
       };
       
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
-        messages: [initialMessage],
+        messages: [initialGMMessage],
         storyStateAfterScene: result.storyState,
       };
       
@@ -155,11 +187,11 @@ export default function StoryForgePage() {
         title: `Adventure in ${data.seriesName} Begun!`,
         description: `Playing as ${newSession.characterName}. ${data.usePremiumAI ? "(Premium AI Active)" : ""}`,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to start story from series:", error);
       toast({
         title: "Error Starting Scenario",
-        description: "The AI encountered an issue creating the scenario. Please try a different series or adjust character inputs.",
+        description: `The AI encountered an issue: ${error.message || "Please try a different series or adjust inputs."}`,
         variant: "destructive",
       });
     }
@@ -179,7 +211,7 @@ export default function StoryForgePage() {
       speakerDisplayName: character.name,
       content: userInput,
       avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
-      avatarHint: "profile female",
+      avatarHint: "knight shield",
       isPlayer: true,
     };
 
@@ -219,14 +251,17 @@ export default function StoryForgePage() {
 
       const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
         const isGM = aiMsg.speaker.toUpperCase() === 'GM'; 
+        const speakerLabel = isGM ? 'GAME-MASTER' : aiMsg.speaker;
+        const speakerDisplayName = isGM ? 'admin' : aiMsg.speaker;
+        
         return {
           id: crypto.randomUUID(),
           speakerType: isGM ? 'GM' : 'NPC',
-          speakerNameLabel: isGM ? 'GAME-MASTER' : aiMsg.speaker,
-          speakerDisplayName: isGM ? 'admin' : aiMsg.speaker,
+          speakerNameLabel: speakerLabel,
+          speakerDisplayName: speakerDisplayName,
           content: aiMsg.content,
           avatarSrc: GM_AVATAR_PLACEHOLDER, 
-          avatarHint: "profile male", 
+          avatarHint: isGM ? "wizard staff" : "merchant friendly", 
           isPlayer: false,
         };
       });
@@ -257,11 +292,11 @@ export default function StoryForgePage() {
         });
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to generate next scene:", error);
       toast({
         title: "Error Generating Scene",
-        description: "The AI encountered an issue. Please try again.",
+        description: `The AI encountered an issue: ${error.message || "Please try again."}`,
         variant: "destructive",
       });
         setStoryHistory(prevHistory => prevHistory.filter(turn => !turn.id.startsWith('pending-')));
@@ -305,7 +340,7 @@ export default function StoryForgePage() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background selection:bg-primary/20 selection:text-primary">
-      <header className="mb-2 text-center pt-4 sm:pt-6">
+      <header className="mb-2 text-center pt-4 sm:pt-6 shrink-0">
         <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
           <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
           Story Forge
@@ -362,7 +397,11 @@ export default function StoryForgePage() {
                 />
               </div>
               <div className="shrink-0">
-                <MinimalCharacterStatus character={character} storyState={currentStoryState} />
+                <MinimalCharacterStatus 
+                    character={character} 
+                    storyState={currentStoryState} 
+                    isPremiumSession={currentSession.isPremiumSession}
+                />
               </div>
               <StoryDisplay
                 storyHistory={storyHistory}
@@ -406,3 +445,5 @@ export default function StoryForgePage() {
     </div>
   );
 }
+
+    

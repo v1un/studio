@@ -13,22 +13,25 @@ interface ChatMessageProps {
 export default function ChatMessage({ message }: ChatMessageProps) {
   const isPlayer = message.speakerType === 'Player';
   
-  let nameLabelColor = "text-muted-foreground"; // Default
-  let messageBgColor = "bg-muted text-muted-foreground"; // Default for GM
+  let nameLabelColor = "text-muted-foreground"; 
+  let messageBgColor = "bg-muted text-muted-foreground"; 
   let speakerLabelToDisplay = message.speakerNameLabel;
+  let avatarHintToUse = message.avatarHint || "person";
 
   if (isPlayer) {
     nameLabelColor = "text-blue-600 dark:text-blue-400";
     messageBgColor = "bg-primary text-primary-foreground";
-    speakerLabelToDisplay = message.speakerDisplayName || message.speakerNameLabel; // Prefer display name for player (character name)
+    speakerLabelToDisplay = message.speakerDisplayName || message.speakerNameLabel; 
+    avatarHintToUse = message.avatarHint || "knight shield"; 
   } else if (message.speakerType === 'NPC') {
-    nameLabelColor = "text-green-600 dark:text-green-400"; // Distinct color for NPCs
-    messageBgColor = "bg-secondary text-secondary-foreground"; // Slightly different bg for NPC
-    speakerLabelToDisplay = message.speakerNameLabel; // NPC's name
+    nameLabelColor = "text-green-600 dark:text-green-400"; 
+    messageBgColor = "bg-secondary text-secondary-foreground"; 
+    speakerLabelToDisplay = message.speakerNameLabel; 
+    avatarHintToUse = message.avatarHint || "merchant friendly";
   } else { // GM
-    nameLabelColor = "text-orange-600 dark:text-orange-400"; // GM color
-    // messageBgColor already set to default GM
-    speakerLabelToDisplay = message.speakerNameLabel; // "GAME-MASTER"
+    nameLabelColor = "text-orange-600 dark:text-orange-400"; 
+    speakerLabelToDisplay = message.speakerNameLabel; 
+    avatarHintToUse = message.avatarHint || "wizard staff";
   }
   
   const AvatarComponent = () => {
@@ -40,14 +43,14 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           width={40}
           height={40}
           className="rounded-full"
-          data-ai-hint={message.avatarHint}
+          data-ai-hint={avatarHintToUse}
         />
       );
     }
+    // Fallback to Lucide icons if no avatarSrc
     if (isPlayer) {
       return <UserCircle className="w-10 h-10 text-muted-foreground" />;
     }
-    // For GM/NPC, could differentiate later if needed
     return <Bot className="w-10 h-10 text-muted-foreground" />;
   };
 
@@ -68,7 +71,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         >
           <div className={cn("font-bold text-sm mb-0.5", nameLabelColor, isPlayer ? 'text-right' : 'text-left')}>
             {speakerLabelToDisplay}
-            {/* DisplayName for GM specifically if different, NPCs usually have NameLabel as their name */}
             {message.speakerType === 'GM' && message.speakerDisplayName && message.speakerDisplayName !== speakerLabelToDisplay && (
                 <span className="ml-2 text-xs text-muted-foreground/80 font-normal">
                     ({message.speakerDisplayName})
@@ -86,3 +88,5 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     </div>
   );
 }
+
+    
