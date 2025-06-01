@@ -19,7 +19,7 @@ import type {
     EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, 
     NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment, 
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
-    DescribedEvent, NewNPCIntroducedEvent
+    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent
 } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
@@ -190,6 +190,8 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
 });
 const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string().describe("ID if known, otherwise name."), quantity: z.number().optional().default(1) });
 const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string().describe("ID if known, otherwise name of item consumed/used.") });
+const ItemEquippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemEquipped'), itemIdOrName: z.string().describe("ID or name of the item from inventory."), slot: z.nativeEnum(EquipmentSlot).describe("The equipment slot to equip the item to.") });
+const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUnequipped'), itemIdOrName: z.string().describe("ID or name of the item currently equipped."), slot: z.nativeEnum(EquipmentSlot).describe("The equipment slot to unequip from.") });
 
 const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({ 
   type: z.literal('questAccepted'), 
@@ -236,7 +238,7 @@ const SkillLearnedEventSchema = DescribedEventBaseSchema.extend({
 
 const DescribedEventSchema = z.discriminatedUnion("type", [
   HealthChangeEventSchema, ManaChangeEventSchema, XPChangeEventSchema, LevelUpEventSchema, CurrencyChangeEventSchema, LanguageImprovementEventSchema,
-  ItemFoundEventSchema, ItemLostEventSchema, ItemUsedEventSchema, 
+  ItemFoundEventSchema, ItemLostEventSchema, ItemUsedEventSchema, ItemEquippedEventSchema, ItemUnequippedEventSchema,
   QuestAcceptedEventSchema, QuestObjectiveUpdateEventSchema, QuestCompletedEventSchema,
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
   WorldFactAddedEventSchema, WorldFactRemovedEventSchema, WorldFactUpdatedEventSchema,
@@ -429,7 +431,7 @@ Tracked NPCs:
 1.  **Generate Narrative (generatedMessages):** Write the story's continuation, including GM narration and any NPC dialogue. Ensure NPC speaker names match those in 'Tracked NPCs' if they are speaking.
 2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Examples:
     - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageImprovement\\", \\"amount\\": 5, \\"reason\\": \\"studied local script\\" \\}, \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
-    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}
+    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Old Key\\", \\"slot\\": \\"weapon\\" \\}
     - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\"}], \\"rewards\\": {\\"experiencePoints\\": 100} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
     - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\" \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
@@ -444,8 +446,6 @@ Tracked NPCs:
 - If low (0-40), GM narration in 'generatedMessages' MUST reflect this (e.g., indecipherable speech/text). Actual foreign dialogue can be in NPC segments for player OOC knowledge.
 - If player actions lead to language improvement (e.g., "I study the signs", "ask for translation"), describe this as a 'languageImprovement' event with a small 'amount' (e.g., 5-15).
 - If language understanding is very low, the AI can also describe events such as 'currencyChange' by a certain amount without the player knowing exactly how much until their understanding improves or they find a way to verify.
-
-**Crucially, when providing 'updatedStoryState.character', ensure you return the COMPLETE character object.** This means including ALL fields that were present in the input 'storyState.character' (like name, class, description, all stats, maxHealth, experienceToNextLevel, etc.), modifying only those fields that were directly affected by the current scene's events (e.g., health, mana, XP, level, currency, skills, languageUnderstanding). **Do not omit fields like 'class', 'description', or 'maxHealth' if they weren't directly changed by the turn's events.**
 
 Adhere to the 'NarrativeAndEventsOutputSchema' (partially, as it's deepPartial). Prioritize clear narrative and accurate event descriptions.
 DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on describing the events that TypeScript will use to update the state.
@@ -602,6 +602,10 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                 case 'itemLost':
                     {
                         const itemIdentifier = event.itemIdOrName.toLowerCase();
+                        if (itemIdentifier === "empty" || itemIdentifier.trim() === "") {
+                            localCorrectionWarnings.push(`Event: AI attempted to make player lose an invalid/empty item. Action skipped. Reason: ${event.reason || 'unspecified'}`);
+                            break;
+                        }
                         const itemIndex = draftState.inventory.findIndex(
                             item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
                         );
@@ -633,6 +637,50 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                             }
                         } else {
                              localCorrectionWarnings.push(`Event: Attempted to use item "${event.itemIdOrName}", but it was not found in inventory.`);
+                        }
+                    }
+                    break;
+                case 'itemEquipped':
+                    {
+                        const typedEvent = event as ItemEquippedEvent;
+                        const itemIdentifier = typedEvent.itemIdOrName.toLowerCase();
+                        const itemIndex = draftState.inventory.findIndex(
+                            item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
+                        );
+
+                        if (itemIndex > -1) {
+                            const itemToEquip = draftState.inventory[itemIndex];
+                            
+                            // Check if something is already in the slot
+                            const previouslyEquippedItem = draftState.equippedItems[typedEvent.slot];
+                            if (previouslyEquippedItem) {
+                                draftState.inventory.push(previouslyEquippedItem); // Move old item back to inventory
+                                localCorrectionWarnings.push(`Event: Item "${previouslyEquippedItem.name}" unequipped from ${typedEvent.slot} and moved to inventory.`);
+                            }
+                            
+                            draftState.equippedItems[typedEvent.slot] = itemToEquip;
+                            draftState.inventory.splice(itemIndex, 1); // Remove from inventory
+                            localCorrectionWarnings.push(`Event: Item "${itemToEquip.name}" equipped to ${typedEvent.slot}. Reason: ${typedEvent.reason || 'unspecified'}`);
+                        } else {
+                            localCorrectionWarnings.push(`Event: Attempted to equip item "${typedEvent.itemIdOrName}" from inventory, but it was not found. Reason: ${typedEvent.reason || 'unspecified'}`);
+                        }
+                    }
+                    break;
+                case 'itemUnequipped':
+                    {
+                        const typedEvent = event as ItemUnequippedEvent;
+                        const itemInSlot = draftState.equippedItems[typedEvent.slot];
+
+                        if (itemInSlot) {
+                             if (itemInSlot.name.toLowerCase() === typedEvent.itemIdOrName.toLowerCase() || itemInSlot.id.toLowerCase() === typedEvent.itemIdOrName.toLowerCase()) {
+                                draftState.inventory.push(itemInSlot);
+                                draftState.equippedItems[typedEvent.slot] = null;
+                                localCorrectionWarnings.push(`Event: Item "${itemInSlot.name}" unequipped from ${typedEvent.slot} and moved to inventory. Reason: ${typedEvent.reason || 'unspecified'}`);
+                            } else {
+                                localCorrectionWarnings.push(`Event: Attempted to unequip item "${typedEvent.itemIdOrName}" from ${typedEvent.slot}, but "${itemInSlot.name}" was equipped instead. No action taken.`);
+                            }
+                        } else {
+                            localCorrectionWarnings.push(`Event: Attempted to unequip from empty slot "${typedEvent.slot}". Reason: ${typedEvent.reason || 'unspecified'}`);
                         }
                     }
                     break;
@@ -740,11 +788,13 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                                 npc.knownFacts.push(stateFact);
                             }
                             
-                            if (event.newState.toLowerCase() === 'hostile') npc.shortTermGoal = `Engage ${draftState.character.name}`;
-                            else if (event.newState.toLowerCase() === 'fled') npc.shortTermGoal = "Escape";
-                            else if (event.newState.toLowerCase() === 'following') npc.shortTermGoal = `Follow ${draftState.character.name}`;
-                            else if (event.newState.toLowerCase() === 'friendly') npc.shortTermGoal = `Assist ${draftState.character.name}`;
-                            else npc.shortTermGoal = undefined; // Clear goal if state is neutral or other
+                            const lowerNewState = event.newState.toLowerCase();
+                            if (lowerNewState === 'hostile') npc.shortTermGoal = `Engage ${draftState.character.name}`;
+                            else if (lowerNewState === 'fled' || lowerNewState === 'flees') npc.shortTermGoal = "Escape";
+                            else if (lowerNewState === 'following' || lowerNewState === 'follows player') npc.shortTermGoal = `Follow ${draftState.character.name}`;
+                            else if (lowerNewState === 'friendly') npc.shortTermGoal = `Assist ${draftState.character.name}`;
+                            else if (lowerNewState === 'neutral' || lowerNewState === 'calmed down') npc.shortTermGoal = undefined;
+                            else npc.shortTermGoal = event.newState; // Default to setting state as goal if not recognized
                             
                             npc.updatedAt = new Date().toISOString();
                             localCorrectionWarnings.push(`Event: NPC "${npc.name}" state changed to "${event.newState}". Reason: ${event.reason || 'unspecified'}`);
@@ -832,12 +882,13 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                     }
                     break;
                 default:
-                    const exhaustiveCheck: never = event; 
-                    localCorrectionWarnings.push(`Received unhandled event type: ${(exhaustiveCheck as DescribedEvent).type}`);
+                    // This should ideally be an exhaustive check, but TypeScript might not enforce it perfectly with discriminated unions from 'any'
+                    // const exhaustiveCheck: never = event; 
+                    localCorrectionWarnings.push(`Received unhandled event type: ${(event as DescribedEvent).type}`);
             }
         }
 
-        // --- Robust Character Data Finalization (Post-Event Processing) ---
+        // ----- Robust Character Data Finalization (Post-Event Processing) ---
         // Name
         if (!(typeof draftState.character.name === 'string' && draftState.character.name.trim() !== "")) {
             if (originalChar.name && typeof originalChar.name === 'string' && originalChar.name.trim() !== "") {
@@ -987,6 +1038,7 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
              draftState.storySummary = "The story continues..."; 
         }
         
+        // Ensure all top-level state arrays & objects are initialized before detailed sanitation
         draftState.inventory = draftState.inventory || [];
         draftState.quests = draftState.quests || [];
         draftState.worldFacts = draftState.worldFacts || [];
@@ -1199,3 +1251,5 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
     return finalOutput;
   }
 );
+
+    
