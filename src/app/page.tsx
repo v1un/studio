@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -17,7 +18,7 @@ import type {
     DescribedEvent, // Generic DescribedEvent
     HealthChangeEvent, ManaChangeEvent, XPChangeEvent, LevelUpEvent, CurrencyChangeEvent, LanguageSkillChangeEvent, ItemFoundEvent, ItemLostEvent, ItemUsedEvent, ItemEquippedEvent, ItemUnequippedEvent, QuestAcceptedEvent, QuestObjectiveUpdateEvent, QuestCompletedEvent, QuestFailedEvent, NPCRelationshipChangeEvent, NPCStateChangeEvent, NewNPCIntroducedEvent, WorldFactAddedEvent, WorldFactRemovedEvent, WorldFactUpdatedEvent, SkillLearnedEvent, // Specific event types
     CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc,
-    StatModifier, RawLoreEntry, TemporaryEffect, ActiveEffect
+    StatModifier, RawLoreEntry, TemporaryEffect, ActiveEffect, StoryTurn, GameSession
 } from "@/types/story";
 import { produce } from "immer";
 
@@ -97,7 +98,7 @@ function calculateEffectiveCharacterProfile(
             }
             (draft[statName] as number) = currentValue;
         } else {
-            console.warn(`calculateEffectiveCharacterProfile: Attempted to modify non-numeric or unknown stat '${statName}'`);
+            console.warn(`calculateEffectiveCharacterProfile: Attempted to modify non-numeric or unknown stat '${String(statName)}'`);
         }
     };
 
@@ -312,6 +313,11 @@ export default function StoryForgePage() {
       };
 
       const firstStoryArcId = narrativeElementsResult.storyArcs.find(arc => arc.order === 1)?.id;
+      
+      // Filter out player character from NPCs
+      const filteredTrackedNPCs = narrativeElementsResult.trackedNPCs.filter(
+        npc => npc.name !== foundationResult.characterProfile.name
+      );
 
       const finalStoryState: StructuredStoryState = {
         character: foundationResult.characterProfile, // activeTemporaryEffects is initialized here
@@ -323,7 +329,7 @@ export default function StoryForgePage() {
         quests: narrativeElementsResult.quests,
         storyArcs: narrativeElementsResult.storyArcs,
         currentStoryArcId: firstStoryArcId,
-        trackedNPCs: narrativeElementsResult.trackedNPCs,
+        trackedNPCs: filteredTrackedNPCs,
       };
 
 
@@ -1276,7 +1282,7 @@ export default function StoryForgePage() {
 
             <TabsContent value="character" className="overflow-y-auto flex-grow">
               <CharacterSheet 
-                character={effectiveCharacterProfileForAI || baseCharacterProfile} // Show effective stats on sheet
+                character={effectiveCharacterProfileForAI || baseCharacterProfile} 
                 storyState={currentStoryState} 
               />
             </TabsContent>
@@ -1319,4 +1325,5 @@ export default function StoryForgePage() {
     </div>
   );
 }
+
 
