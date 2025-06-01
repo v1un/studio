@@ -19,7 +19,7 @@ import type {
     EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, 
     NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment, 
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
-    DescribedEvent, NewNPCIntroducedEvent // Added NewNPCIntroducedEvent type
+    DescribedEvent, NewNPCIntroducedEvent
 } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
@@ -208,7 +208,7 @@ const QuestCompletedEventSchema = DescribedEventBaseSchema.extend({ type: z.lite
 
 const NPCRelationshipChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcRelationshipChange'), npcName: z.string().describe("Name of the NPC."), changeAmount: z.number().describe("e.g., +10, -20. Total will be capped at -100 to 100."), newStatus: z.number().optional().describe("AI's assessment of the new relationship score.") });
 const NPCStateChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcStateChange'), npcName: z.string().describe("Name of the NPC."), newState: z.string().describe("e.g., 'hostile', 'friendly', 'following', 'fled', 'neutral', 'intrigued'") });
-const NewNPCIntroducedEventSchemaInternal = z.object({ // Renamed from NewNPCIntroducedEvent to avoid conflict with type import
+const NewNPCIntroducedEventSchemaInternal = z.object({ 
   type: z.literal('newNPCIntroduced'),
   npcName: z.string(),
   npcDescription: z.string().describe("Brief description of appearance and demeanor."),
@@ -236,7 +236,7 @@ const SkillLearnedEventSchema = DescribedEventBaseSchema.extend({
 
 const DescribedEventSchema = z.discriminatedUnion("type", [
   HealthChangeEventSchema, ManaChangeEventSchema, XPChangeEventSchema, LevelUpEventSchema, CurrencyChangeEventSchema, LanguageImprovementEventSchema,
-  ItemFoundEventSchema, ItemLostEventSchema, ItemUsedEventSchema, // ItemEquipped/Unequipped handled by user intent typically
+  ItemFoundEventSchema, ItemLostEventSchema, ItemUsedEventSchema, 
   QuestAcceptedEventSchema, QuestObjectiveUpdateEventSchema, QuestCompletedEventSchema,
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
   WorldFactAddedEventSchema, WorldFactRemovedEventSchema, WorldFactUpdatedEventSchema,
@@ -491,8 +491,7 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
             dataCorrectionWarnings: localCorrectionWarnings,
         };
     }
-
-    // ----- TypeScript Logic: Process Described Events and Update State -----    
+    
     const finalUpdatedStoryState = produce(input.storyState, draftState => {
         const describedEvents: DescribedEvent[] = (aiPartialOutput?.describedEvents?.filter(Boolean) || []) as DescribedEvent[]; 
         const originalChar = input.storyState.character; 
@@ -510,13 +509,13 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                             draftState.character.health = (draftState.character.health ?? originalChar.health) + event.amount;
                             localCorrectionWarnings.push(`Event: Player health changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
                         }
-                    } else { // NPC target
+                    } else { 
                         const npc = draftState.trackedNPCs.find(n => n.name.toLowerCase() === event.characterTarget.toLowerCase() || n.id.toLowerCase() === event.characterTarget.toLowerCase());
                         if (npc) {
                             if (typeof event.amount === 'number') {
-                                npc.health = (npc.health ?? 50) + event.amount; // Default to 50 if no health previously
-                                if (npc.maxHealth === undefined) npc.maxHealth = npc.health > 0 ? npc.health : 50; // Initialize maxHealth if not set
-                                if (npc.health > npc.maxHealth) npc.health = npc.maxHealth;
+                                npc.health = (npc.health ?? 50) + event.amount; 
+                                if (npc.maxHealth === undefined) npc.maxHealth = npc.health > 0 ? npc.health : 50;
+                                if (npc.health > (npc.maxHealth ?? npc.health)) npc.health = (npc.maxHealth ?? npc.health);
                                 if (npc.health < 0) npc.health = 0;
                                 localCorrectionWarnings.push(`Event: NPC "${npc.name}" health changed by ${event.amount} to ${npc.health}. Reason: ${event.reason || 'unspecified'}`);
                             }
@@ -531,13 +530,13 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                             draftState.character.mana = ((draftState.character.mana ?? originalChar.mana) ?? 0) + event.amount;
                             localCorrectionWarnings.push(`Event: Player mana changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
                         }
-                    } else { // NPC target
+                    } else { 
                         const npc = draftState.trackedNPCs.find(n => n.name.toLowerCase() === event.characterTarget.toLowerCase() || n.id.toLowerCase() === event.characterTarget.toLowerCase());
                         if (npc) {
                             if (typeof event.amount === 'number') {
-                                npc.mana = (npc.mana ?? 0) + event.amount; // Default to 0 if no mana previously
-                                if (npc.maxMana === undefined) npc.maxMana = npc.mana > 0 ? npc.mana : 0; // Initialize maxMana
-                                if (npc.mana > npc.maxMana) npc.mana = npc.maxMana;
+                                npc.mana = (npc.mana ?? 0) + event.amount; 
+                                if (npc.maxMana === undefined) npc.maxMana = npc.mana > 0 ? npc.mana : 0; 
+                                if (npc.mana > (npc.maxMana ?? npc.mana)) npc.mana = (npc.maxMana ?? npc.mana);
                                 if (npc.mana < 0) npc.mana = 0;
                                 localCorrectionWarnings.push(`Event: NPC "${npc.name}" mana changed by ${event.amount} to ${npc.mana}. Reason: ${event.reason || 'unspecified'}`);
                             }
@@ -630,7 +629,7 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                                 localCorrectionWarnings.push(`Event: Item used - ${usedItem.name}. Effect: ${usedItem.effectDescription || 'As described in narrative.'} Reason: ${event.reason || 'unspecified'}`);
                             }
                             if (usedItem.effectDescription) {
-                                localCorrectionWarnings.push(`Item '${usedItem.name}' has effect: "${usedItem.effectDescription}". Ensure AI generated separate events (like healthChange) if mechanical effects are intended beyond narrative description.`);
+                                localCorrectionWarnings.push(`Item '${usedItem.name}' used with effect: "${usedItem.effectDescription}". Ensure AI generated separate events (like healthChange) if mechanical effects are intended beyond narrative description.`);
                             }
                         } else {
                              localCorrectionWarnings.push(`Event: Attempted to use item "${event.itemIdOrName}", but it was not found in inventory.`);
@@ -740,10 +739,12 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                             if (!npc.knownFacts.includes(stateFact)) {
                                 npc.knownFacts.push(stateFact);
                             }
-                            // Optionally update shortTermGoal based on state
+                            
                             if (event.newState.toLowerCase() === 'hostile') npc.shortTermGoal = `Engage ${draftState.character.name}`;
                             else if (event.newState.toLowerCase() === 'fled') npc.shortTermGoal = "Escape";
                             else if (event.newState.toLowerCase() === 'following') npc.shortTermGoal = `Follow ${draftState.character.name}`;
+                            else if (event.newState.toLowerCase() === 'friendly') npc.shortTermGoal = `Assist ${draftState.character.name}`;
+                            else npc.shortTermGoal = undefined; // Clear goal if state is neutral or other
                             
                             npc.updatedAt = new Date().toISOString();
                             localCorrectionWarnings.push(`Event: NPC "${npc.name}" state changed to "${event.newState}". Reason: ${event.reason || 'unspecified'}`);
@@ -754,16 +755,16 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
                     break;
                 case 'newNPCIntroduced':
                     {
-                         const typedEvent = event as NewNPCIntroducedEvent; // Cast to the correct internal type
+                         const typedEvent = event as NewNPCIntroducedEvent; 
                          if (!draftState.trackedNPCs.find(n => n.name.toLowerCase() === typedEvent.npcName.toLowerCase())) {
                             const newNPC: NPCProfileType = {
                                 id: `npc_${typedEvent.npcName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
                                 name: typedEvent.npcName,
                                 description: typedEvent.npcDescription,
                                 classOrRole: typedEvent.classOrRole,
-                                health: typedEvent.initialHealth ?? 50, // Default health
+                                health: typedEvent.initialHealth ?? 50, 
                                 maxHealth: typedEvent.initialHealth ?? 50,
-                                mana: typedEvent.initialMana ?? 0, // Default mana
+                                mana: typedEvent.initialMana ?? 0, 
                                 maxMana: typedEvent.initialMana ?? 0,
                                 relationshipStatus: typedEvent.initialRelationship ?? 0,
                                 knownFacts: [],
@@ -837,10 +838,6 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
         }
 
         // --- Robust Character Data Finalization (Post-Event Processing) ---
-        // This section ensures all required fields are present and valid,
-        // primarily using originalChar as the source of truth if event processing didn't set them,
-        // or if they became invalid. Hardcoded defaults are last resort.
-        
         // Name
         if (!(typeof draftState.character.name === 'string' && draftState.character.name.trim() !== "")) {
             if (originalChar.name && typeof originalChar.name === 'string' && originalChar.name.trim() !== "") {
@@ -894,49 +891,68 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
         }
         draftState.character.health = Math.max(0, Math.min(draftState.character.health, draftState.character.maxHealth));
 
-
-        // Level, XP, XPToNextLevel
+        // Level
         if (!(typeof draftState.character.level === 'number' && draftState.character.level >= 1)) {
-            draftState.character.level = (typeof originalChar.level === 'number' && originalChar.level >=1) ? originalChar.level : 1;
-            localCorrectionWarnings.push("Character 'level' was invalid after event processing; restored/defaulted.");
+            if (typeof originalChar.level === 'number' && originalChar.level >= 1) {
+                draftState.character.level = originalChar.level;
+                localCorrectionWarnings.push("Character 'level' was invalid; restored from previous state.");
+            } else {
+                draftState.character.level = 1;
+                localCorrectionWarnings.push("Character 'level' was critically missing; applied hardcoded default.");
+            }
         }
+        // ExperiencePoints
         if (!(typeof draftState.character.experiencePoints === 'number' && draftState.character.experiencePoints >= 0)) {
-            draftState.character.experiencePoints = (typeof originalChar.experiencePoints === 'number' && originalChar.experiencePoints >=0) ? originalChar.experiencePoints : 0;
-            localCorrectionWarnings.push("Character 'experiencePoints' was invalid after event processing; restored/defaulted.");
+             if (typeof originalChar.experiencePoints === 'number' && originalChar.experiencePoints >= 0) {
+                draftState.character.experiencePoints = originalChar.experiencePoints;
+                localCorrectionWarnings.push("Character 'experiencePoints' was invalid; restored from previous state.");
+            } else {
+                draftState.character.experiencePoints = 0;
+                localCorrectionWarnings.push("Character 'experiencePoints' was critically missing; applied hardcoded default.");
+            }
         }
+        // ExperienceToNextLevel
         if (!(typeof draftState.character.experienceToNextLevel === 'number' && draftState.character.experienceToNextLevel > 0)) {
-            draftState.character.experienceToNextLevel = (typeof originalChar.experienceToNextLevel === 'number' && originalChar.experienceToNextLevel > 0) ? originalChar.experienceToNextLevel : 100;
-            localCorrectionWarnings.push("Character 'experienceToNextLevel' was invalid or zero after event processing; restored/defaulted.");
+            if (typeof originalChar.experienceToNextLevel === 'number' && originalChar.experienceToNextLevel > 0) {
+                draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel;
+                localCorrectionWarnings.push("Character 'experienceToNextLevel' was invalid or zero; restored from previous state.");
+            } else {
+                draftState.character.experienceToNextLevel = 100;
+                localCorrectionWarnings.push("Character 'experienceToNextLevel' was critically missing or zero; applied hardcoded default.");
+            }
         }
+        
         if (draftState.character.experiencePoints >= draftState.character.experienceToNextLevel) {
-            const didLevelUpEventOccur = describedEvents.some(e => e.type === 'levelUp' && e.newLevel === (draftState.character.level || originalChar.level) + 1);
+            const didLevelUpEventOccur = describedEvents.some(e => e.type === 'levelUp' && e.newLevel === draftState.character.level + 1);
             if (!didLevelUpEventOccur) { 
-                draftState.character.level = (draftState.character.level || originalChar.level) + 1;
+                draftState.character.level = draftState.character.level + 1;
                 draftState.character.experiencePoints = Math.max(0, draftState.character.experiencePoints - draftState.character.experienceToNextLevel);
                 draftState.character.experienceToNextLevel = Math.floor(draftState.character.experienceToNextLevel * 1.5);
-                localCorrectionWarnings.push(`Character XP exceeded threshold; automatically leveled up to ${draftState.character.level}.`);
+                localCorrectionWarnings.push(`Character XP exceeded threshold; automatically leveled up to ${draftState.character.level} as no levelUp event was emitted.`);
             }
         } else if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) {
-            draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor((originalChar.experienceToNextLevel || 100) * 0.5));
+            draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor(originalChar.experienceToNextLevel * 0.5));
             localCorrectionWarnings.push("Corrected 'character.experienceToNextLevel' to be greater than current XP for current level as no level up event occurred.");
         }
         
         const ensureOptionalNumber = (fieldName: keyof CharacterProfile, defaultValue: number) => {
             let valueToSet: number | undefined = undefined;
-            const aiVal = aiPartialOutput?.updatedStoryState?.character?.[fieldName];
-
-            if (typeof aiVal === 'number') { // AI provided a valid number (even if it's from the old direct update approach)
-                valueToSet = aiVal;
-            } else if (draftState.character[fieldName] !== undefined && typeof draftState.character[fieldName] === 'number') { // Event processing set a valid number
-                valueToSet = draftState.character[fieldName] as number;
-            } else if (typeof originalChar[fieldName] === 'number') { // Fallback to original state if it's a number
-                valueToSet = originalChar[fieldName] as number;
-                if (aiPartialOutput?.updatedStoryState?.character?.hasOwnProperty(fieldName)) { // AI tried to provide it but it was invalid
-                    localCorrectionWarnings.push(`AI value for 'character.${fieldName}' was invalid; restored from previous state's value.`);
+            const eventProcessedValue = (draftState.character as any)[fieldName];
+        
+            if (typeof eventProcessedValue === 'number') {
+                valueToSet = eventProcessedValue;
+            } else if (eventProcessedValue !== undefined) { // Event processing tried to set it, but it was invalid (e.g., null)
+                if (typeof originalChar[fieldName] === 'number') {
+                    valueToSet = originalChar[fieldName] as number;
+                    localCorrectionWarnings.push(`Event processing for 'character.${fieldName}' resulted in invalid value; restored from previous state.`);
+                } else {
+                    valueToSet = defaultValue;
+                    localCorrectionWarnings.push(`Event processing for 'character.${fieldName}' resulted in invalid value and no valid previous state; defaulted to ${defaultValue}.`);
                 }
-            } else { // Last resort, use hardcoded default
+            } else if (typeof originalChar[fieldName] === 'number') { // Not touched by event, use original if valid
+                valueToSet = originalChar[fieldName] as number;
+            } else { // Not touched by event, original invalid or undefined
                 valueToSet = defaultValue;
-                localCorrectionWarnings.push(`'character.${fieldName}' was missing or invalid from AI and previous state; defaulted to ${defaultValue}.`);
             }
             (draftState.character as any)[fieldName] = valueToSet;
         };
@@ -960,19 +976,11 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
         if (draftState.character.languageUnderstanding! < 0) draftState.character.languageUnderstanding = 0;
         if (draftState.character.languageUnderstanding! > 100) draftState.character.languageUnderstanding = 100;
 
-        // SkillsAndAbilities (Optional Array)
-        if (aiPartialOutput?.updatedStoryState?.character && Array.isArray(aiPartialOutput.updatedStoryState.character.skillsAndAbilities)) { // If AI tried to set it directly
-            draftState.character.skillsAndAbilities = aiPartialOutput.updatedStoryState.character.skillsAndAbilities;
-        } else if (!Array.isArray(draftState.character.skillsAndAbilities)) { // If event processing or original didn't make it an array
+        if (!Array.isArray(draftState.character.skillsAndAbilities)) {
             draftState.character.skillsAndAbilities = Array.isArray(originalChar.skillsAndAbilities) ? originalChar.skillsAndAbilities : [];
-            if (aiPartialOutput?.updatedStoryState?.character?.hasOwnProperty('skillsAndAbilities')) {
-                 localCorrectionWarnings.push("AI 'character.skillsAndAbilities' was not an array; restored/defaulted.");
-            } else if (!draftState.character.skillsAndAbilities) { // This case should ideally be covered by prior initializations.
-                localCorrectionWarnings.push("Character 'skillsAndAbilities' was missing; defaulted to empty array.");
-            }
+             localCorrectionWarnings.push("Character 'skillsAndAbilities' was invalid or missing; restored/defaulted.");
         }
         
-        // Update story summary using the fragment from AI
         if (aiPartialOutput?.sceneSummaryFragment && typeof aiPartialOutput.sceneSummaryFragment === 'string') {
             draftState.storySummary = (draftState.storySummary ? draftState.storySummary + "\n\n" : "") + aiPartialOutput.sceneSummaryFragment;
         } else if (!draftState.storySummary) {
@@ -986,193 +994,186 @@ DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on 
         draftState.equippedItems = draftState.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
         draftState.currentLocation = typeof draftState.currentLocation === 'string' ? draftState.currentLocation : (typeof input.storyState.currentLocation === 'string' ? input.storyState.currentLocation : "Unknown Location");
 
-    });
 
-
-    // ----- Perform final detailed sanitation (outside immer produce, on the final state) -----
-    // Inventory
-    finalUpdatedStoryState.inventory = finalUpdatedStoryState.inventory ?? [];
-    const invItemIds = new Set<string>();
-    finalUpdatedStoryState.inventory.forEach((item, index) => {
-        if (!item.id || item.id.trim() === "" || invItemIds.has(item.id)) {
-            let baseId = `item_inv_next_${Date.now()}_${index}`;
-            let newId = baseId; let i = 0;
-            while(invItemIds.has(newId)) newId = `${baseId}_${i++}`;
-            item.id = newId;
-            localCorrectionWarnings.push(`Generated unique ID for inventory item: ${item.name || 'Unnamed Item'}`);
-        }
-        invItemIds.add(item.id);
-        item.name = item.name || "Unnamed Item";
-        item.description = item.description || "No description.";
-        if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
-        if (item.basePrice === undefined || item.basePrice === null || item.basePrice < 0) item.basePrice = 0;
-    });
-
-    // Quests
-    finalUpdatedStoryState.quests = finalUpdatedStoryState.quests ?? [];
-    const questIds = new Set<string>();
-    finalUpdatedStoryState.quests.forEach((quest, index) => {
-        if (!quest.id || quest.id.trim() === "" || questIds.has(quest.id)) {
-            let baseId = `quest_next_${Date.now()}_${index}`;
-            let newId = baseId; let i = 0;
-            while(questIds.has(newId)) newId = `${baseId}_${i++}`;
-            quest.id = newId;
-            localCorrectionWarnings.push(`Generated unique ID for quest: ${quest.description || 'Unnamed Quest'}`);
-        }
-        questIds.add(quest.id);
-        quest.description = quest.description || "No description.";
-        quest.status = quest.status || 'active';
-        if (quest.category === null || (quest.category as unknown) === '') delete (quest as Partial<QuestType>).category;
-        quest.objectives = quest.objectives ?? [];
-        quest.objectives.forEach(obj => { 
-            obj.description = obj.description || "Unnamed objective";
-            obj.isCompleted = obj.isCompleted ?? false; 
-        });
-        if (quest.rewards) {
-            quest.rewards.items = quest.rewards.items ?? [];
-            quest.rewards.items.forEach((rItem, rIndex) => {
-                if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(2,8)}_${rIndex}`;
-                rItem.name = rItem.name || "Unnamed Reward Item";
-                rItem.description = rItem.description || "No description.";
-                if (rItem.basePrice === undefined || rItem.basePrice === null || rItem.basePrice < 0) rItem.basePrice = 0;
-            });
-            if (quest.rewards.currency !== undefined && quest.rewards.currency < 0) quest.rewards.currency = 0;
-            if (!quest.rewards.experiencePoints && (!quest.rewards.items || quest.rewards.items.length === 0) && quest.rewards.currency === undefined) {
-                 delete quest.rewards;
-            } else {
-                if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
-                if (!quest.rewards.items || quest.rewards.items.length === 0) delete quest.rewards.items;
-                if (quest.rewards.currency === undefined) delete quest.rewards.currency;
+        // ----- Perform final detailed sanitation (inside immer produce, on draftState) -----
+        // Inventory
+        const invItemIds = new Set<string>();
+        draftState.inventory.forEach((item, index) => {
+            if (!item.id || item.id.trim() === "" || invItemIds.has(item.id)) {
+                let baseId = `item_inv_next_${Date.now()}_${index}`;
+                let newId = baseId; let i = 0;
+                while(invItemIds.has(newId)) newId = `${baseId}_${i++}`;
+                item.id = newId;
+                localCorrectionWarnings.push(`Generated unique ID for inventory item: ${item.name || 'Unnamed Item'}`);
             }
-        } else {
-            delete quest.rewards; 
-        }
-    });
-    
-    // Equipped Items
-    const defaultEquippedItems: Record<EquipmentSlot, ItemType | null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-    const aiEquipped = finalUpdatedStoryState.equippedItems || {} as Partial<Record<EquipmentSlot, ItemType | null>>;
-    const newEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedItems};
-    const equippedItemIds = new Set<string>();
-    for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
-        const item = aiEquipped[slotKey]; 
-        if (item && typeof item === 'object' && item.name) { 
-            if (!item.id || item.id.trim() === "" || equippedItemIds.has(item.id) || invItemIds.has(item.id)) {
-                 let baseId = `item_equipped_next_${Date.now()}_${slotKey}`;
-                 let newId = baseId; let counter = 0;
-                 while(equippedItemIds.has(newId) || invItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
-                 item.id = newId;
-                 localCorrectionWarnings.push(`Generated unique ID for equipped item in slot ${slotKey}: ${item.name}`);
-            }
-            equippedItemIds.add(item.id);
-            item.name = item.name || "Unnamed Equipped Item";
+            invItemIds.add(item.id);
+            item.name = item.name || "Unnamed Item";
             item.description = item.description || "No description.";
-            if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>)!.equipSlot;
+            if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
             if (item.basePrice === undefined || item.basePrice === null || item.basePrice < 0) item.basePrice = 0;
-            newEquippedItems[slotKey] = item;
-        } else {
-            if (item !== null && item !== undefined) localCorrectionWarnings.push(`Item in slot ${slotKey} was invalid; set to empty.`);
-            newEquippedItems[slotKey] = null; 
-        }
-    }
-    finalUpdatedStoryState.equippedItems = newEquippedItems;
-
-    // Tracked NPCs
-    finalUpdatedStoryState.trackedNPCs = finalUpdatedStoryState.trackedNPCs ?? [];
-    const npcIdMap = new Map<string, NPCProfileType>();
-    const existingNpcIdsFromInput = new Set(input.storyState.trackedNPCs.map(npc => npc.id));
-    
-    finalUpdatedStoryState.trackedNPCs.forEach(npc => {
-        let currentNpcId = npc.id;
-        if (!currentNpcId || currentNpcId.trim() === "" || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
-             let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
-             let newId = baseId; let counter = 0;
-             while(npcIdMap.has(newId) || existingNpcIdsFromInput.has(newId)) { newId = `${baseId}_u${counter++}`; }
-             currentNpcId = newId;
-             localCorrectionWarnings.push(`Generated unique ID for NPC: ${npc.name || 'Unnamed NPC'}`);
-        }
-        npc.id = currentNpcId; 
-        if (npcIdMap.has(npc.id)) { console.warn(`Duplicate NPC ID ${npc.id} in processing. Skipping duplicate.`); localCorrectionWarnings.push(`Skipped duplicate NPC ID ${npc.id} during processing.`); return; }
-        
-        const processedNpc: Partial<NPCProfileType> = { ...npc }; 
-        
-        const optionalStringFields: (keyof NPCProfileType)[] = ['classOrRole', 'firstEncounteredLocation', 'firstEncounteredTurnId', 'lastKnownLocation', 'lastSeenTurnId', 'seriesContextNotes', 'shortTermGoal', 'updatedAt'];
-        optionalStringFields.forEach(field => {
-            if (processedNpc[field] === null || processedNpc[field] === undefined || (typeof processedNpc[field] === 'string' && (processedNpc[field] as string).trim() === '')) {
-                delete processedNpc[field];
-            }
         });
-        const optionalArrayFields: (keyof NPCProfileType)[] = ['dialogueHistory', 'merchantInventory', 'buysItemTypes', 'sellsItemTypes'];
-        optionalArrayFields.forEach(field => {
-             if (processedNpc[field] === null || processedNpc[field] === undefined || (Array.isArray(processedNpc[field]) && (processedNpc[field] as any[]).length === 0)) {
-                delete processedNpc[field];
+
+        // Quests
+        const questIds = new Set<string>();
+        draftState.quests.forEach((quest, index) => {
+            if (!quest.id || quest.id.trim() === "" || questIds.has(quest.id)) {
+                let baseId = `quest_next_${Date.now()}_${index}`;
+                let newId = baseId; let i = 0;
+                while(questIds.has(newId)) newId = `${baseId}_${i++}`;
+                quest.id = newId;
+                localCorrectionWarnings.push(`Generated unique ID for quest: ${quest.description || 'Unnamed Quest'}`);
             }
-        });
-        if (processedNpc.isMerchant === null || processedNpc.isMerchant === undefined) delete processedNpc.isMerchant;
-
-        processedNpc.name = processedNpc.name || "Unnamed NPC";
-        processedNpc.description = processedNpc.description || "No description provided.";
-        processedNpc.relationshipStatus = typeof processedNpc.relationshipStatus === 'number' ? Math.max(-100, Math.min(100, processedNpc.relationshipStatus)) : 0;
-        processedNpc.knownFacts = Array.isArray(processedNpc.knownFacts) ? processedNpc.knownFacts.filter(f => typeof f === 'string' && f.trim() !== '') : [];
-        
-        processedNpc.dialogueHistory?.forEach(dh => { if(!dh.turnId) dh.turnId = input.currentTurnId; });
-        
-        const originalNpc = input.storyState.trackedNPCs.find(onpc => onpc.id === processedNpc.id);
-        if (!originalNpc) { 
-            if (!processedNpc.firstEncounteredLocation) processedNpc.firstEncounteredLocation = input.storyState.currentLocation;
-            if (!processedNpc.firstEncounteredTurnId) processedNpc.firstEncounteredTurnId = input.currentTurnId;
-        } else { 
-             if (!processedNpc.firstEncounteredLocation) processedNpc.firstEncounteredLocation = originalNpc.firstEncounteredLocation;
-             if (!processedNpc.firstEncounteredTurnId) processedNpc.firstEncounteredTurnId = originalNpc.firstEncounteredTurnId;
-             if (processedNpc.seriesContextNotes === undefined && originalNpc.seriesContextNotes) { 
-                 processedNpc.seriesContextNotes = originalNpc.seriesContextNotes;
-             }
-        }
-        if (!processedNpc.lastKnownLocation) processedNpc.lastKnownLocation = processedNpc.firstEncounteredLocation || input.storyState.currentLocation; 
-        processedNpc.lastSeenTurnId = input.currentTurnId; 
-        processedNpc.updatedAt = new Date().toISOString(); 
-        
-        // Sanitize NPC health/mana
-        processedNpc.health = (typeof processedNpc.health === 'number' && processedNpc.health >= 0) ? processedNpc.health : undefined;
-        processedNpc.maxHealth = (typeof processedNpc.maxHealth === 'number' && processedNpc.maxHealth >= 0) ? processedNpc.maxHealth : undefined;
-        if(processedNpc.health !== undefined && processedNpc.maxHealth === undefined) processedNpc.maxHealth = processedNpc.health > 0 ? processedNpc.health : 50; // Default maxHealth if health is set
-        if(processedNpc.health !== undefined && processedNpc.maxHealth !== undefined && processedNpc.health > processedNpc.maxHealth) processedNpc.health = processedNpc.maxHealth;
-
-
-        processedNpc.mana = (typeof processedNpc.mana === 'number' && processedNpc.mana >= 0) ? processedNpc.mana : undefined;
-        processedNpc.maxMana = (typeof processedNpc.maxMana === 'number' && processedNpc.maxMana >= 0) ? processedNpc.maxMana : undefined;
-        if(processedNpc.mana !== undefined && processedNpc.maxMana === undefined) processedNpc.maxMana = processedNpc.mana > 0 ? processedNpc.mana : 0; // Default maxMana if mana is set
-        if(processedNpc.mana !== undefined && processedNpc.maxMana !== undefined && processedNpc.mana > processedNpc.maxMana) processedNpc.mana = processedNpc.maxMana;
-
-
-        processedNpc.isMerchant = processedNpc.isMerchant ?? false; 
-        if (processedNpc.merchantInventory) {
-            const merchantItemIds = new Set<string>();
-            processedNpc.merchantInventory.forEach((item, mIndex) => {
-                if (!item.id || item.id.trim() === "" || merchantItemIds.has(item.id) || invItemIds.has(item.id) || equippedItemIds.has(item.id) ) {
-                    let baseId = `item_merchant_next_${Date.now()}_${mIndex}`;
-                    let newId = baseId; let counter = 0;
-                    while(merchantItemIds.has(newId) || invItemIds.has(newId) || equippedItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
-                    item.id = newId;
-                    localCorrectionWarnings.push(`Generated unique ID for merchant item: ${item.name || 'Unnamed Merchant Item'}`);
-                }
-                merchantItemIds.add(item.id);
-                item.name = item.name || "Unnamed Merchant Item";
-                item.description = item.description || "No description.";
-                item.basePrice = item.basePrice ?? 0;
-                 if (item.basePrice < 0) item.basePrice = 0;
-                item.price = item.price ?? item.basePrice; 
-                if (item.price < 0) item.price = 0;
-                if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
+            questIds.add(quest.id);
+            quest.description = quest.description || "No description.";
+            quest.status = quest.status || 'active';
+            if (quest.category === null || (quest.category as unknown) === '') delete (quest as Partial<QuestType>).category;
+            quest.objectives = quest.objectives ?? [];
+            quest.objectives.forEach(obj => { 
+                obj.description = obj.description || "Unnamed objective";
+                obj.isCompleted = obj.isCompleted ?? false; 
             });
+            if (quest.rewards) {
+                quest.rewards.items = quest.rewards.items ?? [];
+                quest.rewards.items.forEach((rItem, rIndex) => {
+                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${Math.random().toString(36).substring(2,8)}_${rIndex}`;
+                    rItem.name = rItem.name || "Unnamed Reward Item";
+                    rItem.description = rItem.description || "No description.";
+                    if (rItem.basePrice === undefined || rItem.basePrice === null || rItem.basePrice < 0) rItem.basePrice = 0;
+                });
+                if (quest.rewards.currency !== undefined && quest.rewards.currency < 0) quest.rewards.currency = 0;
+                if (!quest.rewards.experiencePoints && (!quest.rewards.items || quest.rewards.items.length === 0) && quest.rewards.currency === undefined) {
+                    delete quest.rewards;
+                } else {
+                    if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
+                    if (!quest.rewards.items || quest.rewards.items.length === 0) delete quest.rewards.items;
+                    if (quest.rewards.currency === undefined) delete quest.rewards.currency;
+                }
+            } else {
+                delete quest.rewards; 
+            }
+        });
+        
+        // Equipped Items
+        const defaultEquippedItemsInternal: Record<EquipmentSlot, ItemType | null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
+        const currentEquippedItems = draftState.equippedItems || {} as Partial<Record<EquipmentSlot, ItemType | null>>;
+        const newEquippedItemsInternal: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedItemsInternal};
+        const equippedItemIds = new Set<string>();
+        for (const slotKey of Object.keys(defaultEquippedItemsInternal) as EquipmentSlot[]) {
+            const item = currentEquippedItems[slotKey]; 
+            if (item && typeof item === 'object' && item.name) { 
+                if (!item.id || item.id.trim() === "" || equippedItemIds.has(item.id) || invItemIds.has(item.id)) {
+                    let baseId = `item_equipped_next_${Date.now()}_${slotKey}`;
+                    let newId = baseId; let counter = 0;
+                    while(equippedItemIds.has(newId) || invItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+                    item.id = newId;
+                    localCorrectionWarnings.push(`Generated unique ID for equipped item in slot ${slotKey}: ${item.name}`);
+                }
+                equippedItemIds.add(item.id);
+                item.name = item.name || "Unnamed Equipped Item";
+                item.description = item.description || "No description.";
+                if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>)!.equipSlot;
+                if (item.basePrice === undefined || item.basePrice === null || item.basePrice < 0) item.basePrice = 0;
+                newEquippedItemsInternal[slotKey] = item;
+            } else {
+                if (item !== null && item !== undefined) localCorrectionWarnings.push(`Item in slot ${slotKey} was invalid; set to empty.`);
+                newEquippedItemsInternal[slotKey] = null; 
+            }
         }
-        npcIdMap.set(processedNpc.id!, processedNpc as NPCProfileType);
-    });
-    finalUpdatedStoryState.trackedNPCs = Array.from(npcIdMap.values());
+        draftState.equippedItems = newEquippedItemsInternal;
 
+        // Tracked NPCs
+        const npcIdMap = new Map<string, NPCProfileType>();
+        const existingNpcIdsFromInput = new Set(input.storyState.trackedNPCs.map(npc => npc.id));
+        
+        draftState.trackedNPCs.forEach(npc => {
+            let currentNpcId = npc.id;
+            if (!currentNpcId || currentNpcId.trim() === "" || (!existingNpcIdsFromInput.has(currentNpcId) && npcIdMap.has(currentNpcId))) {
+                let baseId = `npc_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}`;
+                let newId = baseId; let counter = 0;
+                while(npcIdMap.has(newId) || existingNpcIdsFromInput.has(newId)) { newId = `${baseId}_u${counter++}`; }
+                currentNpcId = newId;
+                localCorrectionWarnings.push(`Generated unique ID for NPC: ${npc.name || 'Unnamed NPC'}`);
+            }
+            npc.id = currentNpcId; 
+            if (npcIdMap.has(npc.id)) { console.warn(`Duplicate NPC ID ${npc.id} in processing. Skipping duplicate.`); localCorrectionWarnings.push(`Skipped duplicate NPC ID ${npc.id} during processing.`); return; }
+            
+            const processedNpc: Partial<NPCProfileType> = { ...npc }; 
+            
+            const optionalStringFields: (keyof NPCProfileType)[] = ['classOrRole', 'firstEncounteredLocation', 'firstEncounteredTurnId', 'lastKnownLocation', 'lastSeenTurnId', 'seriesContextNotes', 'shortTermGoal', 'updatedAt'];
+            optionalStringFields.forEach(field => {
+                if (processedNpc[field] === null || processedNpc[field] === undefined || (typeof processedNpc[field] === 'string' && (processedNpc[field] as string).trim() === '')) {
+                    delete processedNpc[field];
+                }
+            });
+            const optionalArrayFields: (keyof NPCProfileType)[] = ['dialogueHistory', 'merchantInventory', 'buysItemTypes', 'sellsItemTypes'];
+            optionalArrayFields.forEach(field => {
+                if (processedNpc[field] === null || processedNpc[field] === undefined || (Array.isArray(processedNpc[field]) && (processedNpc[field] as any[]).length === 0)) {
+                    delete processedNpc[field];
+                }
+            });
+            if (processedNpc.isMerchant === null || processedNpc.isMerchant === undefined) delete processedNpc.isMerchant;
 
-    finalUpdatedStoryState.worldFacts = finalUpdatedStoryState.worldFacts ?? [];
-    finalUpdatedStoryState.worldFacts = finalUpdatedStoryState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
+            processedNpc.name = processedNpc.name || "Unnamed NPC";
+            processedNpc.description = processedNpc.description || "No description provided.";
+            processedNpc.relationshipStatus = typeof processedNpc.relationshipStatus === 'number' ? Math.max(-100, Math.min(100, processedNpc.relationshipStatus)) : 0;
+            processedNpc.knownFacts = Array.isArray(processedNpc.knownFacts) ? processedNpc.knownFacts.filter(f => typeof f === 'string' && f.trim() !== '') : [];
+            
+            processedNpc.dialogueHistory?.forEach(dh => { if(!dh.turnId) dh.turnId = input.currentTurnId; });
+            
+            const originalNpcProfile = input.storyState.trackedNPCs.find(onpc => onpc.id === processedNpc.id);
+            if (!originalNpcProfile) { 
+                if (!processedNpc.firstEncounteredLocation) processedNpc.firstEncounteredLocation = input.storyState.currentLocation;
+                if (!processedNpc.firstEncounteredTurnId) processedNpc.firstEncounteredTurnId = input.currentTurnId;
+            } else { 
+                if (!processedNpc.firstEncounteredLocation) processedNpc.firstEncounteredLocation = originalNpcProfile.firstEncounteredLocation;
+                if (!processedNpc.firstEncounteredTurnId) processedNpc.firstEncounteredTurnId = originalNpcProfile.firstEncounteredTurnId;
+                if (processedNpc.seriesContextNotes === undefined && originalNpcProfile.seriesContextNotes) { 
+                    processedNpc.seriesContextNotes = originalNpcProfile.seriesContextNotes;
+                }
+            }
+            if (!processedNpc.lastKnownLocation) processedNpc.lastKnownLocation = processedNpc.firstEncounteredLocation || input.storyState.currentLocation; 
+            processedNpc.lastSeenTurnId = input.currentTurnId; 
+            processedNpc.updatedAt = new Date().toISOString(); 
+            
+            processedNpc.health = (typeof processedNpc.health === 'number' && processedNpc.health >= 0) ? processedNpc.health : undefined;
+            processedNpc.maxHealth = (typeof processedNpc.maxHealth === 'number' && processedNpc.maxHealth >= 0) ? processedNpc.maxHealth : undefined;
+            if(processedNpc.health !== undefined && processedNpc.maxHealth === undefined) processedNpc.maxHealth = processedNpc.health > 0 ? processedNpc.health : 50;
+            if(processedNpc.health !== undefined && processedNpc.maxHealth !== undefined && processedNpc.health > processedNpc.maxHealth) processedNpc.health = processedNpc.maxHealth;
+
+            processedNpc.mana = (typeof processedNpc.mana === 'number' && processedNpc.mana >= 0) ? processedNpc.mana : undefined;
+            processedNpc.maxMana = (typeof processedNpc.maxMana === 'number' && processedNpc.maxMana >= 0) ? processedNpc.maxMana : undefined;
+            if(processedNpc.mana !== undefined && processedNpc.maxMana === undefined) processedNpc.maxMana = processedNpc.mana > 0 ? processedNpc.mana : 0;
+            if(processedNpc.mana !== undefined && processedNpc.maxMana !== undefined && processedNpc.mana > processedNpc.maxMana) processedNpc.mana = processedNpc.maxMana;
+
+            processedNpc.isMerchant = processedNpc.isMerchant ?? false; 
+            if (processedNpc.merchantInventory) {
+                const merchantItemIds = new Set<string>();
+                processedNpc.merchantInventory.forEach((item, mIndex) => {
+                    if (!item.id || item.id.trim() === "" || merchantItemIds.has(item.id) || invItemIds.has(item.id) || equippedItemIds.has(item.id) ) {
+                        let baseId = `item_merchant_next_${Date.now()}_${mIndex}`;
+                        let newId = baseId; let counter = 0;
+                        while(merchantItemIds.has(newId) || invItemIds.has(newId) || equippedItemIds.has(newId)){ newId = `${baseId}_u${counter++}`; }
+                        item.id = newId;
+                        localCorrectionWarnings.push(`Generated unique ID for merchant item: ${item.name || 'Unnamed Merchant Item'}`);
+                    }
+                    merchantItemIds.add(item.id);
+                    item.name = item.name || "Unnamed Merchant Item";
+                    item.description = item.description || "No description.";
+                    item.basePrice = item.basePrice ?? 0;
+                    if (item.basePrice < 0) item.basePrice = 0;
+                    item.price = item.price ?? item.basePrice; 
+                    if (item.price < 0) item.price = 0;
+                    if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
+                });
+            }
+            npcIdMap.set(processedNpc.id!, processedNpc as NPCProfileType);
+        });
+        draftState.trackedNPCs = Array.from(npcIdMap.values());
+
+        draftState.worldFacts = draftState.worldFacts ?? [];
+        draftState.worldFacts = draftState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
+
+    }); // End of produce block
     
     const finalOutput: GenerateNextSceneOutput = {
         generatedMessages: aiPartialOutput.generatedMessages!,
