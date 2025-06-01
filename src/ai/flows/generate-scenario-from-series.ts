@@ -4,9 +4,9 @@
 /**
  * @fileOverview This file contains Genkit flows for generating the foundational
  * and narrative elements of a game scenario based on a real-life series.
- *
- * - generateScenarioFoundation - Generates character, scene, core world details.
- * - generateScenarioNarrativeElements - Generates quests, chapters, NPCs, and lore.
+ * It now exports two main functions:
+ * - generateScenarioFoundation: Generates character, scene, core world details, initial items.
+ * - generateScenarioNarrativeElements: Generates quests, chapters, NPCs, and lore, called after foundation.
  */
 
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
@@ -32,7 +32,7 @@ const Foundation_ActiveEffectSchemaInternal = z.object({
   name: z.string(),
   description: z.string(),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']),
-  duration: z.union([z.literal('permanent_while_equipped'), z.number()]).optional(),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(Foundation_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
@@ -194,7 +194,7 @@ const foundationFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFoundationFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 }; // Generous token limit
+    const modelConfig = { maxOutputTokens: 8000 };
 
 
     let step1StartTime = Date.now();
@@ -212,11 +212,11 @@ Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     });
     const foundation_styleGuidePrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
+        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig, // Reverted to larger token limit as requested
         prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string (""). Output ONLY the summary string or empty string.`,
     });
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig,
+        name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph. Output ONLY JSON for SeriesPlotSummaryOutputSchema.`,
     });
 
@@ -252,7 +252,7 @@ Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     let step2StartTime = Date.now();
     console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
     const foundation_initialCharacterSkillsPrompt = ai.definePrompt({
-        name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig,
+        name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
 Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills (unique 'id', 'name', 'description', 'type'). Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
 Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ensure IDs are unique.`,
@@ -289,31 +289,31 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
     };
 
     const foundation_initialInventoryPrompt = ai.definePrompt({
-        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig,
+        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'inventory': 0-3 unequipped items. Each: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
 Output ONLY { "inventory": [...] }. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
-        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig,
+        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig,
+        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig,
+        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
-        name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig,
+        name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig, // Reverted
         prompt: `For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'worldFacts': 3-5 key facts. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
 Output ONLY { "worldFacts": [...] }.`,
@@ -439,7 +439,7 @@ const Narrative_ActiveEffectSchemaInternal = z.object({
   name: z.string(),
   description: z.string(),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']),
-  duration: z.union([z.literal('permanent_while_equipped'), z.number()]).optional(),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(Narrative_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
@@ -631,7 +631,7 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioNarrativeElementsFlow: START for Series: ${input.seriesName}, Character: ${input.characterProfile.name}`);
 
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 }; // Generous token limit
+    const modelConfig = { maxOutputTokens: 8000 }; // Use generous token limit as requested
 
     // --- Define Prompts ---
     const narrative_initialQuestsAndChaptersPrompt = ai.definePrompt({
@@ -805,5 +805,3 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     return output;
   }
 );
-
-    

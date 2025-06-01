@@ -41,7 +41,7 @@ const ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("Descriptive name of the effect, e.g., 'Fiery Aura', 'Eagle Eye'."),
   description: z.string().describe("Narrative description of what the effect does or looks like."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("Type of effect. For now, prioritize 'stat_modifier' or 'passive_aura' for equippable gear."),
-  duration: z.union([z.literal('permanent_while_equipped'), z.number()]).optional().describe("Duration of the effect. 'permanent_while_equipped' for ongoing effects from gear. Number for turns if temporary."),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', an array of specific stat changes. Each must include 'stat', 'value' (number), and 'type' ('add' or 'multiply')."),
   sourceItemId: z.string().optional().describe("The ID of the item granting this effect (auto-filled by system if needed)."),
 });
@@ -318,6 +318,7 @@ const GenerateNextSceneOutputSchemaInternal = z.object({
   newLoreEntries: z.array(NextScene_RawLoreEntryZodSchema).optional(),
   updatedStorySummary: z.string(),
   dataCorrectionWarnings: z.array(z.string()).optional(),
+  describedEvents: z.array(DescribedEventSchema).optional(), // Ensure this is passed through
 });
 
 const NarrativeAndEventsPromptInputSchema = GenerateNextSceneInputSchemaInternal.extend({
@@ -337,7 +338,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
   let output = "";
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
-    const item = equippedItems[slot];
+    const item = equippedItems[slot as EquipmentSlot];
     let itemDesc = item ? `${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})` : 'Empty';
     output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${itemDesc}\n`;
   }
@@ -372,7 +373,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         let relationshipLabel = "Unknown";
         if (npc.relationshipStatus <= -75) relationshipLabel = "Arch-Nemesis";
         else if (npc.relationshipStatus <= -25) relationshipLabel = "Hostile";
-        else if (npc.relationshipStatus < 25) relationshipLabel = "Friendly";
+        else if (npc.relationshipStatus < 25) relationshipLabel = "Friendly"; // Should be Neutral or similar for range near 0
         else if (npc.relationshipStatus < 75) relationshipLabel = "Friendly";
         else if (npc.relationshipStatus >= 75) relationshipLabel = "Staunch Ally";
 
@@ -411,17 +412,12 @@ const generateNextSceneFlow = ai.defineFlow(
   {
     name: 'generateNextSceneFlow',
     inputSchema: GenerateNextSceneInputSchemaInternal, // This receives the storyState with *effective* character stats
-    outputSchema: GenerateNextSceneOutputSchemaInternal, // This will return a storyState with *base* character stats updated
+    outputSchema: GenerateNextSceneOutputSchemaInternal, // This will return a storyState with *base* character stats updated by events
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     const modelConfig = { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
-
-    // Store the original base character profile if we need to revert event processing to it.
-    // However, the design is that input.storyState.character IS the effective profile for AI.
-    // The events should modify a conceptual "base" which is then persisted.
-    // For now, we will assume event processing in page.tsx correctly targets base stats.
 
     const narrativeAndEventsPrompt = ai.definePrompt({
         name: 'generateNarrativeAndEventsPrompt',
@@ -469,7 +465,7 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
     const formattedSkillsString = formatSkills(input.storyState.character.skillsAndAbilities);
 
     const narrativePromptPayload: z.infer<typeof NarrativeAndEventsPromptInputSchema> = {
-      ...input, // input.storyState.character here is the *effective* profile
+      ...input, 
       formattedEquippedItemsString,
       formattedQuestsString,
       formattedTrackedNPCsString,
@@ -486,10 +482,11 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         console.error(`[${modelName}] Error during narrativeAndEventsPrompt:`, e);
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error during narrative generation: ${e.message}. Please try a different action.)` }],
-            updatedStoryState: input.storyState, // Return the input state (which has effective stats) on error
+            updatedStoryState: input.storyState, 
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: ["AI model failed to generate narrative/events structure."],
+            describedEvents: [],
         };
     }
 
@@ -498,42 +495,26 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure.");
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an empty or malformed structure for scene narrative. Please try again.)` }],
-            updatedStoryState: input.storyState, // Return the input state (which has effective stats) on error
+            updatedStoryState: input.storyState, 
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: localCorrectionWarnings,
+            describedEvents: [],
         };
     }
     
-    // CRITICAL: The `finalUpdatedStoryState` that is constructed and returned from this flow
-    // (and subsequently by page.tsx's event processing) MUST contain the BASE character stats
-    // that have been modified by the `describedEvents`. The `input.storyState` to this flow
-    // contained the *effective* stats for the AI's decision making for *this turn*.
-    // The client-side (page.tsx) is responsible for:
-    // 1. Calculating effective stats from base + items.
-    // 2. Sending storyState with *effective* stats to this flow.
-    // 3. Receiving `updatedStoryState` from this flow (which should conceptually be based on modifications to the *base* stats).
-    // 4. Persisting this `updatedStoryState` (with updated base stats) for the next turn.
-    // This flow itself doesn't convert effective back to base. It relies on the client to manage that distinction.
-    // The `produce` block in page.tsx will apply events to the *base* character profile from the *previous* turn's state.
-    
-    const storyStateWithBaseCharacterModifiedByEvents = input.storyState; // This is a placeholder.
-                                                                    // page.tsx's produce block will handle the actual base state update.
-                                                                    // This flow will return the AI's proposed events, and page.tsx applies them to its true base state.
+    const storyStateWithBaseCharacterModifiedByEvents = input.storyState; 
 
     const finalOutput: GenerateNextSceneOutput = {
         generatedMessages: aiPartialOutput.generatedMessages!,
-        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents, // This will be effectively overwritten by page.tsx's logic
+        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents, 
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc.name && npc.name.trim() !== '') ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
         updatedStorySummary: (aiPartialOutput.sceneSummaryFragment ? (input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment : input.storyState.storySummary || ""),
         dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? Array.from(new Set(localCorrectionWarnings)) : undefined,
+        describedEvents: aiPartialOutput.describedEvents as DescribedEvent[] ?? [],
     };
     
-    // This is a simplified version of what produce in page.tsx does.
-    // For the purpose of this flow, we are primarily concerned with what the AI *outputs* (narrative, events).
-    // The actual state update logic using these events against the *base* character profile happens in page.tsx.
-    // We adjust the storySummary here as an example of a direct update.
     if (aiPartialOutput.sceneSummaryFragment) {
         finalOutput.updatedStorySummary = ((input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment).trim();
         finalOutput.updatedStoryState.storySummary = finalOutput.updatedStorySummary;
@@ -552,9 +533,6 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
       }
     }
     
-    // The `updatedStoryState` character profile returned here is still the one based on *effective* stats that was input.
-    // The client (page.tsx) will use the `describedEvents` from `aiPartialOutput.describedEvents`
-    // to update its *base* character profile for the next turn.
     console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState.character here is based on the effective stats sent to AI for this turn's decisions. Client will handle base stat updates.", finalOutput.updatedStoryState.character);
     return finalOutput;
   }

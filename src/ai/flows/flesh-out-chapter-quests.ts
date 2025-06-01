@@ -31,7 +31,7 @@ const ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("Descriptive name of the effect."),
   description: z.string().describe("Narrative description of what the effect does."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']),
-  duration: z.union([z.literal('permanent_while_equipped'), z.number()]).optional(),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', array of stat changes."),
   sourceItemId: z.string().optional(),
 });
@@ -154,7 +154,7 @@ Generate an array of 2-3 'fleshedOutQuests' for the chapter titled "{{chapterToF
 - Each quest MUST have a unique \`id\` (e.g., quest_main_{{chapterToFleshOut.id}}_001), an optional \`title\`, a detailed \`description\`, and 1-2 \`objectives\` (with \`isCompleted: false\`).
 - **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items).
 - For reward items: each MUST have a unique 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', and optional 'equipSlot' (OMIT for non-equippable items).
-- **For reward items that are gear (especially 'uncommon' or 'rare'), you MAY include 'activeEffects'.** If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped' for gear stat mods), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
+- **For reward items that are gear (especially 'uncommon' or 'rare'), you MAY include 'activeEffects'.** If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped' for gear stat mods, or a string for how long a temporary effect lasts), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
 - Ensure all numeric fields (prices, XP, currency, stat values etc.) are actual numbers.
 
 Output ONLY the JSON object adhering to 'FleshOutChapterQuestsOutputSchema'. Example: \`{"fleshedOutQuests": [{"id": "...", "title": "...", ...}]}\`
