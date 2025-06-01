@@ -20,9 +20,15 @@ export interface ActiveEffect {
   name: string;
   description: string;
   type: 'stat_modifier' | 'temporary_ability' | 'passive_aura';
-  duration?: 'permanent_while_equipped' | number;
+  duration?: 'permanent_while_equipped' | number; // number is for turns (consumables)
   statModifiers?: StatModifier[];
   sourceItemId?: string;
+}
+
+export interface TemporaryEffect extends ActiveEffect {
+  turnsRemaining: number;
+  // Inherits id, name, description, type, statModifiers, sourceItemId from ActiveEffect
+  // duration here would be the original total duration, turnsRemaining is what counts down
 }
 
 export interface Item {
@@ -31,13 +37,13 @@ export interface Item {
   description: string;
   equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
   isConsumable?: boolean;
-  effectDescription?: string;
+  effectDescription?: string; // Narrative effect description
   isQuestItem?: boolean;
   relevantQuestId?: string;
   basePrice?: number;
   price?: number; // For merchants
   rarity?: ItemRarity;
-  activeEffects?: ActiveEffect[];
+  activeEffects?: ActiveEffect[]; // Can now include effects with numeric duration for consumables
 }
 
 export interface CharacterProfile {
@@ -61,6 +67,7 @@ export interface CharacterProfile {
   currency?: number;
   languageReading?: number;
   languageSpeaking?: number;
+  activeTemporaryEffects?: TemporaryEffect[]; // New field for active buffs/debuffs
 }
 
 export type EquipmentSlot =
@@ -314,11 +321,11 @@ export interface ItemFoundEvent extends DescribedEventBase {
   suggestedBasePrice?: number;
   equipSlot?: Item['equipSlot'];
   isConsumable?: boolean;
-  effectDescription?: string;
+  effectDescription?: string; // Narrative effect description
   isQuestItem?: boolean;
   relevantQuestId?: string;
   rarity?: ItemRarity;
-  activeEffects?: ActiveEffect[];
+  activeEffects?: ActiveEffect[]; // Can now include effects with numeric duration
 }
 export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
 export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; }
@@ -497,3 +504,4 @@ export interface CraftingRecipe {
   requiredSkill?: { skillId: string; level: number };
   discovered?: boolean;
 }
+

@@ -12,7 +12,7 @@
 
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z}from 'zod';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, StoryArc as StoryArcType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType } from '@/types/story'; // StoryArcType
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, StoryArc as StoryArcType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType, TemporaryEffect } from '@/types/story'; // StoryArcType
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 
 const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
@@ -29,7 +29,7 @@ const ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("Descriptive name of the effect, e.g., 'Fiery Aura', 'Eagle Eye'. REQUIRED."),
   description: z.string().describe("Narrative description of what the effect does or looks like. REQUIRED."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("Type of effect. For now, prioritize 'stat_modifier' or 'passive_aura' for equippable gear. REQUIRED."),
-  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().positive().describe("Number of turns the effect lasts (for consumables).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
   statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', an array of specific stat changes. Each must include 'stat', 'value' (number), and 'type' ('add' or 'multiply')."),
   sourceItemId: z.string().optional().describe("The ID of the item granting this effect (auto-filled by system if needed)."),
 });
@@ -45,7 +45,7 @@ const ItemSchemaInternal = z.object({
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
   basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. MUST BE a number if provided."),
   rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item (e.g., 'common', 'uncommon', 'rare'). Most starting items should be 'common'."),
-  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("An array of structured active effects this item provides. For equippable gear, these might include 'stat_modifier' effects. Each effect needs a unique id, name, description, type. If 'stat_modifier', include 'statModifiers' array detailing changes. 'duration' should be 'permanent_while_equipped' for gear stat mods."),
+  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("An array of structured active effects this item provides. For equippable gear, these might include 'stat_modifier' effects with 'duration: permanent_while_equipped'. For consumables granting temporary buffs, define 'stat_modifier' effects here and provide a numeric 'duration' (e.g., 3 for 3 turns). Each effect needs a unique id, name, description, type. If 'stat_modifier', include 'statModifiers' array detailing changes."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -54,6 +54,11 @@ const SkillSchemaInternal = z.object({
     description: z.string().describe("A clear description of what the skill does, its narrative impact, or its basic effect. REQUIRED."),
     type: z.string().describe("A category for the skill, e.g., 'Combat', 'Utility', 'Passive', 'Racial Trait'. REQUIRED.")
 });
+
+const TemporaryEffectSchemaInternal = ActiveEffectSchemaInternal.extend({
+    turnsRemaining: z.number().int().nonnegative().describe("Number of turns remaining for this effect. REQUIRED."),
+});
+
 
 const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character. REQUIRED.'),
@@ -76,6 +81,7 @@ const CharacterProfileSchemaInternal = z.object({
   currency: z.number().optional().describe("Character's starting currency (e.g., gold). Initialize to a small amount like 50, or 0. MUST BE a number if provided."),
   languageReading: z.number().optional().describe("Character's understanding of written local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier, then set to a low value like 0-10. MUST BE a number if provided."),
   languageSpeaking: z.number().optional().describe("Character's understanding of spoken local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier, then set to a low value like 0-10. MUST BE a number if provided."),
+  activeTemporaryEffects: z.array(TemporaryEffectSchemaInternal).optional().describe("List of temporary buffs or debuffs currently affecting the character. Typically empty at game start. Managed by game logic."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -89,7 +95,7 @@ const EquipmentSlotsSchemaInternal = z.object({
   neck: ItemSchemaInternal.nullable(),
   ring1: ItemSchemaInternal.nullable(),
   ring2: ItemSchemaInternal.nullable(),
-}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'activeEffects' (if any), and 'equipSlot' if applicable) or 'null'. REQUIRED.");
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'activeEffects' (if any, include numeric duration for consumables), and 'equipSlot' if applicable) or 'null'. REQUIRED.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 const QuestObjectiveSchemaInternal = z.object({
@@ -99,7 +105,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded. MUST BE a number if provided."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item needs id, name, description, basePrice (number), optional rarity, optional activeEffects, etc."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item needs id, name, description, basePrice (number), optional rarity, optional activeEffects (numeric duration for consumables), etc."),
   currency: z.number().optional().describe("Amount of currency awarded. MUST BE a number if provided."),
 }).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
@@ -143,7 +149,7 @@ const NPCProfileSchemaInternal = z.object({
     shortTermGoal: z.string().optional(),
     updatedAt: z.string().optional(),
     isMerchant: z.boolean().optional(),
-    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If merchant, list items for sale. Each needs id, name, description, basePrice (number), optional rarity, and price (number). Also include 'activeEffects' if any."),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If merchant, list items for sale. Each needs id, name, description, basePrice (number), optional rarity, and price (number). Also include 'activeEffects' (numeric duration for consumables) if any."),
     buysItemTypes: z.array(z.string()).optional(),
     sellsItemTypes: z.array(z.string()).optional(),
 });
@@ -162,13 +168,13 @@ const StoryArcSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe("REQUIRED."),
   currentLocation: z.string().describe("REQUIRED."),
-  inventory: z.array(ItemSchemaInternal).describe("REQUIRED (can be empty array). List of unequipped items. Each item requires id, name, description, basePrice (number), optional rarity, and optional 'activeEffects' (if any, include statModifiers with numeric values)."),
+  inventory: z.array(ItemSchemaInternal).describe("REQUIRED (can be empty array). List of unequipped items. Each item requires id, name, description, basePrice (number), optional rarity, and optional 'activeEffects' (if any, include statModifiers with numeric values, and numeric duration for consumables)."),
   equippedItems: EquipmentSlotsSchemaInternal.describe("REQUIRED."),
-  quests: z.array(QuestSchemaInternal).describe("REQUIRED (can be empty array). List of quests. Rewards items should also include optional 'activeEffects' and 'rarity'."),
+  quests: z.array(QuestSchemaInternal).describe("REQUIRED (can be empty array). List of quests. Rewards items should also include optional 'activeEffects' (numeric duration for consumables) and 'rarity'."),
   storyArcs: z.array(StoryArcSchemaInternal).optional().describe("Optional array of story arcs."), // Renamed
   currentStoryArcId: z.string().optional().describe("Optional ID of the active story arc."), // Renamed
   worldFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("REQUIRED (can be empty array). NPCs encountered. Merchant inventory items also need optional 'activeEffects' and 'rarity'."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("REQUIRED (can be empty array). NPCs encountered. Merchant inventory items also need optional 'activeEffects' (numeric duration for consumables) and 'rarity'."),
   storySummary: z.string().optional().describe("Optional running story summary."),
 });
 
@@ -214,18 +220,18 @@ User suggestions: Character Name: {{#if characterNameInput}}{{characterNameInput
 Based on the theme and user suggestions, generate the following, ensuring all REQUIRED fields in 'GenerateStoryStartOutputSchemaInternal' are populated:
 1.  'sceneDescription': An engaging initial scene for the story. (REQUIRED)
 2.  'storyState': The complete initial structured state: (REQUIRED)
-    a.  'character': (Profile fields as described in CharacterProfileSchemaInternal - name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel are REQUIRED. Other fields are optional but encouraged.)
+    a.  'character': (Profile fields as described in CharacterProfileSchemaInternal - name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel are REQUIRED. 'activeTemporaryEffects' should be an empty array \`[]\`. Other fields are optional but encouraged.)
     b.  'currentLocation': A fitting starting location string. (REQUIRED)
-    c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear. Consider adding 'isConsumable', 'effectDescription'. For some items (especially gear of 'uncommon' rarity or higher), you MAY include 'activeEffects' (each effect needs 'id', 'name', 'description', 'type', and structured 'statModifiers' if type is 'stat_modifier'). (REQUIRED field, can be empty array)
-    d.  'equippedItems': All 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') MUST be present, each 'null' or an item object. If an item, it MUST have 'id', 'name', 'description', 'equipSlot', 'basePrice' (number), optional 'rarity', and optional 'activeEffects' as described for inventory items. (REQUIRED field, all slots must be specified as item or null)
-    e.  'quests': An array of initial quests (can be empty). If included, each quest MUST have 'id', 'description', 'type', 'status: "active"'. 'title', 'category', 'objectives' are optional. Rewards (if any) MUST use numeric values for 'experiencePoints' and 'currency', and items in rewards follow the same structure as inventory items (including potential 'activeEffects'). (REQUIRED field, can be empty array)
+    c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear. For consumables (e.g. potions) providing temporary buffs, 'activeEffects' should include 'statModifiers' and a numeric 'duration' (in turns).
+    d.  'equippedItems': All 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') MUST be present, each 'null' or an item object. If an item, it MUST have 'id', 'name', 'description', 'equipSlot', 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with 'duration: "permanent_while_equipped"' for gear).
+    e.  'quests': An array of initial quests (can be empty). If included, each quest MUST have 'id', 'description', 'type', 'status: "active"'. 'title', 'category', 'objectives' are optional. Rewards (if any) MUST use numeric values for 'experiencePoints' and 'currency', and items in rewards follow the same structure as inventory items (including potential 'activeEffects' with numeric 'duration' for consumables).
     f.  'storyArcs': Optionally, a single 'Prologue' or 'Introduction' story arc. If included, each story arc MUST have 'id', 'title', 'description', 'order', 'mainQuestIds' (can be empty), 'isCompleted'. (Optional array)
     g.  'currentStoryArcId': If story arcs are included, set to the initial story arc's ID. (Optional)
     h.  'worldFacts': 1-2 key facts. If language skills are low, include facts about the barrier. (REQUIRED field, can be empty array)
-    i.  'trackedNPCs': Array of NPC profiles (can be empty). If an NPC is included, it MUST have 'id', 'name', 'description', 'relationshipStatus', 'knownFacts' (can be empty array). If an NPC is a merchant, their 'merchantInventory' items should also follow the full item structure (including optional 'activeEffects'). (REQUIRED field, can be empty array)
+    i.  'trackedNPCs': Array of NPC profiles (can be empty). If an NPC is included, it MUST have 'id', 'name', 'description', 'relationshipStatus', 'knownFacts' (can be empty array). If an NPC is a merchant, their 'merchantInventory' items should also follow the full item structure (including optional 'activeEffects' with numeric 'duration' for consumables).
     j.  'storySummary': Initialize as an empty string "" or a very brief thematic intro. (Optional)
 
-Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'. Ensure all item definitions (inventory, equipped, rewards, merchant stock) include optional 'rarity' and may include 'activeEffects' (with correctly structured 'statModifiers' if type is 'stat_modifier', and appropriate 'duration' like 'permanent_while_equipped' for gear).
+Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'. Ensure all item definitions (inventory, equipped, rewards, merchant stock) include optional 'rarity' and may include 'activeEffects' (with correctly structured 'statModifiers' if type is 'stat_modifier', and appropriate 'duration' like 'permanent_while_equipped' for gear, or numeric turns for consumables).
 `,
     });
 
@@ -241,6 +247,7 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
       char.languageReading = char.languageReading ?? 100;
       char.languageSpeaking = char.languageSpeaking ?? 100;
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
+      char.activeTemporaryEffects = char.activeTemporaryEffects ?? []; // Initialize
     }
 
     output.storyState.inventory = output.storyState.inventory ?? [];
@@ -258,6 +265,9 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
                 if (typeof mod.value !== 'number') mod.value = 0;
                 if (!mod.type) mod.type = 'add';
             });
+            if (typeof effect.duration === 'number' && effect.duration <= 0) {
+                effect.duration = 1; // Ensure positive duration for consumables
+            }
         });
     });
 
@@ -274,6 +284,7 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
                 effect.name = effect.name || "Unnamed Effect";
                 effect.description = effect.description || "No effect description";
                 effect.type = effect.type || "passive_aura";
+                effect.duration = effect.duration ?? 'permanent_while_equipped'; // Default to permanent for equipped
                 effect.statModifiers = effect.statModifiers ?? [];
                 effect.statModifiers.forEach((mod: Partial<StatModifierType>) => {
                     if (typeof mod.value !== 'number') mod.value = 0;
@@ -303,6 +314,9 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
                     if (typeof mod.value !== 'number') mod.value = 0;
                     if (!mod.type) mod.type = 'add';
                 });
+                if (typeof effect.duration === 'number' && effect.duration <= 0) {
+                   effect.duration = 1;
+                }
             });
         });
       }
@@ -327,6 +341,9 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
                         if (typeof mod.value !== 'number') mod.value = 0;
                         if (!mod.type) mod.type = 'add';
                     });
+                    if (typeof effect.duration === 'number' && effect.duration <= 0) {
+                       effect.duration = 1;
+                    }
                 });
             });
         }
