@@ -281,9 +281,9 @@ You MUST generate an object with 'sceneDescription', 'characterCore', and 'curre
     - Profile MUST include: 'name', 'class', 'description'. The 'description' MUST reflect any initial language barrier if 'languageUnderstanding' is 0.
     - Health/MaxHealth (e.g., 100). Mana/MaxMana (0 if not applicable). Stats (5-15). Level 1, 0 XP, XPToNextLevel (e.g., 100). Currency (e.g., 25-50).
     - **'languageUnderstanding'**:
-        - If the \`seriesName\` and \`characterNameInput\` (if provided) strongly suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments, or a character known to be in a foreign land without prior knowledge of the local language), \`languageUnderstanding\` MUST be set to 0.
+        - If the \`seriesName\` and \`characterNameInput\` (if provided) strongly suggest a character who canonically starts with no understanding of the local language (e.g., an 'isekai' protagonist in their initial moments, or a character known to be in a foreign land without prior knowledge of the local language), \`languageUnderstanding\` MUST be set to 0. The \`description\` field should also reflect this.
         - For other characters/series, if the series canon implies an initial language barrier for the protagonist, set 'languageUnderstanding' to 0 or a low value appropriate to the canon.
-        - Otherwise, if not specified by canon for the starting situation, default 'languageUnderstanding' to 100 (fluent). If the AI omits 'languageUnderstanding', it will be defaulted to 100 in post-processing.
+        - Otherwise, if not specified by canon for the starting situation, default 'languageUnderstanding' to 100 (fluent) or a series-appropriate value if known. If the AI omits 'languageUnderstanding', it will be defaulted to 100 in post-processing.
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
 
 Output ONLY the JSON object for CharacterAndSceneOutputSchema.`,
@@ -458,7 +458,24 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       console.error("Character/Scene generation failed:", charSceneOutput);
       throw new Error('Failed to generate character core, scene, or location.');
     }
-    const { characterCore, sceneDescription, currentLocation } = charSceneOutput;
+    
+    let { characterCore, sceneDescription, currentLocation } = charSceneOutput;
+
+    // Apply defaults to characterCore early
+    characterCore.mana = characterCore.mana ?? 0;
+    characterCore.maxMana = characterCore.maxMana ?? 0;
+    characterCore.strength = characterCore.strength ?? 10;
+    characterCore.dexterity = characterCore.dexterity ?? 10;
+    characterCore.constitution = characterCore.constitution ?? 10;
+    characterCore.intelligence = characterCore.intelligence ?? 10;
+    characterCore.wisdom = characterCore.wisdom ?? 10;
+    characterCore.charisma = characterCore.charisma ?? 10;
+    characterCore.currency = characterCore.currency ?? 0;
+    characterCore.languageUnderstanding = characterCore.languageUnderstanding ?? 100; // Default to fluent if AI omits
+    // Ensure languageUnderstanding is within bounds
+    if (characterCore.languageUnderstanding < 0) characterCore.languageUnderstanding = 0;
+    if (characterCore.languageUnderstanding > 100) characterCore.languageUnderstanding = 100;
+
 
     const skillsInput: z.infer<typeof InitialCharacterSkillsInputSchema> = {
         seriesName: mainInput.seriesName,
@@ -470,25 +487,18 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
 
     const fullCharacterProfile: z.infer<typeof CharacterProfileSchemaInternal> = {
-        ...characterCore,
+        ...characterCore, // characterCore now has defaults applied
         skillsAndAbilities: characterSkills,
     };
     
-    // Prioritize AI's output for languageUnderstanding. If missing, default to 100.
-    fullCharacterProfile.languageUnderstanding = fullCharacterProfile.languageUnderstanding ?? 100;
-    // Clamp the value
-    if (fullCharacterProfile.languageUnderstanding < 0) fullCharacterProfile.languageUnderstanding = 0;
-    if (fullCharacterProfile.languageUnderstanding > 100) fullCharacterProfile.languageUnderstanding = 100;
-
-
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
         character: { 
             name: fullCharacterProfile.name, 
             class: fullCharacterProfile.class, 
             description: fullCharacterProfile.description,
-            currency: fullCharacterProfile.currency,
-            languageUnderstanding: fullCharacterProfile.languageUnderstanding,
+            currency: fullCharacterProfile.currency, // Already defaulted
+            languageUnderstanding: fullCharacterProfile.languageUnderstanding, // Already defaulted and clamped
         },
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
@@ -498,19 +508,27 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     if (!inventoryOutput || !inventoryOutput.inventory) throw new Error('Failed to generate initial inventory.');
     const inventory = inventoryOutput.inventory;
 
-    const { output: mainGearOutput } = await initialMainGearPrompt(minimalContextForItemsFactsInput);
-    if (!mainGearOutput) throw new Error('Failed to generate main gear.');
+    const { output: mainGearRaw } = await initialMainGearPrompt(minimalContextForItemsFactsInput);
+    const mainGearOutput = mainGearRaw || { weapon: null, shield: null, body: null };
 
-    const { output: secondaryGearOutput } = await initialSecondaryGearPrompt(minimalContextForItemsFactsInput);
-    if (!secondaryGearOutput) throw new Error('Failed to generate secondary gear.');
+
+    const { output: secondaryGearRaw } = await initialSecondaryGearPrompt(minimalContextForItemsFactsInput);
+    const secondaryGearOutput = secondaryGearRaw || { head: null, legs: null, feet: null, hands: null };
     
-    const { output: accessoryGearOutput } = await initialAccessoryGearPrompt(minimalContextForItemsFactsInput);
-    if (!accessoryGearOutput) throw new Error('Failed to generate accessory gear.');
+    const { output: accessoryGearRaw } = await initialAccessoryGearPrompt(minimalContextForItemsFactsInput);
+    const accessoryGearOutput = accessoryGearRaw || { neck: null, ring1: null, ring2: null };
 
     const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
-        ...mainGearOutput,
-        ...secondaryGearOutput,
-        ...accessoryGearOutput,
+        weapon: mainGearOutput.weapon ?? null,
+        shield: mainGearOutput.shield ?? null,
+        body: mainGearOutput.body ?? null,
+        head: secondaryGearOutput.head ?? null,
+        legs: secondaryGearOutput.legs ?? null,
+        feet: secondaryGearOutput.feet ?? null,
+        hands: secondaryGearOutput.hands ?? null,
+        neck: accessoryGearOutput.neck ?? null,
+        ring1: accessoryGearOutput.ring1 ?? null,
+        ring2: accessoryGearOutput.ring2 ?? null,
     };
 
     const { output: worldFactsOutput } = await initialWorldFactsPrompt(minimalContextForItemsFactsInput);
@@ -570,8 +588,10 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       seriesStyleGuide: seriesStyleGuide,
     };
     
+    // Final robust post-processing for the character object
     if (finalOutput.storyState.character) {
       const char = finalOutput.storyState.character;
+      // Defaults are re-applied here defensively, though characterCore should have them.
       char.mana = char.mana ?? 0;
       char.maxMana = char.maxMana ?? 0;
       char.strength = char.strength ?? 10;
@@ -587,7 +607,9 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
       
-      // Language understanding already handled and clamped above
+      char.languageUnderstanding = char.languageUnderstanding ?? 100;
+      if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
+      if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
       
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
       const skillIdSet = new Set<string>();
@@ -604,6 +626,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       });
     }
 
+    // Final robust post-processing for other parts of storyState
     if (finalOutput.storyState) {
       finalOutput.storyState.inventory = finalOutput.storyState.inventory ?? [];
       const itemInvIdSet = new Set<string>();
@@ -672,12 +695,12 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
       const defaultEquippedSlots: Record<EquipmentSlot, null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>; // Ensure currentEquipped is not undefined for keys access
-      const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots}; // Start with all slots as null
+      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>; 
+      const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots}; 
       const equippedItemIdSet = new Set<string>();
 
       for (const slotKey of Object.keys(defaultEquippedSlots) as EquipmentSlot[]) {
-          const itemInSlot = currentEquipped[slotKey]; // Will be item or null if key exists, or undefined if key missing (now less likely)
+          const itemInSlot = currentEquipped[slotKey]; 
           if (itemInSlot && typeof itemInSlot === 'object' && itemInSlot.name) { 
             let baseEqId = itemInSlot.id || `item_generated_equip_scenario_${Date.now()}_${Math.random().toString(36).substring(7)}_${slotKey}`;
             let newEqId = baseEqId;
@@ -698,7 +721,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
             if (itemInSlot.basePrice < 0) itemInSlot.basePrice = 0;
             processedEquippedItems[slotKey] = itemInSlot;
           } else {
-            processedEquippedItems[slotKey] = null; // Explicitly set to null if not a valid item
+            processedEquippedItems[slotKey] = null; 
           }
       }
       finalOutput.storyState.equippedItems = processedEquippedItems;
@@ -728,8 +751,13 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
           if (npc.shortTermGoal === null || (npc.shortTermGoal as unknown) === '') delete npc.shortTermGoal;
           npc.isMerchant = npc.isMerchant ?? false;
           npc.merchantInventory = npc.merchantInventory ?? [];
-          npc.merchantInventory.forEach(item => {
-            if (!item.id) item.id = `item_merchant_scen_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          const merchantItemInvIdSet = new Set<string>();
+          npc.merchantInventory.forEach((item, mIndex) => {
+            let baseMId = item.id || `item_merchant_scen_${Date.now()}_${Math.random().toString(36).substring(7)}_${mIndex}`;
+            let newMId = baseMId; let mCounter = 0;
+            while(merchantItemInvIdSet.has(newMId) || itemInvIdSet.has(newMId) || equippedItemIdSet.has(newMId)){ newMId = `${baseMId}_u${mCounter++}`; }
+            item.id = newMId;
+            merchantItemInvIdSet.add(newMId);
             item.basePrice = item.basePrice ?? 0;
             if (item.basePrice < 0) item.basePrice = 0;
             (item as any).price = (item as any).price ?? item.basePrice;
