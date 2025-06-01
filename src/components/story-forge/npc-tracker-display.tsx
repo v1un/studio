@@ -13,6 +13,7 @@ import {
     UserCogIcon, CircleHelpIcon, TrendingUp, TrendingDown, Minus, IdCardIcon, StoreIcon, PackageIcon, SparklesIcon
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 
 interface NPCTrackerDisplayProps {
@@ -24,15 +25,18 @@ interface RelationshipInfo {
   label: string;
   variant: "default" | "secondary" | "destructive" | "outline";
   icon?: React.ElementType;
-  colorClass: string;
+  iconClass?: string; // For specific icon styling, e.g., "text-destructive-foreground"
+  borderClass?: string; // For custom border styling, e.g., "border-destructive-foreground/30"
 }
 
 const getRelationshipInfo = (score: number): RelationshipInfo => {
-  if (score <= -75) return { label: "Arch-Nemesis", variant: "destructive", icon: TrendingDown, colorClass:"text-red-500"};
-  if (score <= -25) return { label: "Hostile", variant: "destructive", icon: TrendingDown, colorClass:"text-orange-500" };
-  if (score < 25) return { label: "Neutral", variant: "secondary", icon: Minus, colorClass:"text-gray-500" };
-  if (score < 75) return { label: "Friendly", variant: "default", icon: TrendingUp, colorClass:"text-green-500" };
-  return { label: "Staunch Ally", variant: "default", icon: TrendingUp, colorClass:"text-sky-500" }; 
+  if (score <= -75) return { label: "Arch-Nemesis", variant: "destructive", icon: TrendingDown, iconClass: "text-destructive-foreground", borderClass: "border-destructive-foreground/30" };
+  if (score <= -25) return { label: "Hostile", variant: "destructive", icon: TrendingDown, iconClass: "text-destructive-foreground", borderClass: "border-destructive-foreground/30" };
+  // For Neutral, Friendly, Ally, we can rely more on the variant's default styling for text and border.
+  // The iconClass can ensure the icon matches the text color or has a specific color.
+  if (score < 25) return { label: "Neutral", variant: "secondary", icon: Minus, iconClass: "text-secondary-foreground" }; 
+  if (score < 75) return { label: "Friendly", variant: "default", icon: TrendingUp, iconClass: "text-primary-foreground"}; 
+  return { label: "Staunch Ally", variant: "default", icon: TrendingUp, iconClass: "text-primary-foreground"}; 
 };
 
 const formatTurnIdForDisplay = (turnId?: string): string => {
@@ -63,8 +67,8 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
                 {npc.classOrRole && <Badge variant="secondary" className="ml-2 text-xs flex items-center"><IdCardIcon className="w-3 h-3 mr-1"/>{npc.classOrRole}</Badge>}
                 {npc.isMerchant && <Badge className="ml-2 text-xs flex items-center bg-green-100 text-green-700 border-green-300 dark:bg-green-800/60 dark:text-green-200 dark:border-green-700 hover:bg-green-200/80 dark:hover:bg-green-800/80"><StoreIcon className="w-3 h-3 mr-1"/>Merchant</Badge>}
             </div>
-            <Badge variant={relationshipInfo.variant} className={`text-xs ${relationshipInfo.colorClass} border-${relationshipInfo.colorClass}/50`}>
-                <RelationshipIcon className="w-3 h-3 mr-1"/>
+            <Badge variant={relationshipInfo.variant} className={cn("text-xs", relationshipInfo.borderClass)}>
+                <RelationshipIcon className={cn("w-3 h-3 mr-1", relationshipInfo.iconClass)}/>
                 {relationshipInfo.label} ({npc.relationshipStatus})
             </Badge>
         </div>
