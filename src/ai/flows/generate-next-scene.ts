@@ -37,42 +37,42 @@ const StatModifierSchemaInternal = z.object({
 });
 
 const ActiveEffectSchemaInternal = z.object({
-  id: z.string().describe("Unique ID for this specific effect on this item instance, e.g., 'effect_sword_fire_dmg_001'."),
-  name: z.string().describe("Descriptive name of the effect, e.g., 'Fiery Aura', 'Eagle Eye'."),
-  description: z.string().describe("Narrative description of what the effect does or looks like."),
-  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("Type of effect. For now, prioritize 'stat_modifier' or 'passive_aura' for equippable gear."),
+  id: z.string().describe("Unique ID for this specific effect on this item instance, e.g., 'effect_sword_fire_dmg_001'. REQUIRED."),
+  name: z.string().describe("Descriptive name of the effect, e.g., 'Fiery Aura', 'Eagle Eye'. REQUIRED."),
+  description: z.string().describe("Narrative description of what the effect does or looks like. REQUIRED."),
+  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("Type of effect. For now, prioritize 'stat_modifier' or 'passive_aura' for equippable gear. REQUIRED."),
   duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', an array of specific stat changes. Each must include 'stat', 'value' (number), and 'type' ('add' or 'multiply')."),
   sourceItemId: z.string().optional().describe("The ID of the item granting this effect (auto-filled by system if needed)."),
 });
 
 const ItemSchemaInternal = z.object({
-  id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
-  name: z.string().describe("The name of the item."),
-  description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
+  id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist. REQUIRED."),
+  name: z.string().describe("The name of the item. REQUIRED."),
+  description: z.string().describe("A brief description of the item, its appearance, or its basic function. REQUIRED."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If the item is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
   isConsumable: z.boolean().optional().describe("True if the item is consumed on use (e.g., potion, scroll)."),
   effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect. For equippable gear with complex effects, prefer 'activeEffects'."),
   isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
-  basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. Should be a positive number or zero."),
+  basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. Should be a positive number or zero. MUST BE a number if provided."),
   rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most common items found can omit this or be 'common'."),
   activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("An array of structured active effects this item provides. If the item is gear and has stat modifiers, define them here under 'stat_modifier' type. Each effect needs a unique id, name, description, type. If 'stat_modifier', include 'statModifiers' array detailing changes. 'duration' should be 'permanent_while_equipped' for gear stat mods."),
 });
 
 const SkillSchemaInternal = z.object({
-    id: z.string().describe("A unique identifier for the skill, e.g., 'skill_fireball_001'."),
-    name: z.string().describe("The name of the skill or ability."),
-    description: z.string().describe("A clear description of what the skill does, its narrative impact, or basic effect."),
-    type: z.string().describe("A category for the skill, e.g., 'Combat Ability', 'Utility Skill', 'Passive Trait', or a series-specific type.")
+    id: z.string().describe("A unique identifier for the skill, e.g., 'skill_fireball_001'. REQUIRED."),
+    name: z.string().describe("The name of the skill or ability. REQUIRED."),
+    description: z.string().describe("A clear description of what the skill does, its narrative impact, or basic effect. REQUIRED."),
+    type: z.string().describe("A category for the skill, e.g., 'Combat Ability', 'Utility Skill', 'Passive Trait', or a series-specific type. REQUIRED.")
 });
 
 const CharacterProfileSchemaInternal = z.object({
-  name: z.string().describe('The name of the character. This field is required.'),
-  class: z.string().describe('The class or archetype of the character. This field is required.'),
-  description: z.string().describe('A brief backstory or description of the character. This field is required.'),
-  health: z.number().describe('Current health points of the character. This field is required. This reflects effective health including item bonuses/penalties.'),
-  maxHealth: z.number().describe('Maximum health points of the character. This field is required. This reflects effective maxHealth including item bonuses/penalties.'),
+  name: z.string().describe('The name of the character. REQUIRED. This field is required.'),
+  class: z.string().describe('The class or archetype of the character. REQUIRED. This field is required.'),
+  description: z.string().describe('A brief backstory or description of the character. REQUIRED. This field is required.'),
+  health: z.number().describe('Current health points of the character. REQUIRED. This field is required. This reflects effective health including item bonuses/penalties.'),
+  maxHealth: z.number().describe('Maximum health points of the character. REQUIRED. This field is required. This reflects effective maxHealth including item bonuses/penalties.'),
   mana: z.number().optional().describe('Current mana or magic points of the character. Must be a number; use 0 if not applicable, or omit. This reflects effective mana.'),
   maxMana: z.number().optional().describe('Maximum mana or magic points. Must be a number; use 0 if not applicable, or omit. This reflects effective maxMana.'),
   strength: z.number().optional().describe('Character\'s physical power, or omit. This reflects effective strength.'),
@@ -81,13 +81,13 @@ const CharacterProfileSchemaInternal = z.object({
   intelligence: z.number().optional().describe('Character\'s reasoning and memory, or omit. This reflects effective intelligence.'),
   wisdom: z.number().optional().describe('Character\'s perception and intuition, or omit. This reflects effective wisdom.'),
   charisma: z.number().optional().describe('Character\'s social skills and influence, or omit. This reflects effective charisma.'),
-  level: z.number().describe('The current level of the character. This field is required.'),
-  experiencePoints: z.number().describe('Current experience points of the character. This field is required.'),
-  experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level. This field is required.'),
+  level: z.number().describe('The current level of the character. REQUIRED. This field is required.'),
+  experiencePoints: z.number().describe('Current experience points of the character. REQUIRED. This field is required.'),
+  experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level. REQUIRED. This field is required.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of the character's current skills and abilities. Each includes an id, name, description, and type."),
-  currency: z.number().optional().describe("Character's current currency (e.g., gold). Default to 0 if not set."),
-  languageReading: z.number().optional().describe("Character's understanding of the local written language (0-100). If not present, assume 100 (fluent). This reflects effective skill."),
-  languageSpeaking: z.number().optional().describe("Character's understanding of the local spoken language (0-100). If not present, assume 100 (fluent). This reflects effective skill."),
+  currency: z.number().optional().describe("Character's current currency (e.g., gold). Default to 0 if not set. MUST BE a number if provided."),
+  languageReading: z.number().optional().describe("Character's understanding of the local written language (0-100). If not present, assume 100 (fluent). This reflects effective skill. MUST BE a number if provided."),
+  languageSpeaking: z.number().optional().describe("Character's understanding of the local spoken language (0-100). If not present, assume 100 (fluent). This reflects effective skill. MUST BE a number if provided."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -101,27 +101,27 @@ const EquipmentSlotsSchemaInternal = z.object({
   neck: ItemSchemaInternal.nullable(),
   ring1: ItemSchemaInternal.nullable(),
   ring2: ItemSchemaInternal.nullable(),
-}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including optional rarity and 'activeEffects') or 'null' if empty.");
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including optional rarity and 'activeEffects') or 'null' if empty. REQUIRED.");
 
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 const QuestObjectiveSchemaInternal = z.object({
-  description: z.string().describe("A clear description of this specific objective for the quest."),
-  isCompleted: z.boolean().describe("Whether this specific objective is completed.")
+  description: z.string().describe("A clear description of this specific objective for the quest. REQUIRED."),
+  isCompleted: z.boolean().describe("Whether this specific objective is completed. REQUIRED.")
 });
 
 const QuestRewardsSchemaInternal = z.object({
-  experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice', optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier'). 'equipSlot' should be OMITTED for non-equippable items."),
-  currency: z.number().optional().describe("Amount of currency awarded."),
+  experiencePoints: z.number().optional().describe("Amount of experience points awarded. MUST BE a number if provided."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier'). 'equipSlot' should be OMITTED for non-equippable items."),
+  currency: z.number().optional().describe("Amount of currency awarded. MUST BE a number if provided."),
 }).describe("Rewards defined when the quest is created, to be given upon quest completion. Omit if no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
-  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_main_001' or 'quest_side_witch_forest_003'. Must be unique among all quests."),
+  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_main_001' or 'quest_side_witch_forest_003'. Must be unique among all quests. REQUIRED."),
   title: z.string().optional().describe("A short, engaging title for the quest."),
-  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("The type of quest."),
-  description: z.string().describe("A clear description of the quest's overall objective."),
-  status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed' or 'failed'."),
+  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("The type of quest. REQUIRED."),
+  description: z.string().describe("A clear description of the quest's overall objective. REQUIRED."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed' or 'failed'. REQUIRED."),
   chapterId: z.string().optional().describe("If a 'main' quest, the ID of the Chapter it belongs to."),
   orderInChapter: z.number().optional().describe("If a 'main' quest, its suggested sequence within the chapter."),
   category: z.string().optional().describe("An optional category for the quest. Omit if not clearly classifiable."),
@@ -131,20 +131,20 @@ const QuestSchemaInternal = z.object({
 });
 
 const ChapterSchemaInternal = z.object({
-    id: z.string(),
-    title: z.string(),
-    description: z.string(),
-    order: z.number(),
-    mainQuestIds: z.array(z.string()),
-    isCompleted: z.boolean(),
+    id: z.string().describe("REQUIRED."),
+    title: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
+    order: z.number().describe("REQUIRED."),
+    mainQuestIds: z.array(z.string()).describe("REQUIRED (can be empty array)."),
+    isCompleted: z.boolean().describe("REQUIRED."),
     unlockCondition: z.string().optional(),
 });
 
 
 const NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional(),
-    npcResponse: z.string(),
-    turnId: z.string(),
+    npcResponse: z.string().describe("REQUIRED."),
+    turnId: z.string().describe("REQUIRED."),
 });
 
 const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
@@ -152,9 +152,9 @@ const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
 });
 
 const NPCProfileSchemaInternal = z.object({
-    id: z.string().describe("Unique identifier for the NPC."),
-    name: z.string(),
-    description: z.string(),
+    id: z.string().describe("Unique identifier for the NPC. REQUIRED."),
+    name: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
     classOrRole: z.string().optional(),
     health: z.number().optional().describe("Current health. Number."),
     maxHealth: z.number().optional().describe("Max health. Number."),
@@ -162,8 +162,8 @@ const NPCProfileSchemaInternal = z.object({
     maxMana: z.number().optional().describe("Max mana. Number."),
     firstEncounteredLocation: z.string().optional(),
     firstEncounteredTurnId: z.string().optional(),
-    relationshipStatus: z.number().describe("Numerical relationship score. Number."),
-    knownFacts: z.array(z.string()),
+    relationshipStatus: z.number().describe("Numerical relationship score. REQUIRED. Number."),
+    knownFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional(),
     lastKnownLocation: z.string().optional(),
     lastSeenTurnId: z.string().optional(),
@@ -177,15 +177,15 @@ const NPCProfileSchemaInternal = z.object({
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('Player character profile. Stats provided here (health, strength etc.) reflect their current capabilities including effects from equipment.'),
-  currentLocation: z.string().describe('Current location.'),
-  inventory: z.array(ItemSchemaInternal).describe('Unequipped items. Each item has id, name, description, basePrice (number), optional rarity, and optional activeEffects (if any, include statModifiers with numeric values). OMIT equipSlot for non-equippable items.'),
-  equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("All quests. Rewards items should also include optional 'activeEffects' and 'rarity'."),
-  chapters: z.array(ChapterSchemaInternal).describe("Story chapters."),
+  character: CharacterProfileSchemaInternal.describe('Player character profile. Stats provided here (health, strength etc.) reflect their current capabilities including effects from equipment. REQUIRED.'),
+  currentLocation: z.string().describe('Current location. REQUIRED.'),
+  inventory: z.array(ItemSchemaInternal).describe('Unequipped items. Each item has id, name, description, basePrice (number), optional rarity, and optional activeEffects (if any, include statModifiers with numeric values). OMIT equipSlot for non-equippable items. REQUIRED (can be empty array).'),
+  equippedItems: EquipmentSlotsSchemaInternal.describe("REQUIRED."),
+  quests: z.array(QuestSchemaInternal).describe("All quests. Rewards items should also include optional 'activeEffects' and 'rarity'. REQUIRED (can be empty array)."),
+  chapters: z.array(ChapterSchemaInternal).describe("Story chapters. REQUIRED (can be empty array)."),
   currentChapterId: z.string().optional().describe("Active chapter ID."),
-  worldFacts: z.array(z.string()).describe('Key world facts.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs. Merchant items also need optional 'activeEffects' and 'rarity'."),
+  worldFacts: z.array(z.string()).describe('Key world facts. REQUIRED (can be empty array).'),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs. Merchant items also need optional 'activeEffects' and 'rarity'. REQUIRED (can be empty array)."),
   storySummary: z.string().optional().describe("Running story summary."),
 });
 
@@ -213,10 +213,10 @@ const LanguageSkillChangeEventSchemaInternal = DescribedEventBaseSchema.extend({
 
 const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('itemFound'),
-  itemName: z.string(),
-  itemDescription: z.string(),
+  itemName: z.string().describe("REQUIRED."),
+  itemDescription: z.string().describe("REQUIRED."),
   quantity: z.number().optional().default(1),
-  suggestedBasePrice: z.number().optional().describe("AI's estimate for base value (number, can be 0)."),
+  suggestedBasePrice: z.number().optional().describe("AI's estimate for base value (number, can be 0). MUST BE a number if provided."),
   equipSlot: EquipSlotEnumInternal.optional().describe("OMIT if not equippable gear."),
   isConsumable: z.boolean().optional(),
   effectDescription: z.string().optional().describe("For simple consumables. Prefer 'activeEffects' for complex gear."),
@@ -234,15 +234,15 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('questAccepted'),
   questIdSuggestion: z.string().optional(),
   questTitle: z.string().optional(),
-  questDescription: z.string(),
+  questDescription: z.string().describe("REQUIRED."),
   questType: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).optional(),
   chapterId: z.string().optional(),
   orderInChapter: z.number().optional(),
   category: z.string().optional(),
-  objectives: z.array(z.object({ description: z.string(), isCompleted: z.literal(false) })).optional(),
+  objectives: z.array(z.object({ description: z.string().describe("REQUIRED."), isCompleted: z.literal(false).describe("REQUIRED.") })).optional(),
   rewards: z.object({
-    experiencePoints: z.number().optional(),
-    currency: z.number().optional().describe("Currency amount (number)."),
+    experiencePoints: z.number().optional().describe("MUST BE a number if provided."),
+    currency: z.number().optional().describe("Currency amount (number). MUST BE a number if provided."),
     items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true, rarity: true, activeEffects: true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be number if provided.")})).optional().describe("Reward items with properties, 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier').")
   }).optional(),
 });
@@ -253,14 +253,14 @@ const QuestFailedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal
 const NPCRelationshipChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcRelationshipChange'), npcName: z.string(), changeAmount: z.number(), newStatus: z.number().optional() });
 const NPCStateChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcStateChange'), npcName: z.string(), newState: z.string() });
 const NewNPCIntroducedEventSchemaInternal = z.object({
-  type: z.literal('newNPCIntroduced'),
-  npcName: z.string(),
-  npcDescription: z.string(),
+  type: z.literal('newNPCIntroduced').describe("REQUIRED."),
+  npcName: z.string().describe("REQUIRED."),
+  npcDescription: z.string().describe("REQUIRED."),
   classOrRole: z.string().optional(),
-  initialRelationship: z.number().optional().default(0).describe("Initial relationship (number)."),
+  initialRelationship: z.number().optional().default(0).describe("Initial relationship (number). MUST BE a number if provided."),
   isMerchant: z.boolean().optional().default(false),
-  initialHealth: z.number().optional().describe("Starting health (number)."),
-  initialMana: z.number().optional().describe("Starting mana (number)."),
+  initialHealth: z.number().optional().describe("Starting health (number). MUST BE a number if provided."),
+  initialMana: z.number().optional().describe("Starting mana (number). MUST BE a number if provided."),
   merchantSellsItemTypes: z.array(z.string()).optional(),
   merchantBuysItemTypes: z.array(z.string()).optional(),
   reason: z.string().optional(),
@@ -272,9 +272,9 @@ const WorldFactUpdatedEventSchema = DescribedEventBaseSchema.extend({ type: z.li
 
 const SkillLearnedEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('skillLearned'),
-  skillName: z.string(),
-  skillDescription: z.string(),
-  skillType: z.string()
+  skillName: z.string().describe("REQUIRED."),
+  skillDescription: z.string().describe("REQUIRED."),
+  skillType: z.string().describe("REQUIRED.")
 });
 
 const DescribedEventSchema = z.discriminatedUnion("type", [
@@ -292,31 +292,31 @@ const AIMessageSegmentSchemaInternal = z.object({
 });
 
 const ActiveNPCInfoSchemaInternal = z.object({
-    name: z.string(),
+    name: z.string().describe("REQUIRED."),
     description: z.string().optional(),
     keyDialogueOrAction: z.string().optional()
 });
 
 const NextScene_RawLoreEntryZodSchema = z.object({
-  keyword: z.string(),
-  content: z.string(),
+  keyword: z.string().describe("REQUIRED."),
+  content: z.string().describe("REQUIRED."),
   category: z.string().optional(),
 });
 
 const NarrativeAndEventsOutputSchema = z.object({
-  generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("Each message MUST include 'speaker' and 'content' fields."),
+  generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("Each message MUST include 'speaker' and 'content' fields. REQUIRED."),
   describedEvents: z.array(DescribedEventSchema).optional().describe("Events that occurred. Ensure numeric fields are numbers. Items should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier')."),
-  activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional(),
-  newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional(),
-  sceneSummaryFragment: z.string(),
+  activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("Each entry MUST have a 'name' if array is provided."),
+  newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional().describe("Each entry MUST have 'keyword' and 'content' if array is provided."),
+  sceneSummaryFragment: z.string().describe("REQUIRED. A brief summary of this scene's events."),
 });
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
-  generatedMessages: z.array(AIMessageSegmentSchemaInternal),
-  updatedStoryState: StructuredStoryStateSchemaInternal, // This state contains BASE character stats updated by events.
+  generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("REQUIRED."),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe("REQUIRED."), // This state contains BASE character stats updated by events.
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional(),
   newLoreEntries: z.array(NextScene_RawLoreEntryZodSchema).optional(),
-  updatedStorySummary: z.string(),
+  updatedStorySummary: z.string().describe("REQUIRED."),
   dataCorrectionWarnings: z.array(z.string()).optional(),
   describedEvents: z.array(DescribedEventSchema).optional(), // Ensure this is passed through
 });
@@ -416,7 +416,9 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 };
+    const modelConfig = input.usePremiumAI 
+        ? { maxOutputTokens: 32000 } 
+        : { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
 
     const narrativeAndEventsPrompt = ai.definePrompt({
@@ -445,15 +447,15 @@ World Facts: {{#each storyState.worldFacts}}- {{{this}}}{{else}}- None.{{/each}}
 Tracked NPCs: {{{formattedTrackedNPCsString}}}
 
 **Your Task (Strictly Adhere to NarrativeAndEventsOutputSchema - deepPartial):**
-1.  **Generate Narrative (generatedMessages):** Continue the story. Each message in this array MUST have a 'speaker' (e.g., "GM", or an NPC name from 'Tracked NPCs') and 'content'. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification.
+1.  **Generate Narrative (generatedMessages):** Continue the story. Each message in this array MUST have a 'speaker' (e.g., "GM", or an NPC name from 'Tracked NPCs') and 'content'. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification. (REQUIRED)
 2.  **Describe Events (describedEvents):** Identify key game events. Use 'DescribedEvent' structure. ALL numeric fields MUST be numbers.
-    - 'itemFound': Include 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
-    - 'questAccepted': If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers'). 'objectives' MUST have 'isCompleted: false'.
-    - 'newNPCIntroduced': 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
+    - 'itemFound': Include 'itemName' (REQUIRED), 'itemDescription' (REQUIRED), 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+    - 'questAccepted': 'questDescription' is REQUIRED. If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers'). 'objectives' MUST have 'description' (REQUIRED) and 'isCompleted: false' (REQUIRED).
+    - 'newNPCIntroduced': 'npcName' and 'npcDescription' are REQUIRED. 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples: HealthChange, LanguageSkillChange (amount 1-20, number), ItemUsed, ItemEquipped, QuestObjectiveUpdate, NPCRelationshipChange.
-3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name'.
-4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Each MUST have 'keyword' and 'content'. Use 'lookupLoreTool' for context.
-5.  **Scene Summary Fragment (sceneSummaryFragment):** Required. VERY brief (1-2 sentences) summary of ONLY events in THIS scene.
+3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name' if array is provided.
+4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Each MUST have 'keyword' and 'content' if array is provided. Use 'lookupLoreTool' for context.
+5.  **Scene Summary Fragment (sceneSummaryFragment):** Required. VERY brief (1-2 sentences) summary of ONLY events in THIS scene. (REQUIRED)
 
 **Language Skills:** Low 'languageReading' (0-40) = unreadable text in narration. Low 'languageSpeaking' (0-40) = indecipherable speech in narration. If actions improve language, describe as 'languageSkillChange' event (target 'reading' or 'speaking', amount 5-15, number).
 Ensure your ENTIRE output is a single JSON object.
@@ -483,7 +485,7 @@ Ensure your ENTIRE output is a single JSON object.
         console.error(`[${modelName}] Error during narrativeAndEventsPrompt:`, e);
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error during narrative generation: ${e.message}. Please try a different action.)` }],
-            updatedStoryState: input.storyState,
+            updatedStoryState: input.storyState, // Return original base state
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: ["AI model failed to generate narrative/events structure."],
@@ -491,29 +493,40 @@ Ensure your ENTIRE output is a single JSON object.
         };
     }
 
-    if (!aiPartialOutput || !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0 || !aiPartialOutput.sceneSummaryFragment) {
-        console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndEventsPrompt'. Missing generatedMessages or sceneSummaryFragment.`);
-        localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure (missing messages or summary).");
+    if (!aiPartialOutput || !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0 || !aiPartialOutput.generatedMessages.every(msg => msg.speaker && msg.content) || !aiPartialOutput.sceneSummaryFragment) {
+        console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndEventsPrompt'. Missing generatedMessages, speaker/content in messages, or sceneSummaryFragment. Output:`, aiPartialOutput);
+        localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure (missing messages, speaker, content, or summary).");
         return {
-            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an incomplete structure for scene narrative. Messages or scene summary might be missing. Please try again.)` }],
-            updatedStoryState: input.storyState,
+            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an incomplete structure for scene narrative. Messages, speaker/content, or scene summary might be missing. Please try again.)` }],
+            updatedStoryState: input.storyState, // Return original base state
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: localCorrectionWarnings,
             describedEvents: [],
         };
     }
+    // At this point, aiPartialOutput.generatedMessages is guaranteed to be an array of objects, 
+    // and each object is guaranteed by the check above to have speaker and content.
+    // However, Zod's deepPartial means speaker/content could still be undefined *in type* if not for the runtime check.
+    // So, we still need to provide fallbacks or cast.
 
+    // The `input.storyState` here is the one that had *effective* character stats for AI decision making.
+    // We need to return a state that reflects the *base* character stats, which the client will then update with described events.
+    // For simplicity in this flow, we can assume the `updatedStoryState` from the AI (if it were to return one) would be a pass-through
+    // of the input effective state. The client (`page.tsx`) is responsible for managing the true base state.
+    // Therefore, we pass back the `input.storyState` which contains the character profile *as the AI saw it*.
+    // The client will use its own base character profile and apply events to *that*.
     const storyStateWithBaseCharacterModifiedByEvents = input.storyState;
+
 
     const finalOutput: GenerateNextSceneOutput = {
         generatedMessages: aiPartialOutput.generatedMessages!.map(msg => ({
-            speaker: msg.speaker || "GM", // Default to GM if speaker is somehow missing
+            speaker: msg.speaker || "GM", 
             content: msg.content || "(AI provided no content for this message)"
         })) as AIMessageSegment[],
-        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents,
-        activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc.name && npc.name.trim() !== '') ?? undefined,
-        newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
+        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents, // This is the state as AI perceived it (with effective stats)
+        activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc && npc.name && npc.name.trim() !== '') as ActiveNPCInfoType[] ?? undefined,
+        newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore && lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
         updatedStorySummary: (aiPartialOutput.sceneSummaryFragment ? (input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment : input.storyState.storySummary || ""),
         dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? Array.from(new Set(localCorrectionWarnings)) : undefined,
         describedEvents: aiPartialOutput.describedEvents as DescribedEvent[] ?? [],
@@ -521,7 +534,10 @@ Ensure your ENTIRE output is a single JSON object.
 
     if (aiPartialOutput.sceneSummaryFragment) {
         finalOutput.updatedStorySummary = ((input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment).trim();
-        finalOutput.updatedStoryState.storySummary = finalOutput.updatedStorySummary;
+        // The storySummary in updatedStoryState should reflect the AI's perspective if it modifies it.
+        // However, our current model for updatedStoryState is to pass through the input state.
+        // The client will update its own base storyState.storySummary.
+        // So, we don't directly set `finalOutput.updatedStoryState.storySummary` here from the fragment.
     }
 
 
@@ -537,7 +553,8 @@ Ensure your ENTIRE output is a single JSON object.
       }
     }
 
-    console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState.character here is based on the effective stats sent to AI for this turn's decisions. Client will handle base stat updates.", finalOutput.updatedStoryState.character);
+    console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState.character sent back is the one AI used for decisions (effective stats). Client will handle base stat updates using describedEvents.", finalOutput.updatedStoryState.character);
     return finalOutput;
   }
 );
+

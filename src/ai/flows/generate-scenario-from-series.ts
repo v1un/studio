@@ -3,11 +3,9 @@
 
 /**
  * @fileOverview This file contains Genkit flows for generating:
- * 1. Scenario Foundation: Character, scene, core world details, initial items, plot summary, style guide.
- * 2. Scenario Narrative Elements: Quests, chapters, NPCs, and lore entries.
- * It exports two main functions:
- * - generateScenarioFoundation
- * - generateScenarioNarrativeElements (to be called after foundation)
+ * 1. Scenario Foundation: Character, scene, core world details, initial items, plot summary, style guide. (generateScenarioFoundation)
+ * 2. Scenario Narrative Elements: Quests, chapters, NPCs, and lore entries. (generateScenarioNarrativeElements)
+ * It exports two main functions.
  */
 
 import { ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME } from '@/ai/genkit';
@@ -96,7 +94,7 @@ const Foundation_EquipmentSlotsSchemaInternal = z.object({
   neck: Foundation_ItemSchemaInternal.nullable(),
   ring1: Foundation_ItemSchemaInternal.nullable(),
   ring2: Foundation_ItemSchemaInternal.nullable(),
-}).describe("All 10 slots MUST be present, with an item object or null. Items must have id, name, description.");
+}).describe("All 10 slots MUST be present, with an item object or null. Items must have id, name, description. REQUIRED.");
 
 
 const GenerateScenarioFoundationInputSchema = z.object({
@@ -195,7 +193,9 @@ const foundationFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFoundationFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 }; // Reverted to 8000 as requested
+    const modelConfig = mainInput.usePremiumAI 
+        ? { maxOutputTokens: 32000 } 
+        : { maxOutputTokens: 8000 };
 
 
     let step1StartTime = Date.now();
@@ -213,12 +213,14 @@ Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchema and all its REQUIRED fields.`,
     });
     const foundation_styleGuidePrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
+        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig, // Assuming style guide is short
         prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string (""). Output ONLY the summary string or empty string.`,
     });
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
         name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph. The 'plotSummary' field MUST be generated. Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_SeriesPlotSummaryOutputSchema'. The 'plotSummary' field is REQUIRED.
+For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph.
+Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
     });
 
     let charSceneResult, styleGuideResult, seriesPlotSummaryResult;
@@ -254,8 +256,9 @@ Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchem
     console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 2 - Calling foundation_initialCharacterSkillsPrompt.`);
     const foundation_initialCharacterSkillsPrompt = ai.definePrompt({
         name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
-Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills. Each skill MUST have a unique 'id', 'name', 'description', and 'type'. Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object. If 'skillsAndAbilities' are provided, each skill MUST have a unique 'id', 'name', 'description', and 'type'.
+For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
+Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills. Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
 Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ensure all REQUIRED fields for skills are present.`,
     });
     const skillsInput: z.infer<typeof Foundation_InitialCharacterSkillsInputSchema> = {
@@ -291,32 +294,37 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
 
     const foundation_initialInventoryPrompt = ai.definePrompt({
         name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'inventory': 0-3 unequipped items. Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialInventoryOutputSchema'. The 'inventory' array is REQUIRED (can be empty). Each item MUST have 'id', 'name', 'description'. 'basePrice' (number) is optional.
+For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+Generate ONLY 'inventory': 0-3 unequipped items. Include optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
 Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are present. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
         name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialMainGearOutputSchema'. Each item ('weapon', 'shield', 'body') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
+For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
         name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialSecondaryGearOutputSchema'. Each item ('head', 'legs', 'feet', 'hands') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
+For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
         name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialAccessoryGearOutputSchema'. Each item ('neck', 'ring1', 'ring2') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
+For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
         name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'worldFacts': 3-5 key facts. 'worldFacts' array is REQUIRED. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialWorldFactsOutputSchema'. The 'worldFacts' array is REQUIRED (can be empty).
+For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+Generate ONLY 'worldFacts': 3-5 key facts. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
 Output ONLY { "worldFacts": [...] }.`,
     });
 
@@ -548,7 +556,7 @@ const Narrative_NPCProfileSchemaInternal = z.object({
     firstEncounteredLocation: z.string().optional(),
     firstEncounteredTurnId: z.string().optional(),
     relationshipStatus: z.number().describe("REQUIRED."),
-    knownFacts: z.array(z.string()).describe("REQUIRED."),
+    knownFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
     dialogueHistory: z.array(Narrative_NPCDialogueEntrySchemaInternal).optional(),
     lastKnownLocation: z.string().optional(),
     lastSeenTurnId: z.string().optional(),
@@ -632,7 +640,9 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioNarrativeElementsFlow: START for Series: ${input.seriesName}, Character: ${input.characterProfile.name}`);
 
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 };
+    const modelConfig = input.usePremiumAI 
+        ? { maxOutputTokens: 32000 } 
+        : { maxOutputTokens: 8000 };
 
     // --- Define Prompts ---
     const narrative_initialQuestsAndChaptersPrompt = ai.definePrompt({
@@ -648,46 +658,46 @@ Output ONLY JSON { "quests": [...], "chapters": [...] }. Ensure 'activeEffects' 
 
     const narrative_initialTrackedNPCsPrompt = ai.definePrompt({
         name: 'narrative_initialTrackedNPCsPrompt', model: modelName, input: { schema: Narrative_InitialTrackedNPCsInputSchema }, output: { schema: Narrative_InitialTrackedNPCsOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_InitialTrackedNPCsOutputSchema'. The 'trackedNPCs' array is REQUIRED, and each NPC object within it MUST have id, name, description, relationshipStatus, and knownFacts.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_InitialTrackedNPCsOutputSchema'. The 'trackedNPCs' array is REQUIRED (can be empty), and each NPC object within it MUST have id, name, description, relationshipStatus, and knownFacts (can be empty array).
 For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'trackedNPCs':
-- NPCs IN SCENE: Must include. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts'. 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
-- PRE-POPULATED MAJOR NPCs (NOT in scene): 2-4 crucial early-series NPCs. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts'. Their canonical locations for 'firstEncounteredLocation'/'lastKnownLocation'.
+- NPCs IN SCENE: Must include. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts' (can be empty array). 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
+- PRE-POPULATED MAJOR NPCs (NOT in scene): 2-4 crucial early-series NPCs. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts' (can be empty array). Their canonical locations for 'firstEncounteredLocation'/'lastKnownLocation'.
 - ALL NPCs: 'firstEncounteredTurnId'/'lastSeenTurnId' = "initial_turn_0". Optional 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number). If merchant: 'isMerchant: true', 'merchantInventory' (items with id, name, desc, basePrice (number), price (number), optional rarity, optional activeEffects with statModifiers), 'buysItemTypes', 'sellsItemTypes'.
 Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured correctly. Ensure all IDs are unique.`,
     });
 
     const narrative_characterLorePrompt = ai.definePrompt({
         name: 'narrative_characterLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED (can be empty), and each entry MUST have 'keyword' and 'content'.
 You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR CHARACTERS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Character".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Character"}, ...] }.`,
     });
     const narrative_locationLorePrompt = ai.definePrompt({
         name: 'narrative_locationLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED (can be empty), and each entry MUST have 'keyword' and 'content'.
 You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR LOCATIONS/REGIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Location".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Location"}, ...] }.`,
     });
     const narrative_factionLorePrompt = ai.definePrompt({
         name: 'narrative_factionLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED (can be empty), and each entry MUST have 'keyword' and 'content'.
 You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for IMPORTANT FACTIONS/ORGANIZATIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Faction/Organization".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Faction/Organization"}, ...] }.`,
     });
     const narrative_itemConceptLorePrompt = ai.definePrompt({
         name: 'narrative_itemConceptLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED (can be empty), and each entry MUST have 'keyword' and 'content'.
 You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Item/Concept" or "Technology".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Item/Concept"}, ...] }.`,
     });
     const narrative_eventHistoryLorePrompt = ai.definePrompt({
         name: 'narrative_eventHistoryLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED (can be empty), and each entry MUST have 'keyword' and 'content'.
 You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Event/History"}, ...] }.`,
@@ -748,7 +758,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
       throw new Error('Failed to generate initial quests and chapters (REQUIRED fields missing).');
     }
     if (!npcsResult || !npcsResult.trackedNPCs) {
-      throw new Error('Failed to generate initial tracked NPCs (REQUIRED fields missing).');
+      throw new Error('Failed to generate initial tracked NPCs (REQUIRED field missing).');
     }
 
     const allLoreEntries: RawLoreEntry[] = [
@@ -792,6 +802,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
         }
     });
     npcsResult.trackedNPCs.forEach(npc => {
+        npc.knownFacts = npc.knownFacts ?? []; // Ensure knownFacts is an array
         if (npc.merchantInventory) {
             npc.merchantInventory.forEach((item, index) => {
                 const merchantItem = sanitizeItem(item, `item_merch_narrative_${npc.id}`, index);
@@ -806,10 +817,11 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
       quests: questsChaptersResult.quests,
       chapters: questsChaptersResult.chapters,
       trackedNPCs: npcsResult.trackedNPCs,
-      initialLoreEntries: allLoreEntries,
+      initialLoreEntries: allLoreEntries.filter(entry => entry.keyword && entry.content), // Filter out potentially empty lore entries
     };
 
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
     return output;
   }
 );
+

@@ -120,7 +120,9 @@ const fleshOutChapterQuestsFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] fleshOutChapterQuestsFlow: START for Chapter: "${input.chapterToFleshOut.title}" in Series: ${input.seriesName}, Premium: ${input.usePremiumAI}`);
 
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 4000 };
+    const modelConfig = input.usePremiumAI 
+        ? { maxOutputTokens: 32000 } 
+        : { maxOutputTokens: 4000 };
 
     const prompt = ai.definePrompt({
       name: 'fleshOutChapterQuestsPrompt',
@@ -217,3 +219,4 @@ Ensure all field names and values in your JSON response strictly match the types
     return { fleshedOutQuests: validatedQuests as QuestType[] };
   }
 );
+
