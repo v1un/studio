@@ -29,19 +29,19 @@ const Foundation_StatModifierSchemaInternal = z.object({
 });
 
 const Foundation_ActiveEffectSchemaInternal = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string(),
-  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']),
+  id: z.string().describe("REQUIRED."),
+  name: z.string().describe("REQUIRED."),
+  description: z.string().describe("REQUIRED."),
+  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
   duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(Foundation_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
 
 const Foundation_ItemSchemaInternal = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string(),
+  id: z.string().describe("REQUIRED."),
+  name: z.string().describe("REQUIRED."),
+  description: z.string().describe("REQUIRED."),
   equipSlot: EquipSlotEnumInternal.optional(),
   isConsumable: z.boolean().optional(),
   effectDescription: z.string().optional(),
@@ -53,32 +53,32 @@ const Foundation_ItemSchemaInternal = z.object({
 });
 
 const Foundation_SkillSchemaInternal = z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string(),
-    type: z.string()
+    id: z.string().describe("REQUIRED."),
+    name: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
+    type: z.string().describe("REQUIRED.")
 });
 
 const Foundation_CharacterCoreProfileSchemaInternal = z.object({
-  name: z.string(),
-  class: z.string(),
-  description: z.string(),
-  health: z.number(),
-  maxHealth: z.number(),
-  mana: z.number().optional(),
-  maxMana: z.number().optional(),
-  strength: z.number().optional(),
-  dexterity: z.number().optional(),
-  constitution: z.number().optional(),
-  intelligence: z.number().optional(),
-  wisdom: z.number().optional(),
-  charisma: z.number().optional(),
-  level: z.number(),
-  experiencePoints: z.number(),
-  experienceToNextLevel: z.number(),
-  currency: z.number().optional(),
-  languageReading: z.number().optional(),
-  languageSpeaking: z.number().optional(),
+  name: z.string().describe("REQUIRED."),
+  class: z.string().describe("REQUIRED."),
+  description: z.string().describe("REQUIRED."),
+  health: z.number().describe("REQUIRED. Number."),
+  maxHealth: z.number().describe("REQUIRED. Number."),
+  mana: z.number().optional().describe("Number if provided."),
+  maxMana: z.number().optional().describe("Number if provided."),
+  strength: z.number().optional().describe("Number if provided."),
+  dexterity: z.number().optional().describe("Number if provided."),
+  constitution: z.number().optional().describe("Number if provided."),
+  intelligence: z.number().optional().describe("Number if provided."),
+  wisdom: z.number().optional().describe("Number if provided."),
+  charisma: z.number().optional().describe("Number if provided."),
+  level: z.number().describe("REQUIRED. Number."),
+  experiencePoints: z.number().describe("REQUIRED. Number."),
+  experienceToNextLevel: z.number().describe("REQUIRED. Number (>0)."),
+  currency: z.number().optional().describe("Number if provided."),
+  languageReading: z.number().optional().describe("Number (0-100) if provided."),
+  languageSpeaking: z.number().optional().describe("Number (0-100) if provided."),
 });
 
 const Foundation_CharacterProfileSchemaInternal = Foundation_CharacterCoreProfileSchemaInternal.extend({
@@ -96,7 +96,7 @@ const Foundation_EquipmentSlotsSchemaInternal = z.object({
   neck: Foundation_ItemSchemaInternal.nullable(),
   ring1: Foundation_ItemSchemaInternal.nullable(),
   ring2: Foundation_ItemSchemaInternal.nullable(),
-});
+}).describe("All 10 slots MUST be present, with an item object or null. Items must have id, name, description.");
 
 
 const GenerateScenarioFoundationInputSchema = z.object({
@@ -108,24 +108,24 @@ const GenerateScenarioFoundationInputSchema = z.object({
 export type GenerateScenarioFoundationInput = z.infer<typeof GenerateScenarioFoundationInputSchema>;
 
 const GenerateScenarioFoundationOutputSchema = z.object({
-  sceneDescription: z.string(),
-  characterProfile: Foundation_CharacterProfileSchemaInternal,
-  currentLocation: z.string(),
-  inventory: z.array(Foundation_ItemSchemaInternal),
-  equippedItems: Foundation_EquipmentSlotsSchemaInternal,
-  worldFacts: z.array(z.string()),
+  sceneDescription: z.string().describe("REQUIRED."),
+  characterProfile: Foundation_CharacterProfileSchemaInternal.describe("REQUIRED. Ensure all nested required fields (name, class, health, etc.) are present."),
+  currentLocation: z.string().describe("REQUIRED."),
+  inventory: z.array(Foundation_ItemSchemaInternal).describe("REQUIRED (can be empty array). Each item needs id, name, description."),
+  equippedItems: Foundation_EquipmentSlotsSchemaInternal.describe("REQUIRED. All 10 slots specified."),
+  worldFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
   seriesStyleGuide: z.string().optional(),
-  seriesPlotSummary: z.string(),
+  seriesPlotSummary: z.string().describe("REQUIRED."),
 });
 export type GenerateScenarioFoundationOutput = z.infer<typeof GenerateScenarioFoundationOutputSchema>;
 
 
 // Schemas for internal AI calls within Foundation Flow
-const Foundation_CharacterAndSceneInputSchema = GenerateScenarioFoundationInputSchema;
+const Foundation_CharacterAndSceneInputSchema = GenerateScenarioFoundationInputSchema; // Re-use
 const Foundation_CharacterAndSceneOutputSchema = z.object({
-    sceneDescription: GenerateScenarioFoundationOutputSchema.shape.sceneDescription,
-    characterCore: Foundation_CharacterCoreProfileSchemaInternal,
-    currentLocation: GenerateScenarioFoundationOutputSchema.shape.currentLocation,
+    sceneDescription: GenerateScenarioFoundationOutputSchema.shape.sceneDescription.describe("REQUIRED."),
+    characterCore: Foundation_CharacterCoreProfileSchemaInternal.describe("REQUIRED. All nested required fields MUST be present."),
+    currentLocation: GenerateScenarioFoundationOutputSchema.shape.currentLocation.describe("REQUIRED."),
 });
 
 const Foundation_InitialCharacterSkillsInputSchema = z.object({
@@ -135,7 +135,7 @@ const Foundation_InitialCharacterSkillsInputSchema = z.object({
     characterDescription: z.string(),
 });
 const Foundation_InitialCharacterSkillsOutputSchema = z.object({
-    skillsAndAbilities: z.array(Foundation_SkillSchemaInternal).optional(),
+    skillsAndAbilities: z.array(Foundation_SkillSchemaInternal).optional().describe("If provided, each skill needs id, name, description, type."),
 });
 
 const Foundation_MinimalContextForItemsFactsInputSchema = z.object({
@@ -145,26 +145,26 @@ const Foundation_MinimalContextForItemsFactsInputSchema = z.object({
     currentLocation: z.string(),
 });
 const Foundation_InitialInventoryOutputSchema = z.object({
-    inventory: z.array(Foundation_ItemSchemaInternal),
+    inventory: z.array(Foundation_ItemSchemaInternal).describe("REQUIRED (can be empty array). Each item needs id, name, description."),
 });
 const Foundation_InitialMainGearOutputSchema = z.object({
-    weapon: Foundation_ItemSchemaInternal.nullable(),
-    shield: Foundation_ItemSchemaInternal.nullable(),
-    body: Foundation_ItemSchemaInternal.nullable(),
+    weapon: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    shield: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    body: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
 });
 const Foundation_InitialSecondaryGearOutputSchema = z.object({
-    head: Foundation_ItemSchemaInternal.nullable(),
-    legs: Foundation_ItemSchemaInternal.nullable(),
-    feet: Foundation_ItemSchemaInternal.nullable(),
-    hands: Foundation_ItemSchemaInternal.nullable(),
+    head: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    legs: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    feet: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    hands: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
 });
 const Foundation_InitialAccessoryGearOutputSchema = z.object({
-    neck: Foundation_ItemSchemaInternal.nullable(),
-    ring1: Foundation_ItemSchemaInternal.nullable(),
-    ring2: Foundation_ItemSchemaInternal.nullable(),
+    neck: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    ring1: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
+    ring2: Foundation_ItemSchemaInternal.nullable().describe("Item or null. If item, needs id, name, description."),
 });
 const Foundation_InitialWorldFactsOutputSchema = z.object({
-    worldFacts: z.array(z.string()),
+    worldFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
 });
 
 const Foundation_SeriesPlotSummaryInputSchema = z.object({
@@ -172,7 +172,7 @@ const Foundation_SeriesPlotSummaryInputSchema = z.object({
     characterNameInput: z.string().optional(),
 });
 const Foundation_SeriesPlotSummaryOutputSchema = z.object({
-    plotSummary: z.string(),
+    plotSummary: z.string().describe("REQUIRED."),
 });
 
 const Foundation_StyleGuideInputSchema = z.object({
@@ -195,7 +195,7 @@ const foundationFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFoundationFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
     const modelName = mainInput.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 };
+    const modelConfig = { maxOutputTokens: 8000 }; // Reverted to 8000 as requested
 
 
     let step1StartTime = Date.now();
@@ -203,14 +203,14 @@ const foundationFlow = ai.defineFlow(
 
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CharacterAndSceneOutputSchema'.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
 You are a master storyteller for "{{seriesName}}".
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
 Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 'characterCore': Authentically create profile. Include name, class, description. Health/MaxHealth (numbers). Mana/MaxMana (numbers, 0 if not applicable). Stats (5-15, numbers). Level 1, 0 XP, XPToNextLevel (numbers, >0). Currency (number).
 'languageReading' & 'languageSpeaking' (numbers, 0-100): Set to 0 for canonical language barriers, else 100 or series-appropriate. Description MUST reflect language barriers if skills are 0.
 'currentLocation': Specific series starting location.
-Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
+Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchema and all its REQUIRED fields.`,
     });
     const foundation_styleGuidePrompt = ai.definePrompt({
         name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
@@ -218,7 +218,7 @@ Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     });
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
         name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph. Output ONLY JSON for SeriesPlotSummaryOutputSchema.`,
+        prompt: `For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph. The 'plotSummary' field MUST be generated. Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema.`,
     });
 
     let charSceneResult, styleGuideResult, seriesPlotSummaryResult;
@@ -240,7 +240,7 @@ Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
 
     if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.characterCore || !charSceneOutput.currentLocation) {
       console.error("Character/Scene generation failed or returned invalid structure:", charSceneOutput);
-      throw new Error('Failed to generate character core, scene, or location.');
+      throw new Error('Failed to generate character core, scene, or location (REQUIRED fields missing).');
     }
     let { characterCore, sceneDescription, currentLocation } = charSceneOutput;
     characterCore.mana = characterCore.mana ?? 0;
@@ -251,12 +251,12 @@ Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
 
 
     let step2StartTime = Date.now();
-    console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
+    console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 2 - Calling foundation_initialCharacterSkillsPrompt.`);
     const foundation_initialCharacterSkillsPrompt = ai.definePrompt({
         name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
-Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills (unique 'id', 'name', 'description', 'type'). Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
-Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ensure IDs are unique.`,
+Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills. Each skill MUST have a unique 'id', 'name', 'description', and 'type'. Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
+Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ensure all REQUIRED fields for skills are present.`,
     });
     const skillsInput: z.infer<typeof Foundation_InitialCharacterSkillsInputSchema> = {
         seriesName: mainInput.seriesName,
@@ -272,7 +272,7 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
         console.error(`[${new Date().toISOString()}] generateScenarioFoundationFlow: STEP 2 FAILED (Skills Generation). Error: ${e.message}`);
         throw new Error(`AI failed during skills generation (Step 2). Details: ${e.message}`);
     }
-    console.log(`[${new Date().toISOString()}] generateScenarioFoundationFlow: STEP 2 - initialCharacterSkillsPrompt completed in ${Date.now() - step2StartTime}ms.`);
+    console.log(`[${new Date().toISOString()}] generateScenarioFoundationFlow: STEP 2 - foundation_initialCharacterSkillsPrompt completed in ${Date.now() - step2StartTime}ms.`);
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
     const fullCharacterProfile: z.infer<typeof Foundation_CharacterProfileSchemaInternal> = {
         ...characterCore,
@@ -292,34 +292,34 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
     const foundation_initialInventoryPrompt = ai.definePrompt({
         name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'inventory': 0-3 unequipped items. Each: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
-Output ONLY { "inventory": [...] }. Ensure IDs are unique.`,
+Generate ONLY 'inventory': 0-3 unequipped items. Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
+Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are present. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
         name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
-Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure IDs are unique.`,
+Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
         name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
-Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure IDs are unique.`,
+Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
         name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
-Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure IDs are unique.`,
+Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Each item MUST have 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
+Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
         name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'worldFacts': 3-5 key facts. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
+Generate ONLY 'worldFacts': 3-5 key facts. 'worldFacts' array is REQUIRED. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
 Output ONLY { "worldFacts": [...] }.`,
     });
-    
+
     const itemFactsPromises = [
         foundation_initialInventoryPrompt(minimalContextForItemsFactsInput),
         foundation_initialMainGearPrompt(minimalContextForItemsFactsInput),
@@ -327,9 +327,9 @@ Output ONLY { "worldFacts": [...] }.`,
         foundation_initialAccessoryGearPrompt(minimalContextForItemsFactsInput),
         foundation_initialWorldFactsPrompt(minimalContextForItemsFactsInput),
     ];
-    
+
     console.log(`[${new Date().toISOString()}] generateScenarioFoundationFlow: STEP 3 - Firing ${itemFactsPromises.length} parallel AI calls for items & facts.`);
-    
+
     let itemFactsResults;
     try {
       itemFactsResults = await Promise.all(itemFactsPromises.map(async (promise, index) => {
@@ -360,14 +360,14 @@ Output ONLY { "worldFacts": [...] }.`,
         z.infer<typeof Foundation_InitialWorldFactsOutputSchema>,
     ];
 
-    if (!inventoryOutput || !inventoryOutput.inventory) { throw new Error('Failed to generate initial inventory.'); }
+    if (!inventoryOutput || !inventoryOutput.inventory) { throw new Error('Failed to generate initial inventory (REQUIRED field missing).'); }
     const inventory = inventoryOutput.inventory;
     const mainGearOutput = mainGearRaw || { weapon: null, shield: null, body: null };
     const secondaryGearOutput = secondaryGearRaw || { head: null, legs: null, feet: null, hands: null };
     const accessoryGearOutput = accessoryGearRaw || { neck: null, ring1: null, ring2: null };
-    if (!worldFactsOutput || !worldFactsOutput.worldFacts) { throw new Error('Failed to generate initial world facts.'); }
+    if (!worldFactsOutput || !worldFactsOutput.worldFacts) { throw new Error('Failed to generate initial world facts (REQUIRED field missing).'); }
     const worldFacts = worldFactsOutput.worldFacts;
-    
+
     const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
         weapon: mainGearOutput.weapon ?? null, shield: mainGearOutput.shield ?? null, body: mainGearOutput.body ?? null,
         head: secondaryGearOutput.head ?? null, legs: secondaryGearOutput.legs ?? null, feet: secondaryGearOutput.feet ?? null, hands: secondaryGearOutput.hands ?? null,
@@ -399,7 +399,7 @@ Output ONLY { "worldFacts": [...] }.`,
         if (item.activeEffects.length === 0) delete item.activeEffects;
         return item as ItemType;
     };
-    
+
     inventory.forEach((item, index) => sanitizeFoundationItem(item, `item_inv_foundation`, index));
     Object.keys(equippedItemsIntermediate).forEach(slot => {
         const item = equippedItemsIntermediate[slot as EquipmentSlot];
@@ -416,7 +416,7 @@ Output ONLY { "worldFacts": [...] }.`,
       seriesStyleGuide: seriesStyleGuide,
       seriesPlotSummary: generatedSeriesPlotSummary,
     };
-    
+
     console.log(`[${new Date().toISOString()}] generateScenarioFoundationFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
     return finalOutput;
   }
@@ -424,7 +424,7 @@ Output ONLY { "worldFacts": [...] }.`,
 
 
 // --- SCHEMAS FOR NARRATIVE ELEMENTS FLOW ---
-// These are defined here to be co-located but are logically part of the second flow.
+// (Moved from separate file back into here)
 
 const Narrative_ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
 
@@ -436,19 +436,19 @@ const Narrative_StatModifierSchemaInternal = z.object({
 });
 
 const Narrative_ActiveEffectSchemaInternal = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string(),
-  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']),
+  id: z.string().describe("REQUIRED."),
+  name: z.string().describe("REQUIRED."),
+  description: z.string().describe("REQUIRED."),
+  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
   duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number()]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a number (representing turns) for temporary effects."),
   statModifiers: z.array(Narrative_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
 
 const Narrative_ItemSchemaInternal = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string(),
+  id: z.string().describe("REQUIRED."),
+  name: z.string().describe("REQUIRED."),
+  description: z.string().describe("REQUIRED."),
   equipSlot: EquipSlotEnumInternal.optional(),
   isConsumable: z.boolean().optional(),
   effectDescription: z.string().optional(),
@@ -460,18 +460,18 @@ const Narrative_ItemSchemaInternal = z.object({
 });
 
 const Narrative_SkillSchemaInternal = z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string(),
-    type: z.string()
+    id: z.string().describe("REQUIRED."),
+    name: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
+    type: z.string().describe("REQUIRED.")
 });
 
 const Narrative_CharacterProfileSchemaForInput = z.object({ // Used for input context
-  name: z.string(),
-  class: z.string(),
-  description: z.string(),
-  health: z.number(),
-  maxHealth: z.number(),
+  name: z.string().describe("REQUIRED."),
+  class: z.string().describe("REQUIRED."),
+  description: z.string().describe("REQUIRED."),
+  health: z.number().describe("REQUIRED."),
+  maxHealth: z.number().describe("REQUIRED."),
   mana: z.number().optional(),
   maxMana: z.number().optional(),
   strength: z.number().optional(),
@@ -480,9 +480,9 @@ const Narrative_CharacterProfileSchemaForInput = z.object({ // Used for input co
   intelligence: z.number().optional(),
   wisdom: z.number().optional(),
   charisma: z.number().optional(),
-  level: z.number(),
-  experiencePoints: z.number(),
-  experienceToNextLevel: z.number(),
+  level: z.number().describe("REQUIRED."),
+  experiencePoints: z.number().describe("REQUIRED."),
+  experienceToNextLevel: z.number().describe("REQUIRED."),
   skillsAndAbilities: z.array(Narrative_SkillSchemaInternal).optional(),
   currency: z.number().optional(),
   languageReading: z.number().optional(),
@@ -492,8 +492,8 @@ const Narrative_CharacterProfileSchemaForInput = z.object({ // Used for input co
 
 const Narrative_QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 const Narrative_QuestObjectiveSchemaInternal = z.object({
-  description: z.string(),
-  isCompleted: z.boolean()
+  description: z.string().describe("REQUIRED."),
+  isCompleted: z.boolean().describe("REQUIRED.")
 });
 
 const Narrative_QuestRewardsSchemaInternal = z.object({
@@ -503,11 +503,11 @@ const Narrative_QuestRewardsSchemaInternal = z.object({
 });
 
 const Narrative_QuestSchemaInternal = z.object({
-  id: z.string(),
+  id: z.string().describe("REQUIRED."),
   title: z.string().optional(),
-  description: z.string(),
-  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']),
-  status: Narrative_QuestStatusEnumInternal,
+  description: z.string().describe("REQUIRED."),
+  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("REQUIRED."),
+  status: Narrative_QuestStatusEnumInternal.describe("REQUIRED."),
   chapterId: z.string().optional(),
   orderInChapter: z.number().optional(),
   category: z.string().optional(),
@@ -517,19 +517,19 @@ const Narrative_QuestSchemaInternal = z.object({
 });
 
 const Narrative_ChapterSchemaInternal = z.object({
-    id: z.string(),
-    title: z.string(),
-    description: z.string(),
-    order: z.number(),
-    mainQuestIds: z.array(z.string()),
-    isCompleted: z.boolean(),
+    id: z.string().describe("REQUIRED."),
+    title: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
+    order: z.number().describe("REQUIRED."),
+    mainQuestIds: z.array(z.string()).describe("REQUIRED (can be empty for outlined chapters)."),
+    isCompleted: z.boolean().describe("REQUIRED."),
     unlockCondition: z.string().optional(),
 });
 
 const Narrative_NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional(),
-    npcResponse: z.string(),
-    turnId: z.string(),
+    npcResponse: z.string().describe("REQUIRED."),
+    turnId: z.string().describe("REQUIRED."),
 });
 
 const Narrative_MerchantItemSchemaInternal = Narrative_ItemSchemaInternal.extend({
@@ -537,9 +537,9 @@ const Narrative_MerchantItemSchemaInternal = Narrative_ItemSchemaInternal.extend
 });
 
 const Narrative_NPCProfileSchemaInternal = z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string(),
+    id: z.string().describe("REQUIRED."),
+    name: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
     classOrRole: z.string().optional(),
     health: z.number().optional(),
     maxHealth: z.number().optional(),
@@ -547,8 +547,8 @@ const Narrative_NPCProfileSchemaInternal = z.object({
     maxMana: z.number().optional(),
     firstEncounteredLocation: z.string().optional(),
     firstEncounteredTurnId: z.string().optional(),
-    relationshipStatus: z.number(),
-    knownFacts: z.array(z.string()),
+    relationshipStatus: z.number().describe("REQUIRED."),
+    knownFacts: z.array(z.string()).describe("REQUIRED."),
     dialogueHistory: z.array(Narrative_NPCDialogueEntrySchemaInternal).optional(),
     lastKnownLocation: z.string().optional(),
     lastSeenTurnId: z.string().optional(),
@@ -562,8 +562,8 @@ const Narrative_NPCProfileSchemaInternal = z.object({
 });
 
 const ScenarioNarrative_RawLoreEntryZodSchema = z.object({
-  keyword: z.string(),
-  content: z.string(),
+  keyword: z.string().describe("REQUIRED."),
+  content: z.string().describe("REQUIRED."),
   category: z.string().optional(),
 });
 
@@ -571,7 +571,7 @@ const ScenarioNarrative_RawLoreEntryZodSchema = z.object({
 const GenerateScenarioNarrativeElementsInputSchema = z.object({
   seriesName: z.string(),
   seriesPlotSummary: z.string(),
-  characterProfile: Narrative_CharacterProfileSchemaForInput, 
+  characterProfile: Narrative_CharacterProfileSchemaForInput,
   sceneDescription: z.string(),
   currentLocation: z.string(),
   characterNameInput: z.string().optional(), // From original user input
@@ -580,10 +580,10 @@ const GenerateScenarioNarrativeElementsInputSchema = z.object({
 export type GenerateScenarioNarrativeElementsInput = z.infer<typeof GenerateScenarioNarrativeElementsInputSchema>;
 
 const GenerateScenarioNarrativeElementsOutputSchema = z.object({
-  quests: z.array(Narrative_QuestSchemaInternal),
-  chapters: z.array(Narrative_ChapterSchemaInternal),
-  trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal),
-  initialLoreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema),
+  quests: z.array(Narrative_QuestSchemaInternal).describe("REQUIRED (can be empty array). Each quest needs id, description, type, status."),
+  chapters: z.array(Narrative_ChapterSchemaInternal).describe("REQUIRED (can be empty array). Each chapter needs id, title, description, order, mainQuestIds, isCompleted."),
+  trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal).describe("REQUIRED (can be empty array). Each NPC needs id, name, description, relationshipStatus, knownFacts."),
+  initialLoreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema).describe("REQUIRED (can be empty array). Each entry needs keyword, content."),
 });
 export type GenerateScenarioNarrativeElementsOutput = z.infer<typeof GenerateScenarioNarrativeElementsOutputSchema>;
 
@@ -593,15 +593,15 @@ const Narrative_InitialQuestsAndChaptersInputSchema = GenerateScenarioNarrativeE
     seriesName: true, seriesPlotSummary: true, characterProfile: true, sceneDescription: true, currentLocation: true, characterNameInput: true
 });
 const Narrative_InitialQuestsAndChaptersOutputSchema = z.object({
-    quests: z.array(Narrative_QuestSchemaInternal),
-    chapters: z.array(Narrative_ChapterSchemaInternal),
+    quests: z.array(Narrative_QuestSchemaInternal).describe("REQUIRED. Each quest needs id, description, type, status."),
+    chapters: z.array(Narrative_ChapterSchemaInternal).describe("REQUIRED. Each chapter needs id, title, description, order, mainQuestIds, isCompleted."),
 });
 
 const Narrative_InitialTrackedNPCsInputSchema = GenerateScenarioNarrativeElementsInputSchema.pick({
     seriesName: true, characterProfile: true, sceneDescription: true, currentLocation: true, characterNameInput: true
 });
 const Narrative_InitialTrackedNPCsOutputSchema = z.object({
-    trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal),
+    trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal).describe("REQUIRED. Each NPC needs id, name, description, relationshipStatus, knownFacts."),
 });
 
 const Narrative_LoreGenerationInputSchema = z.object({
@@ -612,7 +612,7 @@ const Narrative_LoreGenerationInputSchema = z.object({
   characterDescription: z.string(),
 });
 const Narrative_CategorizedLoreOutputSchema = z.object({
-    loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema),
+    loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema).describe("REQUIRED. Each entry needs keyword, content."),
 });
 
 
@@ -632,56 +632,63 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioNarrativeElementsFlow: START for Series: ${input.seriesName}, Character: ${input.characterProfile.name}`);
 
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 8000 }; // Use generous token limit as requested
+    const modelConfig = { maxOutputTokens: 8000 };
 
     // --- Define Prompts ---
     const narrative_initialQuestsAndChaptersPrompt = ai.definePrompt({
         name: 'narrative_initialQuestsAndChaptersPrompt', model: modelName, input: { schema: Narrative_InitialQuestsAndChaptersInputSchema }, output: { schema: Narrative_InitialQuestsAndChaptersOutputSchema }, config: modelConfig,
         tools: [lookupLoreTool],
-        prompt: `For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Plot: {{{seriesPlotSummary}}}).
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_InitialQuestsAndChaptersOutputSchema'. ALL REQUIRED fields (quests array, chapters array, and nested required fields like quest id/desc/type/status, chapter id/title/desc/order/mainQuestIds/isCompleted) MUST be present.
+For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Plot: {{{seriesPlotSummary}}}).
 Generate 'chapters' & 'quests'.
-'chapters': 2-3 initial Chapters. First chapter: full details, 'mainQuestIds' list IDs of its quests. Subsequent chapters: OUTLINES (id, title, desc, order, EMPTY mainQuestIds: []).
-'quests': 2-3 'main' quests ONLY for the FIRST chapter, based on 'seriesPlotSummary'. Each: 'id', 'title' (optional), 'description', 'type: "main"', 'status: "active"', 'chapterId' (first chapter's ID), 'orderInChapter'. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers)). Include 1-2 'objectives' ('isCompleted: false'). Use 'lookupLoreTool' for accuracy.
+'chapters': 2-3 initial Chapters. Each chapter MUST have id, title, description, order, mainQuestIds (can be empty for outlined chapters), and isCompleted. First chapter: full details, 'mainQuestIds' list IDs of its quests. Subsequent chapters: OUTLINES (id, title, desc, order, EMPTY mainQuestIds: []).
+'quests': 2-3 'main' quests ONLY for the FIRST chapter, based on 'seriesPlotSummary'. Each quest MUST have 'id', 'description', 'type: "main"', 'status: "active"', 'chapterId' (first chapter's ID). Include 'orderInChapter'. 'title' is optional. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers)). Include 1-2 'objectives' (each with description, 'isCompleted: false'). Use 'lookupLoreTool' for accuracy.
 Output ONLY JSON { "quests": [...], "chapters": [...] }. Ensure 'activeEffects' are structured correctly if included. Ensure all IDs are unique.`,
     });
 
     const narrative_initialTrackedNPCsPrompt = ai.definePrompt({
         name: 'narrative_initialTrackedNPCsPrompt', model: modelName, input: { schema: Narrative_InitialTrackedNPCsInputSchema }, output: { schema: Narrative_InitialTrackedNPCsOutputSchema }, config: modelConfig,
-        prompt: `For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_InitialTrackedNPCsOutputSchema'. The 'trackedNPCs' array is REQUIRED, and each NPC object within it MUST have id, name, description, relationshipStatus, and knownFacts.
+For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'trackedNPCs':
-- NPCs IN SCENE: Must include. 'id', 'name', 'desc', 'relationshipStatus' (number). 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
-- PRE-POPULATED MAJOR NPCs (NOT in scene): 2-4 crucial early-series NPCs. 'id', 'name', 'desc', 'relationshipStatus' (number). Their canonical locations for 'firstEncounteredLocation'/'lastKnownLocation'.
+- NPCs IN SCENE: Must include. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts'. 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
+- PRE-POPULATED MAJOR NPCs (NOT in scene): 2-4 crucial early-series NPCs. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts'. Their canonical locations for 'firstEncounteredLocation'/'lastKnownLocation'.
 - ALL NPCs: 'firstEncounteredTurnId'/'lastSeenTurnId' = "initial_turn_0". Optional 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number). If merchant: 'isMerchant: true', 'merchantInventory' (items with id, name, desc, basePrice (number), price (number), optional rarity, optional activeEffects with statModifiers), 'buysItemTypes', 'sellsItemTypes'.
 Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured correctly. Ensure all IDs are unique.`,
     });
 
     const narrative_characterLorePrompt = ai.definePrompt({
         name: 'narrative_characterLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR CHARACTERS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Character".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Character"}, ...] }.`,
     });
     const narrative_locationLorePrompt = ai.definePrompt({
         name: 'narrative_locationLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR LOCATIONS/REGIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Location".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Location"}, ...] }.`,
     });
     const narrative_factionLorePrompt = ai.definePrompt({
         name: 'narrative_factionLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for IMPORTANT FACTIONS/ORGANIZATIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Faction/Organization".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Faction/Organization"}, ...] }.`,
     });
     const narrative_itemConceptLorePrompt = ai.definePrompt({
         name: 'narrative_itemConceptLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Item/Concept" or "Technology".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Item/Concept"}, ...] }.`,
     });
     const narrative_eventHistoryLorePrompt = ai.definePrompt({
         name: 'narrative_eventHistoryLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
-        prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Narrative_CategorizedLoreOutputSchema'. The 'loreEntries' array is REQUIRED, and each entry MUST have 'keyword' and 'content'.
+You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Event/History"}, ...] }.`,
     });
@@ -738,10 +745,10 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: Parallel AI calls completed.`);
 
     if (!questsChaptersResult || !questsChaptersResult.quests || !questsChaptersResult.chapters) {
-      throw new Error('Failed to generate initial quests and chapters.');
+      throw new Error('Failed to generate initial quests and chapters (REQUIRED fields missing).');
     }
     if (!npcsResult || !npcsResult.trackedNPCs) {
-      throw new Error('Failed to generate initial tracked NPCs.');
+      throw new Error('Failed to generate initial tracked NPCs (REQUIRED fields missing).');
     }
 
     const allLoreEntries: RawLoreEntry[] = [
@@ -754,7 +761,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: Generated ${allLoreEntries.length} raw lore entries.`);
 
 
-    // --- Final Sanitation Pass (copied and adapted from original generateScenarioFromSeries) ---
+    // --- Final Sanitation Pass ---
     const sanitizeItem = (item: Partial<ItemType>, prefix: string, index: number | string = '') => {
         if (!item.id || item.id.trim() === "") item.id = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
         item.name = item.name || "Unnamed Item";
@@ -778,7 +785,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
         if (item.activeEffects.length === 0) delete item.activeEffects;
         return item as ItemType;
     };
-    
+
     questsChaptersResult.quests.forEach(quest => {
         if (quest.rewards?.items) {
             quest.rewards.items.forEach((item, index) => sanitizeItem(item, `item_reward_narrative_${quest.id}`, index));
@@ -801,10 +808,8 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
       trackedNPCs: npcsResult.trackedNPCs,
       initialLoreEntries: allLoreEntries,
     };
-    
+
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
     return output;
   }
 );
-
-    

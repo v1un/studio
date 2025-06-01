@@ -56,11 +56,11 @@ const SkillSchemaInternal = z.object({
 });
 
 const CharacterProfileSchemaInternal = z.object({
-  name: z.string().describe('The name of the character.'),
-  class: z.string().describe('The class or archetype of the character.'),
-  description: z.string().describe('A brief backstory or description of the character.'),
-  health: z.number().describe('Current health points of the character. MUST BE a number.'),
-  maxHealth: z.number().describe('Maximum health points of the character. MUST BE a number.'),
+  name: z.string().describe('The name of the character. REQUIRED.'),
+  class: z.string().describe('The class or archetype of the character. REQUIRED.'),
+  description: z.string().describe('A brief backstory or description of the character. REQUIRED.'),
+  health: z.number().describe('Current health points of the character. REQUIRED. MUST BE a number.'),
+  maxHealth: z.number().describe('Maximum health points of the character. REQUIRED. MUST BE a number.'),
   mana: z.number().optional().describe('Current mana or magic points of the character. Assign 0 if not applicable to the class, or omit. MUST BE a number if provided.'),
   maxMana: z.number().optional().describe('Maximum mana or magic points. Assign 0 if not applicable, or omit. MUST BE a number if provided.'),
   strength: z.number().optional().describe('Character\'s physical power. Assign a value between 5 and 15, or omit. MUST BE a number if provided.'),
@@ -69,13 +69,13 @@ const CharacterProfileSchemaInternal = z.object({
   intelligence: z.number().optional().describe('Character\'s reasoning and memory. Affects mana for magic users. Assign a value between 5 and 15, or omit. MUST BE a number if provided.'),
   wisdom: z.number().optional().describe('Character\'s perception and intuition. Affects mana regeneration or spell effectiveness. Assign a value between 5 and 15, or omit. MUST BE a number if provided.'),
   charisma: z.number().optional().describe('Character\'s social skills and influence. Assign a value between 5 and 15, or omit. MUST BE a number if provided.'),
-  level: z.number().describe('The current level of the character. Initialize to 1. MUST BE a number.'),
-  experiencePoints: z.number().describe('Current experience points. Initialize to 0. MUST BE a number.'),
-  experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100. MUST BE a number.'),
+  level: z.number().describe('The current level of the character. Initialize to 1. REQUIRED. MUST BE a number.'),
+  experiencePoints: z.number().describe('Current experience points. Initialize to 0. REQUIRED. MUST BE a number.'),
+  experienceToNextLevel: z.number().describe('Experience points needed to reach the next level. Initialize to a starting value, e.g., 100. REQUIRED. MUST BE a number.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of 1-2 starting skills or abilities appropriate for the character's class. Each skill requires an id, name, description, and type."),
   currency: z.number().optional().describe("Character's starting currency (e.g., gold). Initialize to a small amount like 50, or 0. MUST BE a number if provided."),
-  languageReading: z.number().optional().describe("Character's understanding of written local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and cannot read signs'), then set to a low value like 0-10. MUST BE a number if provided."),
-  languageSpeaking: z.number().optional().describe("Character's understanding of spoken local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier (e.g., 'lost in a foreign land and can't understand anyone'), then set to a low value like 0-10. MUST BE a number if provided."),
+  languageReading: z.number().optional().describe("Character's understanding of written local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier, then set to a low value like 0-10. MUST BE a number if provided."),
+  languageSpeaking: z.number().optional().describe("Character's understanding of spoken local language (0-100). For generic starts, default to 100 unless the prompt implies a barrier, then set to a low value like 0-10. MUST BE a number if provided."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -89,12 +89,12 @@ const EquipmentSlotsSchemaInternal = z.object({
   neck: ItemSchemaInternal.nullable(),
   ring1: ItemSchemaInternal.nullable(),
   ring2: ItemSchemaInternal.nullable(),
-}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'basePrice' (number), optional 'rarity', 'activeEffects' (if any), and 'equipSlot' if applicable) or 'null'.");
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'activeEffects' (if any), and 'equipSlot' if applicable) or 'null'.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 const QuestObjectiveSchemaInternal = z.object({
-  description: z.string().describe("A clear description of this specific objective for the quest."),
-  isCompleted: z.boolean().describe("Whether this specific objective is completed (should usually be false for new quests).")
+  description: z.string().describe("A clear description of this specific objective for the quest. REQUIRED."),
+  isCompleted: z.boolean().describe("Whether this specific objective is completed (should usually be false for new quests). REQUIRED.")
 });
 
 const QuestRewardsSchemaInternal = z.object({
@@ -104,11 +104,11 @@ const QuestRewardsSchemaInternal = z.object({
 }).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
 const QuestSchemaInternal = z.object({
-  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_generic_001'."),
+  id: z.string().describe("A unique identifier for the quest, e.g., 'quest_generic_001'. REQUIRED."),
   title: z.string().optional().describe("A short, engaging title for the quest."),
-  description: z.string().describe("A clear description of the quest's overall objective."),
-  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("The type of quest."),
-  status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests."),
+  description: z.string().describe("A clear description of the quest's overall objective. REQUIRED."),
+  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("The type of quest. REQUIRED."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests. REQUIRED."),
   chapterId: z.string().optional().describe("If a 'main' quest, the ID of the Chapter it belongs to."),
   orderInChapter: z.number().optional().describe("If a 'main' quest, its suggested sequence within the chapter."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Tutorial'). Omit if not clearly classifiable."),
@@ -119,8 +119,8 @@ const QuestSchemaInternal = z.object({
 
 const NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional(),
-    npcResponse: z.string(),
-    turnId: z.string(),
+    npcResponse: z.string().describe("REQUIRED."),
+    turnId: z.string().describe("REQUIRED."),
 });
 
 const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
@@ -128,14 +128,14 @@ const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
 });
 
 const NPCProfileSchemaInternal = z.object({
-    id: z.string().describe("Unique identifier for the NPC, e.g., npc_bartender_giles_001."),
-    name: z.string(),
-    description: z.string(),
+    id: z.string().describe("Unique identifier for the NPC, e.g., npc_bartender_giles_001. REQUIRED."),
+    name: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
     classOrRole: z.string().optional(),
     firstEncounteredLocation: z.string().optional(),
     firstEncounteredTurnId: z.string().optional().describe("Use 'initial_turn_0' for NPCs known at game start."),
-    relationshipStatus: z.number().describe("Numerical score for relationship. MUST BE a number."),
-    knownFacts: z.array(z.string()),
+    relationshipStatus: z.number().describe("Numerical score for relationship. REQUIRED. MUST BE a number."),
+    knownFacts: z.array(z.string()).describe("REQUIRED."),
     dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional(),
     lastKnownLocation: z.string().optional(),
     lastSeenTurnId: z.string().optional().describe("Use 'initial_turn_0' for NPCs known at game start."),
@@ -149,25 +149,25 @@ const NPCProfileSchemaInternal = z.object({
 });
 
 const ChapterSchemaInternal = z.object({
-    id: z.string(),
-    title: z.string(),
-    description: z.string(),
-    order: z.number(),
-    mainQuestIds: z.array(z.string()),
-    isCompleted: z.boolean(),
+    id: z.string().describe("REQUIRED."),
+    title: z.string().describe("REQUIRED."),
+    description: z.string().describe("REQUIRED."),
+    order: z.number().describe("REQUIRED."),
+    mainQuestIds: z.array(z.string()).describe("REQUIRED."),
+    isCompleted: z.boolean().describe("REQUIRED."),
     unlockCondition: z.string().optional(),
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal,
-  currentLocation: z.string(),
-  inventory: z.array(ItemSchemaInternal).describe("List of unequipped items. Each item requires id, name, description, basePrice (number), optional rarity, and optional 'activeEffects' (if any, include statModifiers with numeric values)."),
-  equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("List of quests. Rewards items should also include optional 'activeEffects' and 'rarity'."),
+  character: CharacterProfileSchemaInternal.describe("REQUIRED."),
+  currentLocation: z.string().describe("REQUIRED."),
+  inventory: z.array(ItemSchemaInternal).describe("REQUIRED. List of unequipped items. Each item requires id, name, description, basePrice (number), optional rarity, and optional 'activeEffects' (if any, include statModifiers with numeric values)."),
+  equippedItems: EquipmentSlotsSchemaInternal.describe("REQUIRED."),
+  quests: z.array(QuestSchemaInternal).describe("REQUIRED. List of quests. Rewards items should also include optional 'activeEffects' and 'rarity'."),
   chapters: z.array(ChapterSchemaInternal).optional(),
   currentChapterId: z.string().optional(),
-  worldFacts: z.array(z.string()),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs encountered. Merchant inventory items also need optional 'activeEffects' and 'rarity'."),
+  worldFacts: z.array(z.string()).describe("REQUIRED."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("REQUIRED. NPCs encountered. Merchant inventory items also need optional 'activeEffects' and 'rarity'."),
   storySummary: z.string().optional(),
 });
 
@@ -179,8 +179,8 @@ const GenerateStoryStartInputSchemaInternal = z.object({
 });
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
-  sceneDescription: z.string(),
-  storyState: StructuredStoryStateSchemaInternal,
+  sceneDescription: z.string().describe("REQUIRED."),
+  storyState: StructuredStoryStateSchemaInternal.describe("REQUIRED."),
 });
 
 export async function generateStoryStart(input: GenerateStoryStartInputType): Promise<GenerateStoryStartOutputType> {
@@ -203,24 +203,24 @@ const generateStoryStartFlow = ai.defineFlow(
         input: {schema: GenerateStoryStartInputSchemaInternal},
         output: {schema: GenerateStoryStartOutputSchemaInternal},
         config: modelConfig,
-        prompt: `You are a creative storyteller and game master. Your primary task is to generate a complete and valid JSON object that strictly adheres to the 'GenerateStoryStartOutputSchemaInternal'. ALL non-optional fields defined in the schema MUST be present in your output. ALL fields (including optional ones if you choose to include them) MUST use the correct data types as specified in their descriptions (e.g., numbers for prices, stats, currency; strings for names; booleans where appropriate). IDs for items, quests, skills, and NPCs MUST be unique.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object that strictly adheres to the 'GenerateStoryStartOutputSchemaInternal'. ALL non-optional fields defined in the schema (marked as REQUIRED in their descriptions or by Zod schema structure) MUST be present in your output, including nested required fields (e.g., CharacterProfile's name, class, health, etc.; Item's id, name, description; Quest's id, description, type, status). ALL fields (including optional ones if you choose to include them) MUST use the correct data types as specified in their descriptions (e.g., numbers for prices, stats, currency; strings for names; booleans where appropriate). IDs for items, quests, skills, and NPCs MUST be unique.
 
 Theme: "{{prompt}}".
 User suggestions: Character Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(None provided){{/if}}, Character Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(None provided){{/if}}.
 
-Based on the theme and user suggestions, generate the following:
-1.  'sceneDescription': An engaging initial scene for the story.
-2.  'storyState': The complete initial structured state:
-    a.  'character': (Profile fields as described in CharacterProfileSchemaInternal)
-    b.  'currentLocation': A fitting starting location string.
-    c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear. Consider adding 'isConsumable', 'effectDescription'. For some items (especially gear of 'uncommon' rarity or higher), you MAY include 'activeEffects'. If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped' for gear, or a string description for how long a temporary effect lasts), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
-    d.  'equippedItems': All 10 equipment slots MUST be present, each 'null' or an item object. If an item, it MUST have 'id', 'name', 'description', 'equipSlot', 'basePrice' (number), optional 'rarity', and optional 'activeEffects' as described for inventory items.
-    e.  'quests': An array of initial quests (can be empty). If included, each quest MUST have 'id', 'description', 'status: "active"'. 'title', 'category', 'objectives' are optional. Rewards (if any) MUST use numeric values for 'experiencePoints' and 'currency', and items in rewards follow the same structure as inventory items (including optional 'rarity' and 'activeEffects').
-    f.  'chapters': Optionally, a single 'Prologue' chapter.
+Based on the theme and user suggestions, generate the following, ensuring all REQUIRED fields in 'GenerateStoryStartOutputSchemaInternal' are populated:
+1.  'sceneDescription': An engaging initial scene for the story. (REQUIRED)
+2.  'storyState': The complete initial structured state: (REQUIRED)
+    a.  'character': (Profile fields as described in CharacterProfileSchemaInternal - name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel are REQUIRED. Other fields are optional but encouraged.)
+    b.  'currentLocation': A fitting starting location string. (REQUIRED)
+    c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear. Consider adding 'isConsumable', 'effectDescription'. For some items (especially gear of 'uncommon' rarity or higher), you MAY include 'activeEffects' (each effect needs 'id', 'name', 'description', 'type'). (REQUIRED field, can be empty array)
+    d.  'equippedItems': All 10 equipment slots MUST be present, each 'null' or an item object. If an item, it MUST have 'id', 'name', 'description', 'equipSlot', 'basePrice' (number), optional 'rarity', and optional 'activeEffects' as described for inventory items. (REQUIRED field, all slots must be specified as item or null)
+    e.  'quests': An array of initial quests (can be empty). If included, each quest MUST have 'id', 'description', 'type', 'status: "active"'. 'title', 'category', 'objectives' are optional. Rewards (if any) MUST use numeric values for 'experiencePoints' and 'currency', and items in rewards follow the same structure as inventory items. (REQUIRED field, can be empty array)
+    f.  'chapters': Optionally, a single 'Prologue' chapter. If included, each chapter MUST have 'id', 'title', 'description', 'order', 'mainQuestIds', 'isCompleted'.
     g.  'currentChapterId': If chapters are included, set to the initial chapter's ID.
-    h.  'worldFacts': 1-2 key facts. If language skills are low, include facts about the barrier.
-    i.  'trackedNPCs': Array of NPC profiles (can be empty). If an NPC is a merchant, their 'merchantInventory' items should also follow the full item structure (including optional 'rarity' and 'activeEffects').
-    j.  'storySummary': Initialize as an empty string "" or a very brief thematic intro.
+    h.  'worldFacts': 1-2 key facts. If language skills are low, include facts about the barrier. (REQUIRED field, can be empty array)
+    i.  'trackedNPCs': Array of NPC profiles (can be empty). If an NPC is included, it MUST have 'id', 'name', 'description', 'relationshipStatus', 'knownFacts'. If an NPC is a merchant, their 'merchantInventory' items should also follow the full item structure. (REQUIRED field, can be empty array)
+    j.  'storySummary': Initialize as an empty string "" or a very brief thematic intro. (Optional)
 
 Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'. Ensure all item definitions (inventory, equipped, rewards, merchant stock) include optional 'rarity' and may include 'activeEffects' (with correctly structured 'statModifiers' if type is 'stat_modifier').
 `,
@@ -256,8 +256,9 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
     });
 
     const defaultSlots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
+    output.storyState.equippedItems = output.storyState.equippedItems || {}; // Ensure equippedItems exists
     defaultSlots.forEach(slot => {
-        const item = output.storyState.equippedItems[slot] as Partial<ItemType> | null;
+        const item = output.storyState.equippedItems[slot] as Partial<ItemType> | null | undefined; // Allow undefined during check
         if (item) {
             if (!item.id) item.id = `item_eqp_start_${slot}_${Date.now()}`;
             item.basePrice = item.basePrice ?? 0;
@@ -271,7 +272,7 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
                 });
             });
         } else {
-            (output.storyState.equippedItems as any)[slot] = null;
+            (output.storyState.equippedItems as any)[slot] = null; // Explicitly set to null if not provided
         }
     });
 

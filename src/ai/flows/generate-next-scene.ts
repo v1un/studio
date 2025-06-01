@@ -287,8 +287,8 @@ const DescribedEventSchema = z.discriminatedUnion("type", [
 ]).describe("A described game event. Numeric fields (prices, amounts, stats) MUST be numbers. Items involved (found, reward) should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier').");
 
 const AIMessageSegmentSchemaInternal = z.object({
-    speaker: z.string(),
-    content: z.string()
+    speaker: z.string().describe("Required. The speaker of the message, e.g., 'GM', or an NPC's name."),
+    content: z.string().describe("Required. The content of the message.")
 });
 
 const ActiveNPCInfoSchemaInternal = z.object({
@@ -304,7 +304,7 @@ const NextScene_RawLoreEntryZodSchema = z.object({
 });
 
 const NarrativeAndEventsOutputSchema = z.object({
-  generatedMessages: z.array(AIMessageSegmentSchemaInternal),
+  generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("Each message MUST include 'speaker' and 'content' fields."),
   describedEvents: z.array(DescribedEventSchema).optional().describe("Events that occurred. Ensure numeric fields are numbers. Items should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier')."),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional(),
   newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional(),
@@ -426,7 +426,7 @@ const generateNextSceneFlow = ai.defineFlow(
         output: {schema: NarrativeAndEventsOutputSchema.deepPartial()},
         tools: [lookupLoreTool],
         config: modelConfig,
-        prompt: `You are a dynamic storyteller. Adhere to 'NarrativeAndEventsOutputSchema' (partially, as it's deepPartial). Focus on clear narrative and accurate event descriptions. DO NOT return a full 'updatedStoryState' object.
+        prompt: `You are a dynamic storyteller. Your entire response MUST be a single, valid JSON object that partially adheres to the 'NarrativeAndEventsOutputSchema' (it's deepPartial). Focus on clear narrative and accurate event descriptions. DO NOT return a full 'updatedStoryState' object.
 Series: {{seriesName}}. {{#if seriesStyleGuide}}Style: {{seriesStyleGuide}}{{/if}}
 Story Summary: {{#if storyState.storySummary}}{{{storyState.storySummary}}}{{else}}The story has just begun.{{/if}}
 Previous Scene Summary: {{currentScene}}
@@ -445,17 +445,18 @@ World Facts: {{#each storyState.worldFacts}}- {{{this}}}{{else}}- None.{{/each}}
 Tracked NPCs: {{{formattedTrackedNPCsString}}}
 
 **Your Task (Strictly Adhere to NarrativeAndEventsOutputSchema - deepPartial):**
-1.  **Generate Narrative (generatedMessages):** Continue story. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification.
+1.  **Generate Narrative (generatedMessages):** Continue the story. Each message in this array MUST have a 'speaker' (e.g., "GM", or an NPC name from 'Tracked NPCs') and 'content'. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification.
 2.  **Describe Events (describedEvents):** Identify key game events. Use 'DescribedEvent' structure. ALL numeric fields MUST be numbers.
     - 'itemFound': Include 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
     - 'questAccepted': If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers'). 'objectives' MUST have 'isCompleted: false'.
     - 'newNPCIntroduced': 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples: HealthChange, LanguageSkillChange (amount 1-20, number), ItemUsed, ItemEquipped, QuestObjectiveUpdate, NPCRelationshipChange.
-3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action.
-4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Use 'lookupLoreTool' for context.
-5.  **Scene Summary Fragment (sceneSummaryFragment):** VERY brief (1-2 sentences) summary of ONLY events in THIS scene.
+3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name'.
+4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Each MUST have 'keyword' and 'content'. Use 'lookupLoreTool' for context.
+5.  **Scene Summary Fragment (sceneSummaryFragment):** Required. VERY brief (1-2 sentences) summary of ONLY events in THIS scene.
 
 **Language Skills:** Low 'languageReading' (0-40) = unreadable text in narration. Low 'languageSpeaking' (0-40) = indecipherable speech in narration. If actions improve language, describe as 'languageSkillChange' event (target 'reading' or 'speaking', amount 5-15, number).
+Ensure your ENTIRE output is a single JSON object.
 `,
     });
 
@@ -465,7 +466,7 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
     const formattedSkillsString = formatSkills(input.storyState.character.skillsAndAbilities);
 
     const narrativePromptPayload: z.infer<typeof NarrativeAndEventsPromptInputSchema> = {
-      ...input, 
+      ...input,
       formattedEquippedItemsString,
       formattedQuestsString,
       formattedTrackedNPCsString,
@@ -482,7 +483,7 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         console.error(`[${modelName}] Error during narrativeAndEventsPrompt:`, e);
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error during narrative generation: ${e.message}. Please try a different action.)` }],
-            updatedStoryState: input.storyState, 
+            updatedStoryState: input.storyState,
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: ["AI model failed to generate narrative/events structure."],
@@ -490,31 +491,34 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         };
     }
 
-    if (!aiPartialOutput || !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0) {
-        console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndEventsPrompt'.`);
-        localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure.");
+    if (!aiPartialOutput || !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0 || !aiPartialOutput.sceneSummaryFragment) {
+        console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndEventsPrompt'. Missing generatedMessages or sceneSummaryFragment.`);
+        localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure (missing messages or summary).");
         return {
-            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an empty or malformed structure for scene narrative. Please try again.)` }],
-            updatedStoryState: input.storyState, 
+            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an incomplete structure for scene narrative. Messages or scene summary might be missing. Please try again.)` }],
+            updatedStoryState: input.storyState,
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: localCorrectionWarnings,
             describedEvents: [],
         };
     }
-    
-    const storyStateWithBaseCharacterModifiedByEvents = input.storyState; 
+
+    const storyStateWithBaseCharacterModifiedByEvents = input.storyState;
 
     const finalOutput: GenerateNextSceneOutput = {
-        generatedMessages: aiPartialOutput.generatedMessages!,
-        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents, 
+        generatedMessages: aiPartialOutput.generatedMessages!.map(msg => ({
+            speaker: msg.speaker || "GM", // Default to GM if speaker is somehow missing
+            content: msg.content || "(AI provided no content for this message)"
+        })) as AIMessageSegment[],
+        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents,
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc.name && npc.name.trim() !== '') ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
         updatedStorySummary: (aiPartialOutput.sceneSummaryFragment ? (input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment : input.storyState.storySummary || ""),
         dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? Array.from(new Set(localCorrectionWarnings)) : undefined,
         describedEvents: aiPartialOutput.describedEvents as DescribedEvent[] ?? [],
     };
-    
+
     if (aiPartialOutput.sceneSummaryFragment) {
         finalOutput.updatedStorySummary = ((input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment).trim();
         finalOutput.updatedStoryState.storySummary = finalOutput.updatedStorySummary;
@@ -532,7 +536,7 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         catch (e) { console.error("Error saving AI discovered lore:", e); }
       }
     }
-    
+
     console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState.character here is based on the effective stats sent to AI for this turn's decisions. Client will handle base stat updates.", finalOutput.updatedStoryState.character);
     return finalOutput;
   }
