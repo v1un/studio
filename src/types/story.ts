@@ -6,6 +6,8 @@ export interface Skill {
   type: string; // E.g., "Combat", "Utility", "Passive", "Series-Specific Trait"
 }
 
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
 export interface Item {
   id: string;
   name: string;
@@ -17,6 +19,7 @@ export interface Item {
   relevantQuestId?: string;
   basePrice?: number; // Base value of the item
   price?: number; // The price a merchant sells this item for
+  rarity?: ItemRarity; // New field for item rarity
 }
 
 export interface CharacterProfile {
@@ -160,7 +163,7 @@ export interface GameSession {
   lastPlayedAt: string;
   seriesName: string;
   seriesStyleGuide?: string;
-  seriesPlotSummary?: string; // Added to store plot summary for fleshing out chapters
+  seriesPlotSummary?: string;
   isPremiumSession?: boolean;
   allDataCorrectionWarnings?: { timestamp: string; warnings: string[] }[];
 }
@@ -193,7 +196,7 @@ export interface GenerateScenarioFromSeriesOutput {
   storyState: StructuredStoryState;
   initialLoreEntries: RawLoreEntry[];
   seriesStyleGuide?: string;
-  seriesPlotSummary?: string; // Added to pass plot summary to client
+  seriesPlotSummary?: string;
 }
 
 export interface ActiveNPCInfo {
@@ -255,6 +258,7 @@ export interface ItemFoundEvent extends DescribedEventBase {
   effectDescription?: string;
   isQuestItem?: boolean;
   relevantQuestId?: string;
+  rarity?: ItemRarity; // New field
 }
 export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
 export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; }
@@ -270,8 +274,8 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   chapterId?: string;       // If it's part of a chapter
   orderInChapter?: number;
   category?: string;
-  objectives?: { description: string }[];
-  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] };
+  objectives?: { description: string }[]; // Simplified for AI, full objective created in TS
+  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] }; // Items can include rarity here
 }
 export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
 export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCompleted'; questIdOrDescription: string; }
@@ -354,7 +358,7 @@ export interface GenerateStoryStartOutput {
 
 // Types for FleshOutChapterQuests flow
 export interface FleshOutChapterQuestsInput {
-  chapterToFleshOut: Chapter;
+  chapterToFleshOut: Chapter; // Use the full Chapter type
   seriesName: string;
   seriesPlotSummary: string;
   overallStorySummarySoFar: string;
@@ -365,3 +369,5 @@ export interface FleshOutChapterQuestsInput {
 export interface FleshOutChapterQuestsOutput {
   fleshedOutQuests: Quest[];
 }
+
+    

@@ -12,11 +12,13 @@
 
 import { ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME } from '@/ai/genkit';
 import { z } from 'zod';
-import type { Quest as QuestType, Chapter as ChapterType, Item as ItemType, FleshOutChapterQuestsInput as IFleshOutChapterQuestsInput, FleshOutChapterQuestsOutput as IFleshOutChapterQuestsOutput } from '@/types/story';
+import type { Quest as QuestType, Chapter as ChapterType, Item as ItemType, FleshOutChapterQuestsInput as IFleshOutChapterQuestsInput, FleshOutChapterQuestsOutput as IFleshOutChapterQuestsOutput, ItemRarity } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
 // --- Schemas for AI communication (Subset, focused on Quest generation) ---
+const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
+
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_reward_key_001'. Make it unique within the current rewards."),
   name: z.string().describe("The name of the item."),
@@ -27,6 +29,7 @@ const ItemSchemaInternal = z.object({
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
   basePrice: z.number().optional().describe("Base value. MUST BE a number if provided."),
+  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most quest rewards can be 'uncommon' or 'rare'.")
 });
 
 const QuestObjectiveSchemaInternal = z.object({
@@ -36,7 +39,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("XP awarded. MUST BE a number if provided."),
-  items: z.array(ItemSchemaInternal).optional().describe("Items awarded. Each must have unique ID, name, description, 'basePrice' (number), and optional 'equipSlot' (omit if not equippable)."),
+  items: z.array(ItemSchemaInternal).optional().describe("Items awarded. Each must have unique ID, name, description, 'basePrice' (number), optional 'rarity', and optional 'equipSlot' (omit if not equippable)."),
   currency: z.number().optional().describe("Currency awarded. MUST BE a number if provided."),
 }).describe("Potential rewards. Defined at quest creation.");
 
@@ -79,13 +82,13 @@ const FleshOutChapterQuestsInputSchema = z.object({
 export type FleshOutChapterQuestsInput = z.infer<typeof FleshOutChapterQuestsInputSchema>;
 
 const FleshOutChapterQuestsOutputSchema = z.object({
-  fleshedOutQuests: z.array(QuestSchemaInternal).describe("An array of 2-3 detailed main quests for the specified chapter, consistent with the series plot and chapter theme. Each quest must have a unique ID, title, description, type: 'main', status: 'active', the correct chapterId, orderInChapter, optional objectives, and rewards (with numeric prices/currency)."),
+  fleshedOutQuests: z.array(QuestSchemaInternal).describe("An array of 2-3 detailed main quests for the specified chapter, consistent with the series plot and chapter theme. Each quest must have a unique ID, title, description, type: 'main', status: 'active', the correct chapterId, orderInChapter, optional objectives, and rewards (with numeric prices/currency and optional item rarity)."),
 });
 export type FleshOutChapterQuestsOutput = z.infer<typeof FleshOutChapterQuestsOutputSchema>;
 
 
 export async function fleshOutChapterQuests(input: IFleshOutChapterQuestsInput): Promise<IFleshOutChapterQuestsOutput> {
-  return fleshOutChapterQuestsFlow(input as FleshOutChapterQuestsInput); // Cast to Zod inferred type
+  return fleshOutChapterQuestsFlow(input as FleshOutChapterQuestsInput);
 }
 
 const fleshOutChapterQuestsFlow = ai.defineFlow(
@@ -131,11 +134,11 @@ Generate an array of 2-3 'fleshedOutQuests' for the chapter titled "{{chapterToF
 - Assign sequential \`orderInChapter\` numbers (e.g., 1, 2, 3).
 - Quests MUST align with the \`seriesPlotSummary\` and the theme of \`{{chapterToFleshOut.title}}\`. They must also logically connect to the events described in \`overallStorySummarySoFar\`. Use the \`lookupLoreTool\` if needed for canonical accuracy on names, locations, specific items, or series-specific terms.
 - Each quest MUST have a unique \`id\` (e.g., quest_main_{{chapterToFleshOut.id}}_001), an optional \`title\`, a detailed \`description\`, and 1-2 \`objectives\` (with \`isCompleted: false\`).
-- **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items (each with unique 'id', 'name', 'description', 'basePrice' (number), and optional 'equipSlot' - OMIT for non-equippable items)).
+- **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items (each with unique 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', and optional 'equipSlot' - OMIT for non-equippable items)).
 - Ensure all numeric fields (prices, XP, currency, etc.) are actual numbers.
 
 Output ONLY the JSON object adhering to 'FleshOutChapterQuestsOutputSchema'. Example: \`{"fleshedOutQuests": [{"id": "...", "title": "...", ...}]}\`
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the FleshOutChapterQuestsOutputSchema definition.`,
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the FleshOutChapterQuestsOutputSchema definition provided earlier in this prompt.`,
     });
 
     let promptCallTime = Date.now();
@@ -148,13 +151,12 @@ Ensure all field names and values in your JSON response strictly match the types
       throw new Error('AI failed to generate quests for the chapter.');
     }
     
-    // Basic validation and default setting
     const validatedQuests = output.fleshedOutQuests.map((q, index) => ({
         ...q,
         id: q.id || `fleshed_quest_${input.chapterToFleshOut.id}_${Date.now()}_${index}`,
-        type: 'main' as QuestType['type'], // Ensure type is main
-        status: 'active' as QuestType['status'], // Ensure status is active
-        chapterId: input.chapterToFleshOut.id, // Ensure correct chapterId
+        type: 'main' as QuestType['type'],
+        status: 'active' as QuestType['status'],
+        chapterId: input.chapterToFleshOut.id,
         orderInChapter: q.orderInChapter ?? (index + 1),
         objectives: q.objectives?.map(obj => ({...obj, isCompleted: false})) || [],
         rewards: q.rewards ? {
@@ -164,14 +166,14 @@ Ensure all field names and values in your JSON response strictly match the types
                 ...item,
                 id: item.id || `reward_item_${q.id}_${Date.now()}_${i}`,
                 basePrice: item.basePrice ?? 0,
+                rarity: item.rarity ?? undefined,
             } as ItemType)) || []
         } : undefined,
     }));
-
 
     console.log(`[${new Date().toISOString()}] fleshOutChapterQuestsFlow: END. Total time: ${Date.now() - flowStartTime}ms. Generated ${validatedQuests.length} quests.`);
     return { fleshedOutQuests: validatedQuests };
   }
 );
 
-
+    

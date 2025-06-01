@@ -19,7 +19,7 @@ import type {
     Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType,
     NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment,
     CharacterProfile, StructuredStoryState, GenerateNextSceneInput, GenerateNextSceneOutput,
-    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent, EquipmentSlot, LanguageSkillChangeEvent
+    DescribedEvent, NewNPCIntroducedEvent, ItemEquippedEvent, ItemUnequippedEvent, EquipmentSlot, LanguageSkillChangeEvent, ItemRarity
 } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
@@ -27,7 +27,7 @@ import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
 import { produce } from 'immer';
 
 // --- SCHEMAS FOR AI COMMUNICATION (INTERNAL, MOSTLY FROM types/story.ts) ---
-// These are verbose but necessary for the AI to understand the structure it should partially fill or describe.
+const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Must be unique if multiple items of the same name exist."),
@@ -39,6 +39,7 @@ const ItemSchemaInternal = z.object({
   isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
   basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. Should be a positive number or zero."),
+  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most common items found can omit this or be 'common'.")
 });
 
 const SkillSchemaInternal = z.object({
@@ -82,7 +83,7 @@ const EquipmentSlotsSchemaInternal = z.object({
   neck: ItemSchemaInternal.nullable(),
   ring1: ItemSchemaInternal.nullable(),
   ring2: ItemSchemaInternal.nullable(),
-}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including optional rarity) or 'null' if the slot is empty.");
 
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
@@ -93,7 +94,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice', and optional 'equipSlot' (omit if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable for reward items."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice', optional 'rarity', and optional 'equipSlot' (omit if not inherently equippable gear). Also define `isConsumable`, `effectDescription`, etc., if applicable for reward items."),
   currency: z.number().optional().describe("Amount of currency awarded."),
 }).describe("Rewards defined when the quest is created, to be given upon quest completion. Omit if no specific material rewards.");
 
@@ -152,21 +153,21 @@ const NPCProfileSchemaInternal = z.object({
     shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing, influencing their actions or comments. Can be set or updated by the AI based on events."),
     updatedAt: z.string().optional().describe("Timestamp of the last update to this profile. Update with current time."),
     isMerchant: z.boolean().optional().describe("Set to true if this NPC is a merchant and can buy/sell items."),
-    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice' (as a number), and a 'price' (as a number) they sell it for. New items added to their stock should also have these details."),
-    buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Potions', 'Old Books'). Influences AI decision on what they might buy."),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice' (as a number), optional 'rarity', and a 'price' (as a number) they sell it for. New items added to their stock should also have these details."),
+    buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Potions', 'Old Books')."),
     sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically sell (e.g., 'Adventuring Gear', 'Herbs')."),
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, languageReading (0-100), and languageSpeaking (0-100).'),
   currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice (as a number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
+  inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, basePrice (as a number), and optional rarity. If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency (number) and items with 'basePrice' (number)), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
+  quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency (number) and items with 'basePrice' (number) and optional rarity), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
   chapters: z.array(ChapterSchemaInternal).describe("An array of chapters defining the main storyline."),
   currentChapterId: z.string().optional().describe("The ID of the currently active chapter in the main storyline."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to worldFacts if the character would perceive them. Facts like "Language barrier makes communication difficult", "Cannot read local script", or "Cannot understand spoken language" should be present if relevant language skills are low, and removed if they improve significantly.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, set 'isMerchant', 'merchantInventory' (with items having 'basePrice' and 'price' as numbers), 'buysItemTypes', 'sellsItemTypes'. Include NPC 'health'/'maxHealth'/'mana'/'maxMana' as numbers if applicable (e.g. for combatants)."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, set 'isMerchant', 'merchantInventory' (with items having 'basePrice' and 'price' as numbers, and optional rarity), 'buysItemTypes', 'sellsItemTypes'. Include NPC 'health'/'maxHealth'/'mana'/'maxMana' as numbers if applicable (e.g. for combatants)."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments so far. This summary will be updated each turn."),
 });
 
@@ -193,7 +194,6 @@ const LevelUpEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('le
 const CurrencyChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('currencyChange'), amount: z.number() });
 const LanguageSkillChangeEventSchemaInternal = DescribedEventBaseSchema.extend({ type: z.literal('languageSkillChange'), skillTarget: z.enum(['reading', 'speaking']).describe("The language skill being improved."), amount: z.number().min(1).max(20).describe("Small, reasonable amount of improvement (1-20).") });
 
-
 const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('itemFound'),
   itemName: z.string(),
@@ -205,12 +205,12 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   effectDescription: z.string().optional(),
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
+  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the found item, if applicable (e.g. 'uncommon', 'rare').")
 });
 const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string().describe("ID if known, otherwise name. Avoid 'Empty' or blank names."), quantity: z.number().optional().default(1) });
 const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string().describe("ID if known, otherwise name of item consumed/used.") });
 const ItemEquippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemEquipped'), itemIdOrName: z.string().describe("ID or name of the item from inventory."), slot: EquipSlotEnumInternal.describe("The equipment slot to equip the item to.") });
 const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUnequipped'), itemIdOrName: z.string().describe("ID or name of the item currently equipped."), slot: EquipSlotEnumInternal.describe("The equipment slot to unequip from.") });
-
 
 const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('questAccepted'),
@@ -225,13 +225,12 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   rewards: z.object({
     experiencePoints: z.number().optional(),
     currency: z.number().optional().describe("Amount of currency, must be a number."),
-    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be a number if provided, can be 0.")})).optional().describe("Details of items to be rewarded, including their properties and 'basePrice' (as a number). TypeScript will ensure unique IDs.")
+    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true, rarity: true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be a number if provided, can be 0.")})).optional().describe("Details of items to be rewarded, including their properties, 'basePrice' (as a number), and optional 'rarity'. TypeScript will ensure unique IDs.")
   }).optional(),
 });
 const QuestObjectiveUpdateEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questObjectiveUpdate'), questIdOrDescription: z.string().describe("ID or distinguishing description of the quest."), objectiveDescription: z.string().describe("Description of the objective being updated."), objectiveCompleted: z.boolean() });
 const QuestCompletedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questCompleted'), questIdOrDescription: z.string().describe("ID or distinguishing description of the completed quest.") });
 const QuestFailedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questFailed'), questIdOrDescription: z.string().describe("ID or distinguishing description of the failed quest.") });
-
 
 const NPCRelationshipChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcRelationshipChange'), npcName: z.string().describe("Name of the NPC."), changeAmount: z.number().describe("e.g., +10, -20. Total will be capped at -100 to 100."), newStatus: z.number().optional().describe("AI's assessment of the new relationship score.") });
 const NPCStateChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcStateChange'), npcName: z.string().describe("Name of the NPC."), newState: z.string().describe("e.g., 'hostile', 'friendly', 'following', 'fled', 'neutral', 'intrigued'") });
@@ -248,7 +247,6 @@ const NewNPCIntroducedEventSchemaInternal = z.object({
   merchantBuysItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically buy (e.g., 'Herbs', 'Old Books')."),
   reason: z.string().optional().describe("Optional narrative reason for the event."),
 });
-
 
 const WorldFactAddedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('worldFactAdded'), fact: z.string() });
 const WorldFactRemovedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('worldFactRemoved'), factDescription: z.string().describe("Description of the fact to be removed.") });
@@ -268,40 +266,33 @@ const DescribedEventSchema = z.discriminatedUnion("type", [
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
   WorldFactAddedEventSchema, WorldFactRemovedEventSchema, WorldFactUpdatedEventSchema,
   SkillLearnedEventSchema
-]).describe("A described game event resulting from player action or narrative progression. Ensure all fields are correctly typed, especially numbers for prices, amounts, stats.");
+]).describe("A described game event resulting from player action or narrative progression. Ensure all fields are correctly typed, especially numbers for prices, amounts, stats. If an item is part of an event (found, reward), include its optional 'rarity'.");
 
-// Schema for AIMessageSegment from types/story.ts, but internal to this flow for clarity
 const AIMessageSegmentSchemaInternal = z.object({
     speaker: z.string().describe("Use 'GM' for general narration, world descriptions, or outcomes of player actions. For Non-Player Character dialogue, use the NPC's exact name as defined in `trackedNPCs` (e.g., 'Elara the Wise', 'Guard Captain Rex'). Ensure the NPC name matches an existing tracked NPC if they are speaking."),
     content: z.string().describe("The narrative text or the NPC's spoken dialogue. Keep segments relatively focused; if GM narration shifts to NPC dialogue, or one NPC stops speaking and another starts, create a new message segment.")
 });
 
-// Schema for ActiveNPCInfo from types/story.ts, but internal for clarity
 const ActiveNPCInfoSchemaInternal = z.object({
     name: z.string().describe("The name of the NPC, if known or identifiable."),
     description: z.string().optional().describe("A brief description of the NPC if newly introduced or particularly relevant."),
     keyDialogueOrAction: z.string().optional().describe("A key line of dialogue spoken by the NPC or a significant action they took in this scene.")
 });
 
-// Schema for RawLoreEntry from types/story.ts, but internal for clarity
 const NextScene_RawLoreEntryZodSchema = z.object({
   keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
   content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
   category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
 });
 
-
 const NarrativeAndEventsOutputSchema = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("The narrative text and NPC dialogue for the current scene/turn."),
-  describedEvents: z.array(DescribedEventSchema).optional().describe("An array of structured events that occurred in the scene, described by the AI. TypeScript will use these to update the game state. Ensure all numeric fields like prices, amounts, stats are actual numbers."),
+  describedEvents: z.array(DescribedEventSchema).optional().describe("An array of structured events that occurred in the scene, described by the AI. TypeScript will use these to update the game state. Ensure all numeric fields like prices, amounts, stats are actual numbers. If items are involved (e.g. itemFound, quest rewards), include their optional 'rarity'."),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("NPCs active in this scene."),
   newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional().describe("New lore entries suggested by the AI."),
   sceneSummaryFragment: z.string().describe("A very brief summary of ONLY the key events that transpired in THIS generated scene/turn."),
 });
-// --- END NEW SCHEMAS ---
 
-
-// Final output schema for the flow - remains the same overall structure
 const GenerateNextSceneOutputSchemaInternal = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("An array of message segments that constitute the AI's response."),
   updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene.'),
@@ -311,7 +302,6 @@ const GenerateNextSceneOutputSchemaInternal = z.object({
   dataCorrectionWarnings: z.array(z.string()).optional().describe("An array of warnings if the AI's output for story state required corrections or fallbacks."),
 });
 
-// Schema for the input to the first AI prompt in the multi-step flow
 const NarrativeAndEventsPromptInputSchema = GenerateNextSceneInputSchemaInternal.extend({
   formattedEquippedItemsString: z.string().describe("Pre-formatted string of equipped items."),
   formattedQuestsString: z.string().describe("Pre-formatted string of quests."),
@@ -324,14 +314,14 @@ export async function generateNextScene(input: GenerateNextSceneInput): Promise<
   return generateNextSceneFlow(input);
 }
 
-// Helper functions for formatting (can be moved to a utils file later)
 function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemType | null>> | undefined | null): string {
   if (!equippedItems || typeof equippedItems !== 'object') return "Equipment status: Not available.";
   let output = "";
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
     const item = equippedItems[slot];
-    output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${item ? `${item.name} (Value: ${item.basePrice ?? 0})` : 'Empty'}\n`;
+    let itemDesc = item ? `${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''})` : 'Empty';
+    output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${itemDesc}\n`;
   }
   return output.trim();
 }
@@ -351,7 +341,7 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
         if (q.rewards.experiencePoints) questStr += `    - XP: ${q.rewards.experiencePoints}\n`;
         if (q.rewards.currency) questStr += `    - Currency: ${q.rewards.currency}\n`;
         if (q.rewards.items && q.rewards.items.length > 0) {
-            q.rewards.items.forEach(item => { questStr += `    - Item: ${item.name} (Value: ${item.basePrice ?? 0})\n`; });
+            q.rewards.items.forEach(item => { questStr += `    - Item: ${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}`: ''})\n`; });
         }
     }
     return questStr;
@@ -388,7 +378,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         npcStr += `\n  Description: ${npc.description}`;
         if (npc.isMerchant && npc.merchantInventory && npc.merchantInventory.length > 0) {
             npcStr += "\n  Wares for Sale:\n";
-            npc.merchantInventory.forEach(item => { npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}, ID: ${item.id})\n`; });
+            npc.merchantInventory.forEach(item => { npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}, ID: ${item.id})\n`; });
         }
         return npcStr;
     }).join("\n");
@@ -398,7 +388,6 @@ function formatSkills(skills: SkillType[] | undefined | null): string {
     if (!skills || !Array.isArray(skills) || skills.length === 0) return "None known.";
     return skills.map(skill => `- ${skill.name} (Type: ${skill.type}): ${skill.description}`).join("\n");
 }
-
 
 const generateNextSceneFlow = ai.defineFlow(
   {
@@ -411,7 +400,6 @@ const generateNextSceneFlow = ai.defineFlow(
     const modelConfig = { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
 
-    // ----- AI Call 1: Generate Narrative and Described Events -----
     const narrativeAndEventsPrompt = ai.definePrompt({
         name: 'generateNarrativeAndEventsPrompt',
         model: modelName,
@@ -444,7 +432,7 @@ Equipped Items:
 Current Location: {{storyState.currentLocation}}
 
 Inventory (Unequipped):
-{{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}){{/each}}{{else}}Empty{{/if}}
+{{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}, {{#if this.rarity}}Rarity:{{this.rarity}}{{/if}}){{/each}}{{else}}Empty{{/if}}
 
 Quests:
 {{{formattedQuestsString}}}
@@ -464,17 +452,17 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     *   Their presence being strongly implied by the 'Player Input' and the 'Current Location'.
     **Do not make pre-populated NPCs from the 'Tracked NPCs' list spontaneously appear or speak without strong narrative justification within the current scene's context.** If an NPC is to be introduced, describe their arrival or presence first.
 2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Be specific and ensure ALL required fields for each event type are present and correctly typed. ALL numeric fields (amounts, prices, levels, stats, etc.) MUST be actual numbers.
-    - For 'itemFound' events, ensure 'suggestedBasePrice' (a number, can be 0) is always included. 'equipSlot' should ONLY be present if the item is inherently equippable gear (e.g., a sword); for items like potions or keys, 'equipSlot' MUST BE OMITTED.
-    - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0). 'objectives' MUST have 'isCompleted: false'. 'questType' should be 'dynamic' or 'side' unless explicitly a main story continuation.
+    - For 'itemFound' events, ensure 'suggestedBasePrice' (a number, can be 0) is always included. Optionally include 'rarity'. 'equipSlot' should ONLY be present if the item is inherently equippable gear (e.g., a sword); for items like potions or keys, 'equipSlot' MUST BE OMITTED.
+    - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0) and can include an optional 'rarity'. 'objectives' MUST have 'isCompleted: false'. 'questType' should be 'dynamic' or 'side' unless explicitly a main story continuation.
     - For 'newNPCIntroduced' events, 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples:
     - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageSkillChange\\", \\"skillTarget\\": \\"speaking\\", \\"amount\\": 5, \\"reason\\": \\"practiced conversation\\" \\} (amount is a number, 1-20), \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
-    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
-    - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"questType\\": \\"side\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
+    - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5, \\"rarity\\": \\"common\\" \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"rarity\\": \\"common\\", \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"rarity\\": \\"common\\", \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
+    - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"questType\\": \\"side\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1, \\"rarity\\": \\"common\\"}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
     - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\", \\"initialRelationship\\": 0, \\"initialHealth\\": 75, \\"isMerchant\\": false \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
     - Skills: \\{\\"type\\": \\"skillLearned\\", \\"skillName\\": \\"Fireball\\", \\"skillDescription\\": \\"Hurls a ball of fire.\\", \\"skillType\\": \\"Magic\\" \\}
-    Be specific. If an item is found, describe it and its properties. If a quest updates, detail which one and what changed. If a language skill (reading or speaking) improves, note by how much (1-20 pts, a number) and which skill. If a level up occurs, indicate the new level (a number). If an NPC's state changes (e.g. becomes hostile, flees), describe it.
+    Be specific. If an item is found, describe it and its properties (including optional rarity). If a quest updates, detail which one and what changed. If a language skill (reading or speaking) improves, note by how much (1-20 pts, a number) and which skill. If a level up occurs, indicate the new level (a number). If an NPC's state changes (e.g. becomes hostile, flees), describe it.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action.
 4.  **New Lore (newLoreProposals):** If relevant new lore for "{{seriesName}}" is revealed, propose entries. Use 'lookupLoreTool' if more info on existing lore is needed for the narrative.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** A VERY brief (1-2 sentences) summary of ONLY what happened in THIS scene/turn.
@@ -502,10 +490,12 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
       formattedSkillsString,
     };
 
+    console.log("CLIENT: Calling generateNarrativeAndEventsPrompt with payload:", narrativePromptPayload);
     let aiPartialOutput: z.infer<typeof NarrativeAndEventsOutputSchema.deepPartial> | undefined;
     try {
         const response = await narrativeAndEventsPrompt(narrativePromptPayload);
         aiPartialOutput = response.output;
+        console.log("CLIENT: generateNarrativeAndEventsPrompt response:", aiPartialOutput);
     } catch (e: any) {
         console.error(`[${modelName}] Error during narrativeAndEventsPrompt:`, e);
         return {
@@ -648,9 +638,10 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                             effectDescription: event.effectDescription,
                             isQuestItem: event.isQuestItem,
                             relevantQuestId: event.relevantQuestId,
+                            rarity: event.rarity,
                         };
                         draftState.inventory.push(newItem);
-                        localCorrectionWarnings.push(`Event: Item found - ${newItem.name}. Reason: ${event.reason || 'unspecified'}`);
+                        localCorrectionWarnings.push(`Event: Item found - ${newItem.name}${newItem.rarity ? ` (${newItem.rarity})` : ''}. Reason: ${event.reason || 'unspecified'}`);
                     }
                     break;
                 case 'itemLost':
@@ -761,6 +752,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                                     equipSlot: itemReward.equipSlot,
                                     isConsumable: itemReward.isConsumable,
                                     effectDescription: itemReward.effectDescription,
+                                    rarity: itemReward.rarity as ItemRarity,
                                 } as ItemType)) || []
                             } : undefined,
                             updatedAt: new Date().toISOString(),
@@ -815,7 +807,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                                     quest.rewards.items.forEach(item => {
                                         const rewardItem: ItemType = { ...item, id: item.id || `item_reward_${Date.now()}_${Math.random().toString(36).substring(2,8)}` };
                                         draftState.inventory.push(rewardItem);
-                                        localCorrectionWarnings.push(`Quest reward: Received item - ${rewardItem.name}.`);
+                                        localCorrectionWarnings.push(`Quest reward: Received item - ${rewardItem.name}${rewardItem.rarity ? ` (${rewardItem.rarity})` : ''}.`);
                                     });
                                 }
                             }
@@ -867,7 +859,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                             else if (lowerNewState === 'following' || lowerNewState === 'follows player') npc.shortTermGoal = `Follow ${draftState.character.name}`;
                             else if (lowerNewState === 'friendly') npc.shortTermGoal = `Assist ${draftState.character.name}`;
                             else if (lowerNewState === 'neutral' || lowerNewState === 'calmed down') npc.shortTermGoal = undefined;
-                            else npc.shortTermGoal = event.newState; // Default to setting state as goal if not recognized
+                            else npc.shortTermGoal = event.newState; 
 
                             npc.updatedAt = new Date().toISOString();
                             localCorrectionWarnings.push(`Event: NPC "${npc.name}" state changed to "${event.newState}". Reason: ${event.reason || 'unspecified'}`);
@@ -959,7 +951,6 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
             }
         }
 
-        // ----- Automatic Quest Completion Check (after all events are processed) -----
         draftState.quests.forEach(quest => {
             if (quest.status === 'active' && quest.objectives && quest.objectives.length > 0) {
                 const allObjectivesCompleted = quest.objectives.every(obj => obj.isCompleted);
@@ -967,7 +958,6 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                     quest.status = 'completed';
                     quest.updatedAt = new Date().toISOString();
                     localCorrectionWarnings.push(`System: Quest "${quest.title || quest.description}" auto-completed as all objectives met.`);
-                    // Apply rewards
                     if (quest.rewards) {
                         if (typeof quest.rewards.experiencePoints === 'number') {
                             draftState.character.experiencePoints = (draftState.character.experiencePoints ?? originalChar.experiencePoints) + quest.rewards.experiencePoints;
@@ -983,10 +973,10 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                                 const rewardItem: ItemType = {
                                     ...itemReward,
                                     id: itemReward.id || `item_reward_${Date.now()}_${Math.random().toString(36).substring(2,8)}`,
-                                    basePrice: itemReward.basePrice ?? 0, // Ensure basePrice is a number
+                                    basePrice: itemReward.basePrice ?? 0,
                                 };
                                 draftState.inventory.push(rewardItem);
-                                localCorrectionWarnings.push(`System Quest Reward: Received item - ${rewardItem.name} for "${quest.title || quest.description}".`);
+                                localCorrectionWarnings.push(`System Quest Reward: Received item - ${rewardItem.name}${rewardItem.rarity ? ` (${rewardItem.rarity})` : ''} for "${quest.title || quest.description}".`);
                             });
                         }
                     }
@@ -994,8 +984,6 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
             }
         });
 
-
-        // ----- Robust Character Data Finalization (Post-Event Processing) ---
         if (!(typeof draftState.character.name === 'string' && draftState.character.name.trim() !== "")) {
             if (originalChar.name && typeof originalChar.name === 'string' && originalChar.name.trim() !== "") {
                 draftState.character.name = originalChar.name;
@@ -1130,7 +1118,6 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
         if (draftState.character.languageSpeaking! < 0) draftState.character.languageSpeaking = 0;
         if (draftState.character.languageSpeaking! > 100) draftState.character.languageSpeaking = 100;
 
-
         if (!Array.isArray(draftState.character.skillsAndAbilities)) {
             draftState.character.skillsAndAbilities = Array.isArray(originalChar.skillsAndAbilities) ? originalChar.skillsAndAbilities : [];
              localCorrectionWarnings.push("Character 'skillsAndAbilities' was invalid or missing; restored/defaulted.");
@@ -1154,7 +1141,6 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
         draftState.equippedItems = draftState.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
         draftState.currentLocation = typeof draftState.currentLocation === 'string' ? draftState.currentLocation : (typeof input.storyState.currentLocation === 'string' ? input.storyState.currentLocation : "Unknown Location");
 
-
         const invItemIds = new Set<string>();
         draftState.inventory.forEach((item, index) => {
             if (!item.id || item.id.trim() === "" || invItemIds.has(item.id)) {
@@ -1170,6 +1156,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
             if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
             item.basePrice = item.basePrice ?? 0;
             if (item.basePrice < 0) item.basePrice = 0;
+            if (item.rarity === undefined) delete item.rarity;
         });
 
         const questIds = new Set<string>();
@@ -1195,11 +1182,12 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
             if (quest.rewards) {
                 quest.rewards.items = quest.rewards.items ?? [];
                 quest.rewards.items.forEach((rItem, rIndex) => {
-                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${rIndex}`; // Corrected index to rIndex for uniqueness
+                    if (!rItem.id) rItem.id = `item_reward_next_${Date.now()}_${rIndex}`; 
                     rItem.name = rItem.name || "Unnamed Reward Item";
                     rItem.description = rItem.description || "No description.";
                     rItem.basePrice = rItem.basePrice ?? 0;
                     if (rItem.basePrice < 0) rItem.basePrice = 0;
+                    if (rItem.rarity === undefined) delete rItem.rarity;
                 });
                 if (quest.rewards.currency !== undefined && quest.rewards.currency < 0) quest.rewards.currency = 0;
                 if (!quest.rewards.experiencePoints && (!quest.rewards.items || quest.rewards.items.length === 0) && quest.rewards.currency === undefined) {
@@ -1234,6 +1222,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                 if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>)!.equipSlot;
                 item.basePrice = item.basePrice ?? 0;
                 if (item.basePrice < 0) item.basePrice = 0;
+                if (item.rarity === undefined) delete item.rarity;
                 newEquippedItemsInternal[slotKey] = item;
             } else {
                 if (item !== null && item !== undefined) localCorrectionWarnings.push(`Item in slot ${slotKey} was invalid; set to empty.`);
@@ -1324,6 +1313,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                     item.price = item.price ?? item.basePrice;
                     if (item.price < 0) item.price = 0;
                     if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
+                    if (item.rarity === undefined) delete item.rarity;
                 });
             }
             npcIdMap.set(processedNpc.id!, processedNpc as NPCProfileType);
