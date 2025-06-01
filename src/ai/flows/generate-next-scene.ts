@@ -85,7 +85,7 @@ const EquipmentSlotsSchemaInternal = z.object({
 }).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
 
 
-const QuestStatusEnumInternal = z.enum(['active', 'completed']);
+const QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 const QuestObjectiveSchemaInternal = z.object({
   description: z.string().describe("A clear description of this specific objective for the quest."),
   isCompleted: z.boolean().describe("Whether this specific objective is completed.")
@@ -99,12 +99,28 @@ const QuestRewardsSchemaInternal = z.object({
 
 const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_main_001' or 'quest_side_witch_forest_003'. Must be unique among all quests."),
+  title: z.string().optional().describe("A short, engaging title for the quest."),
+  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("The type of quest."),
   description: z.string().describe("A clear description of the quest's overall objective."),
-  status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed'."),
+  status: QuestStatusEnumInternal.describe("The current status of the quest, either 'active' or 'completed' or 'failed'."),
+  chapterId: z.string().optional().describe("If a 'main' quest, the ID of the Chapter it belongs to."),
+  orderInChapter: z.number().optional().describe("If a 'main' quest, its suggested sequence within the chapter."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Personal Goal', 'Exploration'). Omit if not clearly classifiable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. Use for more complex quests. If the quest is simple, this can be omitted."),
-  rewards: QuestRewardsSchemaInternal.optional()
+  rewards: QuestRewardsSchemaInternal.optional(),
+  updatedAt: z.string().optional().describe("Timestamp of the last update to this quest."),
 });
+
+const ChapterSchemaInternal = z.object({
+    id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    order: z.number(),
+    mainQuestIds: z.array(z.string()),
+    isCompleted: z.boolean(),
+    unlockCondition: z.string().optional(),
+});
+
 
 const NPCDialogueEntrySchemaInternal = z.object({
     playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
@@ -147,6 +163,8 @@ const StructuredStoryStateSchemaInternal = z.object({
   inventory: z.array(ItemSchemaInternal).describe('A list of UNequipped items in the character\'s inventory. Each item is an object with id, name, description, and basePrice (as a number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED ENTIRELY. Also include `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId` if applicable.'),
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("A list of all quests. Each quest is an object with 'id', 'description', 'status', its 'rewards' (defined at quest creation specifying what the player will get on completion, including currency (number) and items with 'basePrice' (number)), optionally 'category', and a list of 'objectives' (each with 'description' and 'isCompleted')."),
+  chapters: z.array(ChapterSchemaInternal).describe("An array of chapters defining the main storyline."),
+  currentChapterId: z.string().optional().describe("The ID of the currently active chapter in the main storyline."),
   worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. These facts should reflect the character\'s current understanding and immediate environment, including the presence of significant NPCs. Add new facts as they are discovered, modify existing ones if they change, or remove them if they become outdated or irrelevant. Narrate significant changes to worldFacts if the character would perceive them. Facts like "Language barrier makes communication difficult", "Cannot read local script", or "Cannot understand spoken language" should be present if relevant language skills are low, and removed if they improve significantly.'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of detailed profiles for significant NPCs encountered. Update existing profiles or add new ones as NPCs are introduced or interacted with. If an NPC is a merchant, set 'isMerchant', 'merchantInventory' (with items having 'basePrice' and 'price' as numbers), 'buysItemTypes', 'sellsItemTypes'. Include NPC 'health'/'maxHealth'/'mana'/'maxMana' as numbers if applicable (e.g. for combatants)."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments so far. This summary will be updated each turn."),
@@ -173,7 +191,7 @@ const ManaChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal(
 const XPChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('xpChange'), amount: z.number() });
 const LevelUpEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('levelUp'), newLevel: z.number(), rewardSuggestion: z.string().optional().describe("e.g., 'suggests increasing strength' or 'new skill: Parry'") });
 const CurrencyChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('currencyChange'), amount: z.number() });
-const LanguageSkillChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('languageSkillChange'), skillTarget: z.enum(['reading', 'speaking']).describe("The language skill being improved."), amount: z.number().min(1).max(20).describe("Small, reasonable amount of improvement (1-20).") });
+const LanguageSkillChangeEventSchemaInternal = DescribedEventBaseSchema.extend({ type: z.literal('languageSkillChange'), skillTarget: z.enum(['reading', 'speaking']).describe("The language skill being improved."), amount: z.number().min(1).max(20).describe("Small, reasonable amount of improvement (1-20).") });
 
 
 const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
@@ -197,7 +215,11 @@ const ItemUnequippedEventSchema = DescribedEventBaseSchema.extend({ type: z.lite
 const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   type: z.literal('questAccepted'),
   questIdSuggestion: z.string().optional().describe("AI suggested unique ID for the quest."),
+  questTitle: z.string().optional().describe("Optional title for the quest."),
   questDescription: z.string(),
+  questType: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).optional().describe("Type of quest, defaults to 'dynamic' if not specified for AI-generated quests."),
+  chapterId: z.string().optional().describe("If this quest belongs to a specific chapter."),
+  orderInChapter: z.number().optional().describe("Order within a chapter if applicable."),
   category: z.string().optional(),
   objectives: z.array(z.object({ description: z.string(), isCompleted: z.literal(false) })).optional().describe("Descriptions for new objectives. 'isCompleted' MUST be false for new objectives."),
   rewards: z.object({
@@ -208,6 +230,8 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
 });
 const QuestObjectiveUpdateEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questObjectiveUpdate'), questIdOrDescription: z.string().describe("ID or distinguishing description of the quest."), objectiveDescription: z.string().describe("Description of the objective being updated."), objectiveCompleted: z.boolean() });
 const QuestCompletedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questCompleted'), questIdOrDescription: z.string().describe("ID or distinguishing description of the completed quest.") });
+const QuestFailedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questFailed'), questIdOrDescription: z.string().describe("ID or distinguishing description of the failed quest.") });
+
 
 const NPCRelationshipChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcRelationshipChange'), npcName: z.string().describe("Name of the NPC."), changeAmount: z.number().describe("e.g., +10, -20. Total will be capped at -100 to 100."), newStatus: z.number().optional().describe("AI's assessment of the new relationship score.") });
 const NPCStateChangeEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('npcStateChange'), npcName: z.string().describe("Name of the NPC."), newState: z.string().describe("e.g., 'hostile', 'friendly', 'following', 'fled', 'neutral', 'intrigued'") });
@@ -238,9 +262,9 @@ const SkillLearnedEventSchema = DescribedEventBaseSchema.extend({
 });
 
 const DescribedEventSchema = z.discriminatedUnion("type", [
-  HealthChangeEventSchema, ManaChangeEventSchema, XPChangeEventSchema, LevelUpEventSchema, CurrencyChangeEventSchema, LanguageSkillChangeEventSchema,
+  HealthChangeEventSchema, ManaChangeEventSchema, XPChangeEventSchema, LevelUpEventSchema, CurrencyChangeEventSchema, LanguageSkillChangeEventSchemaInternal,
   ItemFoundEventSchema, ItemLostEventSchema, ItemUsedEventSchema, ItemEquippedEventSchema, ItemUnequippedEventSchema,
-  QuestAcceptedEventSchema, QuestObjectiveUpdateEventSchema, QuestCompletedEventSchema,
+  QuestAcceptedEventSchema, QuestObjectiveUpdateEventSchema, QuestCompletedEventSchema, QuestFailedEventSchema,
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
   WorldFactAddedEventSchema, WorldFactRemovedEventSchema, WorldFactUpdatedEventSchema,
   SkillLearnedEventSchema
@@ -260,7 +284,7 @@ const ActiveNPCInfoSchemaInternal = z.object({
 });
 
 // Schema for RawLoreEntry from types/story.ts, but internal for clarity
-const RawLoreEntrySchemaInternal = z.object({
+const NextScene_RawLoreEntryZodSchema = z.object({
   keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
   content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
   category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
@@ -271,7 +295,7 @@ const NarrativeAndEventsOutputSchema = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("The narrative text and NPC dialogue for the current scene/turn."),
   describedEvents: z.array(DescribedEventSchema).optional().describe("An array of structured events that occurred in the scene, described by the AI. TypeScript will use these to update the game state. Ensure all numeric fields like prices, amounts, stats are actual numbers."),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("NPCs active in this scene."),
-  newLoreProposals: z.array(RawLoreEntrySchemaInternal).optional().describe("New lore entries suggested by the AI."),
+  newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional().describe("New lore entries suggested by the AI."),
   sceneSummaryFragment: z.string().describe("A very brief summary of ONLY the key events that transpired in THIS generated scene/turn."),
 });
 // --- END NEW SCHEMAS ---
@@ -282,7 +306,7 @@ const GenerateNextSceneOutputSchemaInternal = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("An array of message segments that constitute the AI's response."),
   updatedStoryState: StructuredStoryStateSchemaInternal.describe('The updated structured story state after the scene.'),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("A list of NPCs who were active in this generated scene."),
-  newLoreEntries: z.array(RawLoreEntrySchemaInternal).optional().describe("An array of new lore entries discovered or revealed in this scene."),
+  newLoreEntries: z.array(NextScene_RawLoreEntryZodSchema).optional().describe("An array of new lore entries discovered or revealed in this scene."),
   updatedStorySummary: z.string().describe("The new running summary of the story, incorporating events from this scene."),
   dataCorrectionWarnings: z.array(z.string()).optional().describe("An array of warnings if the AI's output for story state required corrections or fallbacks."),
 });
@@ -315,7 +339,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
 function formatQuests(quests: QuestType[] | undefined | null): string {
   if (!quests || !Array.isArray(quests) || quests.length === 0) return "None active.";
   return quests.map(q => {
-    let questStr = `- ${q.description} (ID: ${q.id}, Status: ${q.status})`;
+    let questStr = `- ${q.title ? `"${q.title}"` : ''}${q.description} (ID: ${q.id}, Status: ${q.status}, Type: ${q.type})`;
     if (q.category) questStr += ` [Category: ${q.category}]`;
     if (q.objectives && q.objectives.length > 0) {
       questStr += "\n  Objectives:\n";
@@ -441,12 +465,12 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     **Do not make pre-populated NPCs from the 'Tracked NPCs' list spontaneously appear or speak without strong narrative justification within the current scene's context.** If an NPC is to be introduced, describe their arrival or presence first.
 2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Be specific and ensure ALL required fields for each event type are present and correctly typed. ALL numeric fields (amounts, prices, levels, stats, etc.) MUST be actual numbers.
     - For 'itemFound' events, ensure 'suggestedBasePrice' (a number, can be 0) is always included. 'equipSlot' should ONLY be present if the item is inherently equippable gear (e.g., a sword); for items like potions or keys, 'equipSlot' MUST BE OMITTED.
-    - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0). 'objectives' MUST have 'isCompleted: false'.
+    - For 'questAccepted' events, if 'rewards' are included, 'experiencePoints' and 'currency' MUST be numbers, and items within 'rewards.items' MUST have a 'basePrice' (a number, can be 0). 'objectives' MUST have 'isCompleted: false'. 'questType' should be 'dynamic' or 'side' unless explicitly a main story continuation.
     - For 'newNPCIntroduced' events, 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples:
     - Health/Mana/XP/Currency/Language changes: \\{\\"type\\": \\"healthChange\\", \\"characterTarget\\": \\"player\\", \\"amount\\": -10, \\"reason\\": \\"hit by arrow\\" \\}, \\{\\"type\\": \\"languageSkillChange\\", \\"skillTarget\\": \\"speaking\\", \\"amount\\": 5, \\"reason\\": \\"practiced conversation\\" \\} (amount is a number, 1-20), \\{\\"type\\": \\"xpChange\\", \\"amount\\": 25 \\}
     - Items: \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Old Key\\", \\"itemDescription\\": \\"A rusty key.\\", \\"suggestedBasePrice\\": 5 \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Health Potion\\", \\"itemDescription\\": \\"Restores health.\\", \\"suggestedBasePrice\\": 10, \\"isConsumable\\": true, \\"effectDescription\\": \\"Heals 20 HP\\" \\}, \\{\\"type\\": \\"itemFound\\", \\"itemName\\": \\"Crude Dagger\\", \\"itemDescription\\": \\"A simple dagger.\\", \\"suggestedBasePrice\\": 15, \\"equipSlot\\": \\"weapon\\" \\}, \\{\\"type\\": \\"itemUsed\\", \\"itemIdOrName\\": \\"Health Potion\\" \\}, \\{\\"type\\": \\"itemLost\\", \\"itemIdOrName\\": \\"Magic Scroll\\" \\}, \\{\\"type\\": \\"itemEquipped\\", \\"itemIdOrName\\": \\"Ancient Sword\\", \\"slot\\": \\"weapon\\" \\}
-    - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
+    - Quests: \\{\\"type\\": \\"questObjectiveUpdate\\", \\"questIdOrDescription\\": \\"Main Quest 1\\", \\"objectiveDescription\\": \\"Find the artifact\\", \\"objectiveCompleted\\": true \\}, \\{\\"type\\": \\"questAccepted\\", \\"questDescription\\": \\"Slay the Goblins\\", \\"questType\\": \\"side\\", \\"objectives\\": [{\\"description\\": \\"Defeat 5 Goblins\\", \\"isCompleted\\": false}], \\"rewards\\": {\\"experiencePoints\\": 100, \\"currency\\": 50, \\"items\\": [{\\"name\\": \\"Goblin Ear\\", \\"description\\": \\"A trophy.\\", \\"basePrice\\": 1}]} \\}, \\{\\"type\\": \\"questCompleted\\", \\"questIdOrDescription\\": \\"Slay the Goblins\\" \\}
     - NPCs: \\{\\"type\\": \\"npcRelationshipChange\\", \\"npcName\\": \\"Guard Captain\\", \\"changeAmount\\": -20, \\"reason\\": \\"player stole apple\\" \\}, \\{\\"type\\": \\"newNPCIntroduced\\", \\"npcName\\": \\"Mysterious Stranger\\", \\"npcDescription\\": \\"Hooded figure in the shadows\\", \\"classOrRole\\": \\"Unknown\\", \\"initialRelationship\\": 0, \\"initialHealth\\": 75, \\"isMerchant\\": false \\}, \\{\\"type\\": \\"npcStateChange\\", \\"npcName\\": \\"Goblin Scout\\", \\"newState\\": \\"fled\\", \\"reason\\": \\"took heavy damage\\" \\}
     - World Facts: \\{\\"type\\": \\"worldFactAdded\\", \\"fact\\": \\"A new bridge has collapsed north of town.\\" \\}, \\{\\"type\\": \\"worldFactRemoved\\", \\"factDescription\\": \\"The old rumors about the haunted mill were false.\\" \\}, \\{\\"type\\": \\"worldFactUpdated\\", \\"oldFactDescription\\": \\"The weather is sunny.\\", \\"newFact\\": \\"Dark clouds are gathering.\\" \\}
     - Skills: \\{\\"type\\": \\"skillLearned\\", \\"skillName\\": \\"Fireball\\", \\"skillDescription\\": \\"Hurls a ball of fire.\\", \\"skillType\\": \\"Magic\\" \\}
@@ -718,8 +742,12 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                     {
                         const newQuest: QuestType = {
                             id: event.questIdSuggestion || `quest_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                            title: event.questTitle,
                             description: event.questDescription,
+                            type: event.questType || 'dynamic',
                             status: 'active',
+                            chapterId: event.chapterId,
+                            orderInChapter: event.orderInChapter,
                             category: event.category,
                             objectives: event.objectives?.map(obj => ({ ...obj, isCompleted: false })) || [],
                             rewards: event.rewards ? {
@@ -738,14 +766,14 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                             updatedAt: new Date().toISOString(),
                         };
                         draftState.quests.push(newQuest);
-                        localCorrectionWarnings.push(`Event: Quest accepted - "${newQuest.description}". Reason: ${event.reason || 'unspecified'}`);
+                        localCorrectionWarnings.push(`Event: Quest accepted - "${newQuest.title || newQuest.description}". Reason: ${event.reason || 'unspecified'}`);
                     }
                     break;
                 case 'questObjectiveUpdate':
                     {
                         const questIdentifier = event.questIdOrDescription.toLowerCase();
                         const quest = draftState.quests.find(
-                            q => q.id.toLowerCase() === questIdentifier || q.description.toLowerCase().includes(questIdentifier)
+                            q => q.id.toLowerCase() === questIdentifier || (q.title && q.title.toLowerCase().includes(questIdentifier)) || q.description.toLowerCase().includes(questIdentifier)
                         );
                         if (quest) {
                             const objective = quest.objectives?.find(
@@ -754,9 +782,9 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                             if (objective) {
                                 objective.isCompleted = event.objectiveCompleted;
                                 quest.updatedAt = new Date().toISOString();
-                                localCorrectionWarnings.push(`Event: Quest "${quest.description}" objective "${objective.description}" status changed to ${event.objectiveCompleted ? 'completed' : 'pending'}. Reason: ${event.reason || 'unspecified'}`);
+                                localCorrectionWarnings.push(`Event: Quest "${quest.title || quest.description}" objective "${objective.description}" status changed to ${event.objectiveCompleted ? 'completed' : 'pending'}. Reason: ${event.reason || 'unspecified'}`);
                             } else {
-                                localCorrectionWarnings.push(`Event: Quest "${quest.description}" objective "${event.objectiveDescription}" not found.`);
+                                localCorrectionWarnings.push(`Event: Quest "${quest.title || quest.description}" objective "${event.objectiveDescription}" not found.`);
                             }
                         } else {
                             localCorrectionWarnings.push(`Event: Quest "${event.questIdOrDescription}" not found for objective update.`);
@@ -767,12 +795,12 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                     {
                         const questIdentifier = event.questIdOrDescription.toLowerCase();
                         const quest = draftState.quests.find(
-                            q => q.id.toLowerCase() === questIdentifier || q.description.toLowerCase().includes(questIdentifier)
+                             q => q.id.toLowerCase() === questIdentifier || (q.title && q.title.toLowerCase().includes(questIdentifier)) || q.description.toLowerCase().includes(questIdentifier)
                         );
                         if (quest) {
                             quest.status = 'completed';
                             quest.updatedAt = new Date().toISOString();
-                            localCorrectionWarnings.push(`Event: Quest "${quest.description}" completed by AI event! Reason: ${event.reason || 'unspecified'}`);
+                            localCorrectionWarnings.push(`Event: Quest "${quest.title || quest.description}" completed by AI event! Reason: ${event.reason || 'unspecified'}`);
                             if (quest.rewards) {
                                 if (quest.rewards.experiencePoints) {
                                     draftState.character.experiencePoints = (draftState.character.experiencePoints ?? originalChar.experiencePoints) + quest.rewards.experiencePoints;
@@ -793,6 +821,21 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                             }
                         } else {
                              localCorrectionWarnings.push(`Event: Quest "${event.questIdOrDescription}" not found for AI completion event.`);
+                        }
+                    }
+                    break;
+                case 'questFailed':
+                    {
+                        const questIdentifier = event.questIdOrDescription.toLowerCase();
+                        const quest = draftState.quests.find(
+                             q => q.id.toLowerCase() === questIdentifier || (q.title && q.title.toLowerCase().includes(questIdentifier)) || q.description.toLowerCase().includes(questIdentifier)
+                        );
+                        if (quest) {
+                            quest.status = 'failed';
+                            quest.updatedAt = new Date().toISOString();
+                            localCorrectionWarnings.push(`Event: Quest "${quest.title || quest.description}" marked as failed. Reason: ${event.reason || 'unspecified'}`);
+                        } else {
+                            localCorrectionWarnings.push(`Event: Quest "${event.questIdOrDescription}" not found for failure update.`);
                         }
                     }
                     break;
@@ -923,17 +966,17 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                 if (allObjectivesCompleted) {
                     quest.status = 'completed';
                     quest.updatedAt = new Date().toISOString();
-                    localCorrectionWarnings.push(`System: Quest "${quest.description}" auto-completed as all objectives met.`);
+                    localCorrectionWarnings.push(`System: Quest "${quest.title || quest.description}" auto-completed as all objectives met.`);
                     // Apply rewards
                     if (quest.rewards) {
                         if (typeof quest.rewards.experiencePoints === 'number') {
                             draftState.character.experiencePoints = (draftState.character.experiencePoints ?? originalChar.experiencePoints) + quest.rewards.experiencePoints;
-                            localCorrectionWarnings.push(`System Quest Reward: +${quest.rewards.experiencePoints} XP for "${quest.description}".`);
+                            localCorrectionWarnings.push(`System Quest Reward: +${quest.rewards.experiencePoints} XP for "${quest.title || quest.description}".`);
                         }
                         if (typeof quest.rewards.currency === 'number') {
                             draftState.character.currency = ((draftState.character.currency ?? originalChar.currency) ?? 0) + quest.rewards.currency;
                             if (draftState.character.currency < 0) draftState.character.currency = 0;
-                            localCorrectionWarnings.push(`System Quest Reward: +${quest.rewards.currency} currency for "${quest.description}".`);
+                            localCorrectionWarnings.push(`System Quest Reward: +${quest.rewards.currency} currency for "${quest.title || quest.description}".`);
                         }
                         if (quest.rewards.items && quest.rewards.items.length > 0) {
                             quest.rewards.items.forEach(itemReward => {
@@ -943,7 +986,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                                     basePrice: itemReward.basePrice ?? 0, // Ensure basePrice is a number
                                 };
                                 draftState.inventory.push(rewardItem);
-                                localCorrectionWarnings.push(`System Quest Reward: Received item - ${rewardItem.name} for "${quest.description}".`);
+                                localCorrectionWarnings.push(`System Quest Reward: Received item - ${rewardItem.name} for "${quest.title || quest.description}".`);
                             });
                         }
                     }
@@ -1101,6 +1144,11 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
 
         draftState.inventory = draftState.inventory || [];
         draftState.quests = draftState.quests || [];
+        draftState.chapters = draftState.chapters || [];
+        if (draftState.currentChapterId === undefined && draftState.chapters.length > 0) {
+            const firstChapter = draftState.chapters.find(c => c.order === 1);
+            if (firstChapter) draftState.currentChapterId = firstChapter.id;
+        }
         draftState.worldFacts = draftState.worldFacts || [];
         draftState.trackedNPCs = draftState.trackedNPCs || [];
         draftState.equippedItems = draftState.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
@@ -1131,10 +1179,12 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
                 let newId = baseId; let i = 0;
                 while(questIds.has(newId)) newId = `${baseId}_${i++}`;
                 quest.id = newId;
-                localCorrectionWarnings.push(`Generated unique ID for quest: ${quest.description || 'Unnamed Quest'}`);
+                localCorrectionWarnings.push(`Generated unique ID for quest: ${quest.title || quest.description || 'Unnamed Quest'}`);
             }
             questIds.add(quest.id);
+            quest.title = quest.title ?? undefined;
             quest.description = quest.description || "No description.";
+            quest.type = quest.type || 'dynamic';
             quest.status = quest.status || 'active';
             if (quest.category === null || (quest.category as unknown) === '') delete (quest as Partial<QuestType>).category;
             quest.objectives = quest.objectives ?? [];
@@ -1289,7 +1339,7 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
         generatedMessages: aiPartialOutput.generatedMessages!,
         updatedStoryState: finalUpdatedStoryState as StructuredStoryState,
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc.name && npc.name.trim() !== '') ?? undefined,
-        newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") ?? undefined,
+        newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
         updatedStorySummary: finalUpdatedStoryState.storySummary!,
         dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? Array.from(new Set(localCorrectionWarnings)) : undefined,
     };
@@ -1309,3 +1359,5 @@ Your primary task is to generate a response adhering to the 'NarrativeAndEventsO
     return finalOutput;
   }
 );
+
+    

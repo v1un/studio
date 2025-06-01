@@ -9,15 +9,16 @@
  * initial profiles for any NPCs introduced in the starting scene or known major characters from the series (including merchant data, and optional health/mana for combatants),
  * and starting skills/abilities for the character.
  * This flow uses a multi-step generation process with parallelized AI calls and supports model selection.
+ * Only the first chapter's main quests are generated in detail; subsequent chapters are outlined.
  *
  * - generateScenarioFromSeries - Function to generate the scenario.
  * - GenerateScenarioFromSeriesInput - Input type (series name, optional character name/class, usePremiumAI).
- * - GenerateScenarioFromSeriesOutput - Output type (scene, story state, initial lore, style guide).
+ * - GenerateScenarioFromSeriesOutput - Output type (scene, story state, initial lore, style guide, plot summary).
  */
 
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z} from 'zod';
-import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, Chapter as ChapterType } from '@/types/story';
+import type { EquipmentSlot, RawLoreEntry, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, Chapter as ChapterType, GenerateScenarioFromSeriesOutput as IGenerateScenarioFromSeriesOutput } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
@@ -103,7 +104,8 @@ const QuestSchemaInternal = z.object({
   orderInChapter: z.number().optional().describe("If a 'main' quest, its suggested sequence within the chapter."),
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Introduction', 'Exploration'). Omit if not clearly classifiable or if not applicable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'."),
-  rewards: QuestRewardsSchemaInternal.optional()
+  rewards: QuestRewardsSchemaInternal.optional(),
+  updatedAt: z.string().optional().describe("Timestamp of the last update to this quest."),
 });
 
 const ChapterSchemaInternal = z.object({
@@ -111,7 +113,7 @@ const ChapterSchemaInternal = z.object({
     title: z.string().describe("A short, engaging title for the chapter (e.g., 'The Royal Selection Begins')."),
     description: z.string().describe("A brief overview of this story arc or chapter's theme."),
     order: z.number().describe("The sequential order of this chapter in the main storyline (e.g., 1, 2, 3)."),
-    mainQuestIds: z.array(z.string()).optional().describe("An array of 'id's for 'main' type Quests belonging to this chapter. Can be empty if quests are to be fleshed out later."),
+    mainQuestIds: z.array(z.string()).describe("An array of 'id's for 'main' type Quests belonging to this chapter. For outlined chapters, this MUST be an empty array `[]`."),
     isCompleted: z.boolean().describe("Whether this chapter's objectives/main quests are completed. Initialize to false."),
     unlockCondition: z.string().optional().describe("Narrative condition for unlocking this chapter (e.g., 'Previous chapter completed', 'Character reaches Level 5').")
 });
@@ -136,7 +138,7 @@ const NPCProfileSchemaInternal = z.object({
     maxHealth: z.number().optional().describe("Maximum health points if applicable. MUST BE a number if provided."),
     mana: z.number().optional().describe("Current mana/energy if applicable (e.g., for a magic user). Default to a reasonable value like 20-50 if setting. MUST BE a number if provided."),
     maxMana: z.number().optional().describe("Maximum mana/energy if applicable. MUST BE a number."),
-    firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, their typical location if pre-populated, or a general description like 'Known from series lore' if not a specific place."),
+    firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, their typical location if pre-populated, or a general description like 'Known from series lore' if not a specific place. If the NPC is part of the initial `sceneDescription`, this should be the `currentLocation`."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
     relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value based on series context or 0 for Neutral for OCs. MUST BE a number."),
     knownFacts: z.array(z.string()).describe("Specific pieces of information player would know initially about this NPC based on the series, or empty if an OC. If this NPC is pre-populated and not directly in the scene, these facts should reflect general world knowledge/rumors, NOT direct player character knowledge from interaction."),
@@ -157,18 +159,12 @@ const StructuredStoryStateSchemaInternal = z.object({
   currentLocation: z.string().describe('A specific starting location from the series relevant to the initial scene.'),
   inventory: z.array(ItemSchemaInternal).describe('Initial unequipped items relevant to the character and series. Each item must have id, name, description, and basePrice (as a number). If the item is an inherently equippable piece of gear, include its equipSlot; otherwise, the equipSlot field MUST BE OMITTED. Can be empty. For consumable items, set `isConsumable: true` and provide `effectDescription`. For quest items, set `isQuestItem: true` and `relevantQuestId`.'),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe("Initial quests. For series-based starts, this should include 'main' quests tied to chapters, derived from the series plot. Each quest needs 'id', 'description', 'type', 'status'. 'chapterId' and 'orderInChapter' for main quests. Rewards and objectives are highly recommended."),
-  chapters: z.array(ChapterSchemaInternal).describe("An array of chapters defining the main storyline. The first chapter should be fully detailed with associated main quests. Subsequent chapters might be outlined initially. Each chapter needs 'id', 'title', 'description', 'order', and 'isCompleted: false'."),
-  currentChapterId: z.string().optional().describe("The ID of the currently active chapter in the main storyline."),
+  quests: z.array(QuestSchemaInternal).describe("Initial quests. For series-based starts, this should include 'main' quests tied to the first chapter, derived from the series plot. Each quest needs 'id', 'description', 'type', 'status'. 'chapterId' and 'orderInChapter' for main quests. Rewards and objectives are highly recommended."),
+  chapters: z.array(ChapterSchemaInternal).describe("An array of chapters defining the main storyline. The first chapter should be fully detailed with associated main quests. Subsequent chapters (1-2 more) should be outlined (id, title, description, order, empty mainQuestIds, isCompleted: false)."),
+  currentChapterId: z.string().optional().describe("The ID of the currently active chapter in the main storyline (should be the ID of the first chapter generated)."),
   worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation. If character.languageReading is 0, one fact should describe the effects (e.g., "Signs are unreadable, script is incomprehensible"). If character.languageSpeaking is 0, one fact should describe the effects (e.g., "Spoken language is incomprehensible").'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, for the '{{seriesName}}' universe, you SHOULD prioritize pre-populating profiles for 2-4 other major, well-known characters who are canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series. If an NPC is a merchant, set 'isMerchant' to true and populate 'merchantInventory' with items including 'price' (number) and 'basePrice' (number). For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts', an optional 'shortTermGoal', and optionally 'seriesContextNotes'. Dialogue history should be empty. Include 'health'/'maxHealth' (numbers) for combat-oriented NPCs if known from series context."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro for the series context."),
-});
-
-const RawLoreEntrySchemaInternal = z.object({
-  keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
-  content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
-  category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
 });
 
 const GenerateScenarioFromSeriesInputSchema = z.object({
@@ -179,13 +175,20 @@ const GenerateScenarioFromSeriesInputSchema = z.object({
 });
 export type GenerateScenarioFromSeriesInput = z.infer<typeof GenerateScenarioFromSeriesInputSchema>;
 
-const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
-  sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character. If the character has languageReading: 0, the scene should reflect this (e.g., unreadable signs). If languageSpeaking is 0, it should reflect incomprehensible speech.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs (with merchant details and optional health/mana for combatants if applicable), starting skills/abilities for the character, starting currency, chapters and main quests. Ensure all numeric fields like prices, stats, currency are numbers.'),
-  initialLoreEntries: z.array(RawLoreEntrySchemaInternal).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
-  seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
+const Scenario_RawLoreEntryZodSchema = z.object({
+  keyword: z.string().describe("The specific term, character name, location, or concept from the series (e.g., 'Hokage', 'Death Note', 'Subaru Natsuki', 'Emerald Sustrai')."),
+  content: z.string().describe("A concise (2-3 sentences) description or piece of lore about the keyword, accurate to the specified series."),
+  category: z.string().optional().describe("An optional category for the lore entry (e.g., 'Character', 'Location', 'Ability', 'Organization', 'Concept'). If no category is applicable or known, this field should be omitted entirely."),
 });
-export type GenerateScenarioFromSeriesOutput = z.infer<typeof GenerateScenarioFromSeriesOutputSchemaInternal>;
+
+const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
+  sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character. If the character has languageReading: 0, the scene should reflect this (e.g., unreadable signs). If languageSpeaking: 0, it should reflect incomprehensible speech.'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs (with merchant details and optional health/mana for combatants if applicable), starting skills/abilities for the character, starting currency, chapters and main quests. Ensure all numeric fields like prices, stats, currency are numbers.'),
+  initialLoreEntries: z.array(Scenario_RawLoreEntryZodSchema).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
+  seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
+  seriesPlotSummary: z.string().optional().describe("A concise summary of the early major plot points or story arcs for the specified series. This is crucial for generating canonical quests and will be stored in the game session."),
+});
+// Note: Type GenerateScenarioFromSeriesOutput is imported from types/story.ts and used for the flow's final output.
 
 const CharacterAndSceneInputSchema = GenerateScenarioFromSeriesInputSchema;
 const CharacterAndSceneOutputSchema = z.object({
@@ -232,7 +235,7 @@ const InitialAccessoryGearOutputSchema = z.object({
     ring1: ItemSchemaInternal.nullable(),
     ring2: ItemSchemaInternal.nullable(),
 });
-    
+
 const InitialWorldFactsOutputSchema = z.object({
     worldFacts: StructuredStoryStateSchemaInternal.shape.worldFacts,
 });
@@ -247,23 +250,23 @@ const SeriesPlotSummaryOutputSchema = z.object({
 
 const InitialQuestsAndChaptersInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterProfileSchemaInternal, 
+    character: CharacterProfileSchemaInternal,
     sceneDescription: z.string(),
     currentLocation: z.string(),
     characterNameInput: z.string().optional(),
     seriesPlotSummary: z.string().describe("A summary of the series' early plot points to guide canonical quest generation."),
 });
 const InitialQuestsAndChaptersOutputSchema = z.object({
-    quests: StructuredStoryStateSchemaInternal.shape.quests,
-    chapters: StructuredStoryStateSchemaInternal.shape.chapters,
+    quests: StructuredStoryStateSchemaInternal.shape.quests.describe("Main quests ONLY for the FIRST chapter. Ensure each has chapterId set to the first chapter's ID."),
+    chapters: StructuredStoryStateSchemaInternal.shape.chapters.describe("An array of chapters. The first chapter (order: 1) should have its mainQuestIds populated with the IDs of the quests generated above. Subsequent chapters (e.g., order: 2, 3) should be outlines with id, title, description, order, and an EMPTY mainQuestIds array `[]`, and isCompleted: false."),
 });
 
 const InitialTrackedNPCsInputSchema = z.object({
     seriesName: z.string(),
-    character: CharacterProfileSchemaInternal, 
+    character: CharacterProfileSchemaInternal,
     sceneDescription: z.string(),
     currentLocation: z.string(),
-    characterNameInput: z.string().optional(), 
+    characterNameInput: z.string().optional(),
 });
 const InitialTrackedNPCsOutputSchema = z.object({
     trackedNPCs: StructuredStoryStateSchemaInternal.shape.trackedNPCs,
@@ -281,7 +284,7 @@ const StyleGuideInputSchema = z.object({
   seriesName: z.string(),
 });
 
-export async function generateScenarioFromSeries(input: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> {
+export async function generateScenarioFromSeries(input: GenerateScenarioFromSeriesInput): Promise<IGenerateScenarioFromSeriesOutput> {
   return generateScenarioFromSeriesFlow(input);
 }
 
@@ -289,9 +292,9 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
   {
     name: 'generateScenarioFromSeriesFlow',
     inputSchema: GenerateScenarioFromSeriesInputSchema,
-    outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal,
+    outputSchema: GenerateScenarioFromSeriesOutputSchemaInternal, // Internal schema used for the flow
   },
-  async (mainInput: GenerateScenarioFromSeriesInput): Promise<GenerateScenarioFromSeriesOutput> => {
+  async (mainInput: GenerateScenarioFromSeriesInput): Promise<IGenerateScenarioFromSeriesOutput> => {
     const flowStartTime = Date.now();
     console.log(`[${new Date(flowStartTime).toISOString()}] generateScenarioFromSeriesFlow: START for Series: ${mainInput.seriesName}, Character: ${mainInput.characterNameInput || 'AI Decides'}, Premium: ${mainInput.usePremiumAI}`);
 
@@ -299,7 +302,10 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Using model: ${modelName}`);
     const modelConfig = { maxOutputTokens: 8000 };
 
-    // Define all prompts first
+    // --- Step 1: Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary) ---
+    let stepStartTime = Date.now();
+    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Starting Initial Parallel Batch.`);
+
     const characterAndScenePrompt = ai.definePrompt({
         name: 'characterAndScenePrompt', model: modelName, input: { schema: CharacterAndSceneInputSchema }, output: { schema: CharacterAndSceneOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CharacterAndSceneOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
@@ -324,99 +330,17 @@ You MUST generate an object with 'sceneDescription', 'characterCore', and 'curre
         - Otherwise, if not specified by canon for the starting situation, default both 'languageReading' and 'languageSpeaking' to 100 (fluent) or series-appropriate values if known. If the AI omits these, they will be defaulted to 100 in post-processing.
 3.  'currentLocation': A specific, recognizable starting location from "{{seriesName}}".
 
-Output ONLY the JSON object for CharacterAndSceneOutputSchema. Ensure all fields are correctly populated and typed.
+Output ONLY the JSON object for CharacterAndSceneOutputSchema.
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the CharacterAndSceneOutputSchema definition provided earlier in this prompt.`,
     });
-
-    const initialCharacterSkillsPrompt = ai.definePrompt({
-        name: 'initialCharacterSkillsPrompt', model: modelName, input: { schema: InitialCharacterSkillsInputSchema }, output: { schema: InitialCharacterSkillsOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialCharacterSkillsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a character in the series "{{seriesName}}":
-Name: {{characterName}}
-Class/Role: {{characterClass}}
-Description: {{characterDescription}}
-
-Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills.
-- Each skill: unique 'id', 'name', 'description', 'type'. All fields are required.
-- For characters known for specific signature abilities relevant at the start (e.g., for "Re:Zero" and Subaru, "Return by Death" MUST be included if appropriate for the scenario start), ensure they are present.
-Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }. If no skills, output { "skillsAndAbilities": [] }.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialCharacterSkillsOutputSchema definition provided earlier in this prompt.`,
+    const styleGuidePrompt = ai.definePrompt({
+        name: 'generateSeriesStyleGuidePrompt', model: modelName, input: { schema: StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single string (for the style guide) or an empty string (""). Do not include JSON structure unless the string itself is JSON (which is not expected here).
+For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string ("").
+Output ONLY the summary string or empty string. DO NOT output 'null'.
+Ensure your response is ONLY the string content.`,
     });
-    
-    const initialInventoryPrompt = ai.definePrompt({
-        name: 'initialInventoryPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialInventoryOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialInventoryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
-Scene: {{sceneDescription}}
-Location: {{currentLocation}}
-
-Generate ONLY 'inventory': An array of 0-3 unequipped starting items.
-- Each item: unique 'id', 'name', 'description', 'basePrice' (MUST BE a number, e.g., 0, 10, 50). All these fields are required.
-- 'equipSlot' if equippable gear (e.g., "weapon", "head"), OMITTED otherwise (e.g., for potions, keys).
-- 'isConsumable', 'effectDescription' for consumables. 'isQuestItem', 'relevantQuestId' for quest items.
-Adhere to JSON schema. Output ONLY { "inventory": [...] }.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialInventoryOutputSchema definition provided earlier in this prompt.`,
-    });
-
-    const initialMainGearPrompt = ai.definePrompt({
-        name: 'initialMainGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialMainGearOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialMainGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
-Scene: {{sceneDescription}}
-Location: {{currentLocation}}
-
-Generate ONLY an object with 'weapon', 'shield', 'body' equipped items. Each field ('weapon', 'shield', 'body') MUST be present.
-- Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (must match slot key, e.g. "weapon")) or 'null'. All item fields are required if an item object is provided.
-Adhere to JSON schema. Output ONLY { "weapon": ..., "shield": ..., "body": ... }.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialMainGearOutputSchema definition provided earlier in this prompt.`,
-    });
-
-    const initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'initialSecondaryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialSecondaryGearOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialSecondaryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
-Scene: {{sceneDescription}}
-Location: {{currentLocation}}
-
-Generate ONLY an object with 'head', 'legs', 'feet', 'hands' equipped items. Each field ('head', 'legs', 'feet', 'hands') MUST be present.
-- Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (must match slot key, e.g. "head")) or 'null'. All item fields are required if an item object is provided.
-Adhere to JSON schema. Output ONLY an object with these four keys.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialSecondaryGearOutputSchema definition provided earlier in this prompt.`,
-    });
-
-    const initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'initialAccessoryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialAccessoryGearOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialAccessoryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
-Scene: {{sceneDescription}}
-Location: {{currentLocation}}
-
-Generate ONLY an object with 'neck', 'ring1', 'ring2' equipped items. Each field ('neck', 'ring1', 'ring2') MUST be present.
-- Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (should be "neck" or "ring")) or 'null'. All item fields are required if an item object is provided. If 'equipSlot' is "ring", it's for ring1 or ring2.
-Adhere to JSON schema. Output ONLY an object with these three keys.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialAccessoryGearOutputSchema definition provided earlier in this prompt.`,
-    });
-    
-    const initialWorldFactsPrompt = ai.definePrompt({
-        name: 'initialWorldFactsPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialWorldFactsOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialWorldFactsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a story in "{{seriesName}}" starting with:
-Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
-Scene: {{sceneDescription}}
-Location: {{currentLocation}}
-
-Generate ONLY 'worldFacts': An array of 3-5 key world facts (strings).
-- If 'character.languageReading' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot read the local script, making signs and books incomprehensible."
-- If 'character.languageSpeaking' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot understand or speak the local language, making verbal communication impossible."
-Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialWorldFactsOutputSchema definition provided earlier in this prompt.`,
-    });
-
-    const generateSeriesPlotSummaryPrompt = ai.definePrompt({
+    const seriesPlotSummaryPrompt = ai.definePrompt({
         name: 'generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: SeriesPlotSummaryInputSchema }, output: { schema: SeriesPlotSummaryOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'SeriesPlotSummaryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
 For the series "{{seriesName}}"{{#if characterNameInput}} with a focus on the character "{{characterNameInput}}"{{/if}}, provide a 'plotSummary'.
@@ -425,101 +349,16 @@ Output ONLY the JSON object.
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the SeriesPlotSummaryOutputSchema definition provided earlier in this prompt.`
     });
 
-    const initialQuestsAndChaptersPrompt = ai.definePrompt({
-        name: 'initialQuestsAndChaptersPrompt', model: modelName, input: { schema: InitialQuestsAndChaptersInputSchema }, output: { schema: InitialQuestsAndChaptersOutputSchema }, config: modelConfig,
-        tools: [lookupLoreTool],
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialQuestsAndChaptersOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-You are creating the initial chapters and main quests for a game set in the series "{{seriesName}}".
-Player Character: {{character.name}} ({{character.class}}, Level {{character.level}}) - {{character.description}}
-Initial Scene: {{sceneDescription}}
-Starting Location: {{currentLocation}}
-Key Canonical Plot Points for Early Story:
-{{{seriesPlotSummary}}}
-
-Your Task: Generate 'chapters' and 'quests'.
-1.  **'chapters' (Array of Chapter Objects):**
-    *   Based on the \`seriesPlotSummary\`, define 1-2 initial \`Chapter\` objects.
-    *   Each chapter MUST have a unique 'id', 'title', 'description' (overview of the arc), 'order' (sequential number), and 'isCompleted: false'.
-    *   The 'mainQuestIds' field in these initial chapter objects can be left empty or can reference the IDs of quests you define in step 2.
-    *   You MAY outline 1-2 subsequent chapters with just 'id', 'title', 'description', and 'order', leaving 'mainQuestIds' empty for later fleshing out.
-2.  **'quests' (Array of Quest Objects):**
-    *   For the VERY FIRST chapter you defined, create 2-3 'main' type \`Quest\` objects.
-    *   These main quests MUST closely follow the canonical events described in the \`seriesPlotSummary\` for that part of the story. Use \`lookupLoreTool\` if needed for accuracy on names, locations, or series-specific terms.
-    *   Each quest MUST have a unique 'id', 'title' (optional), 'description' (clear objective), 'type: "main"', 'status: "active"', and be linked to the first chapter via 'chapterId'. Assign 'orderInChapter' for sequence.
-    *   **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items (each with 'id', 'name', 'description', 'basePrice' (number), and optional 'equipSlot' - OMIT for non-equippable items)).
-    *   Include 1-2 'objectives' for each quest (with 'isCompleted: false').
-    *   You MAY also include one optional 'side' quest if appropriate for the starting context.
-
-**Adherence to Canon:** The 'main' quests and the structure of the first chapter MUST be as faithful as possible to the \`seriesPlotSummary\`.
-Output ONLY the JSON object { "quests": [...], "chapters": [...] }. Ensure all fields are correctly populated and typed (especially numbers for prices, XP, currency).
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialQuestsAndChaptersOutputSchema definition provided earlier in this prompt.`,
-    });
-
-    const initialTrackedNPCsPrompt = ai.definePrompt({
-        name: 'initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialTrackedNPCsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-For a story in "{{seriesName}}" starting with:
-Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) -
-Initial Scene: {{sceneDescription}}
-Player's Starting Location: {{currentLocation}}
-
-Generate ONLY 'trackedNPCs': A list of NPC profiles.
-    - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
-        - Required Details: 'id' (unique), 'name', 'description', 'relationshipStatus' (MUST BE a number).
-        - Contextual Details: 'firstEncounteredLocation' ('{{currentLocation}}'), 'lastKnownLocation' ('{{currentLocation}}').
-        - If merchant: \`isMerchant: true\`, populate \`merchantInventory\` with items (each with unique \`id\`, \`name\`, \`description\`, \`basePrice\` (MUST BE a number), and merchant \`price\` (MUST BE a number). OMIT 'equipSlot' for non-equippable items in inventory.). All item fields are required if an item is present.
-    - PRE-POPULATED MAJOR NPCs (NOT in scene): For '{{seriesName}}', **prioritize** pre-populating profiles for 2-4 other major, well-known characters canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series.
-        - Required Details: 'id' (unique), 'name', 'description', 'relationshipStatus' (MUST BE a number).
-        - Contextual Details: Their 'firstEncounteredLocation' and 'lastKnownLocation' should be their canonical known locations from the series, OR a general "Known from series lore" if not tied to a single place. **DO NOT use '{{currentLocation}}' for these pre-populated NPCs unless the 'Initial Scene' input explicitly states they are there.**
-        - If merchant: include merchant data as above.
-    - For ALL NPCs: 'firstEncounteredTurnId' & 'lastSeenTurnId' = "initial_turn_0". Empty dialogue history. Optional 'seriesContextNotes', 'shortTermGoal', 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number).
-Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all fields are correctly populated and typed, especially numeric ones.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialTrackedNPCsOutputSchema definition provided earlier in this prompt.`,
-    });
-
-    const loreEntriesPrompt = ai.definePrompt({
-        name: 'generateLoreEntriesPrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: z.array(RawLoreEntrySchemaInternal) }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON array conforming to the output schema (an array of RawLoreEntrySchemaInternal objects). Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
-You are a lore master for "{{seriesName}}".
-Context: Character "{{characterName}}" ({{characterClass}}).
-Scene: {{sceneDescription}}
-Character Background: {{characterDescription}}
-Generate 6-8 key lore entries. Each entry MUST have a 'keyword' and 'content'. 'category' is optional.
-Output ONLY JSON array.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the output schema definition provided earlier in this prompt.`,
-    });
-
-    const styleGuidePrompt = ai.definePrompt({
-        name: 'generateSeriesStyleGuidePrompt', model: modelName, input: { schema: StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single string (for the style guide) or an empty string (""). Do not include JSON structure unless the string itself is JSON (which is not expected here).
-For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string ("").
-Output ONLY the summary string or empty string. DO NOT output 'null'.`,
-    });
-
-
-    // --- Step 1: Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary) ---
-    let stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
-    
-    const characterAndScenePromise = characterAndScenePrompt({
-        seriesName: mainInput.seriesName,
-        characterNameInput: mainInput.characterNameInput,
-        characterClassInput: mainInput.characterClassInput,
-        usePremiumAI: mainInput.usePremiumAI,
-    });
-    const styleGuidePromise = styleGuidePrompt({ seriesName: mainInput.seriesName });
-    const seriesPlotSummaryPromise = generateSeriesPlotSummaryPrompt({seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput});
-
     const [charSceneResult, styleGuideResult, seriesPlotSummaryResult] = await Promise.all([
-        characterAndScenePromise, 
-        styleGuidePromise,
-        seriesPlotSummaryPromise
+        characterAndScenePrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput, characterClassInput: mainInput.characterClassInput, usePremiumAI: mainInput.usePremiumAI }),
+        styleGuidePrompt({ seriesName: mainInput.seriesName }),
+        seriesPlotSummaryPrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput })
     ]);
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Initial Parallel Batch completed in ${Date.now() - stepStartTime}ms.`);
 
     const charSceneOutput = charSceneResult.output;
     const styleGuideRaw = styleGuideResult.output;
-    const seriesPlotSummary = seriesPlotSummaryResult.output?.plotSummary || "No specific plot summary was generated by the AI.";
+    const generatedSeriesPlotSummary = seriesPlotSummaryResult.output?.plotSummary || `No specific plot summary was generated by the AI for ${mainInput.seriesName}. The story will be more emergent.`;
 
     if (!charSceneOutput || !charSceneOutput.sceneDescription || !charSceneOutput.characterCore || !charSceneOutput.currentLocation) {
       console.error("Character/Scene generation failed or returned invalid structure:", charSceneOutput);
@@ -536,6 +375,20 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     // --- Step 2: Skills Generation (Sequential) ---
     stepStartTime = Date.now();
     console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
+    const initialCharacterSkillsPrompt = ai.definePrompt({
+        name: 'initialCharacterSkillsPrompt', model: modelName, input: { schema: InitialCharacterSkillsInputSchema }, output: { schema: InitialCharacterSkillsOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialCharacterSkillsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a character in the series "{{seriesName}}":
+Name: {{characterName}}
+Class/Role: {{characterClass}}
+Description: {{characterDescription}}
+
+Generate ONLY 'skillsAndAbilities': An array of 2-3 starting skills.
+- Each skill: unique 'id', 'name', 'description', 'type'. All fields are required.
+- For characters known for specific signature abilities relevant at the start (e.g., for "Re:Zero" and Subaru, "Return by Death" MUST be included if appropriate for the scenario start), ensure they are present.
+Adhere strictly to the JSON schema. Output ONLY { "skillsAndAbilities": [...] }. If no skills, output { "skillsAndAbilities": [] }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialCharacterSkillsOutputSchema definition provided earlier in this prompt.`,
+    });
     const skillsInput: z.infer<typeof InitialCharacterSkillsInputSchema> = {
         seriesName: mainInput.seriesName,
         characterName: characterCore.name,
@@ -546,7 +399,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - initialCharacterSkillsPrompt completed in ${Date.now() - stepStartTime}ms.`);
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
     const fullCharacterProfile: z.infer<typeof CharacterProfileSchemaInternal> = {
-        ...characterCore, 
+        ...characterCore,
         skillsAndAbilities: characterSkills,
     };
 
@@ -556,24 +409,17 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
 
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
-        character: { 
-            name: fullCharacterProfile.name, 
-            class: fullCharacterProfile.class, 
-            description: fullCharacterProfile.description, 
-            currency: fullCharacterProfile.currency, 
-            languageReading: fullCharacterProfile.languageReading,
-            languageSpeaking: fullCharacterProfile.languageSpeaking,
-        },
+        character: { name: fullCharacterProfile.name, class: fullCharacterProfile.class, description: fullCharacterProfile.description, currency: fullCharacterProfile.currency, languageReading: fullCharacterProfile.languageReading, languageSpeaking: fullCharacterProfile.languageSpeaking },
         sceneDescription: sceneDescription,
         currentLocation: currentLocation,
     };
     const questsAndChaptersInput: z.infer<typeof InitialQuestsAndChaptersInputSchema> = {
-        seriesName: mainInput.seriesName, 
-        character: fullCharacterProfile, 
-        sceneDescription: sceneDescription, 
-        currentLocation: currentLocation, 
+        seriesName: mainInput.seriesName,
+        character: fullCharacterProfile,
+        sceneDescription: sceneDescription,
+        currentLocation: currentLocation,
         characterNameInput: mainInput.characterNameInput,
-        seriesPlotSummary: seriesPlotSummary,
+        seriesPlotSummary: generatedSeriesPlotSummary,
     };
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
         seriesName: mainInput.seriesName, character: fullCharacterProfile, sceneDescription: sceneDescription, currentLocation: currentLocation, characterNameInput: mainInput.characterNameInput,
@@ -582,27 +428,166 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       seriesName: mainInput.seriesName, characterName: fullCharacterProfile.name, characterClass: fullCharacterProfile.class, sceneDescription: sceneDescription, characterDescription: fullCharacterProfile.description,
     };
 
+    const initialInventoryPrompt = ai.definePrompt({
+        name: 'initialInventoryPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialInventoryOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialInventoryOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY 'inventory': An array of 0-3 unequipped starting items.
+- Each item: unique 'id', 'name', 'description', 'basePrice' (MUST BE a number, e.g., 0, 10, 50). All these fields are required.
+- 'equipSlot' if equippable gear (e.g., "weapon", "head"), OMITTED otherwise (e.g., for potions, keys).
+- 'isConsumable', 'effectDescription' for consumables. 'isQuestItem', 'relevantQuestId' for quest items.
+Adhere to JSON schema. Output ONLY { "inventory": [...] }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialInventoryOutputSchema definition provided earlier in this prompt.`,
+    });
+    const initialMainGearPrompt = ai.definePrompt({
+        name: 'initialMainGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialMainGearOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialMainGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY an object with 'weapon', 'shield', 'body' equipped items. Each field ('weapon', 'shield', 'body') MUST be present.
+- Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (must match slot key, e.g. "weapon")) or 'null'. All item fields are required if an item object is provided.
+Adhere to JSON schema. Output ONLY { "weapon": ..., "shield": ..., "body": ... }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialMainGearOutputSchema definition provided earlier in this prompt.`,
+    });
+    const initialSecondaryGearPrompt = ai.definePrompt({
+        name: 'initialSecondaryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialSecondaryGearOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialSecondaryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY an object with 'head', 'legs', 'feet', 'hands' equipped items. Each field ('head', 'legs', 'feet', 'hands') MUST be present.
+- Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (must match slot key, e.g. "head")) or 'null'. All item fields are required if an item object is provided.
+Adhere to JSON schema. Output ONLY an object with these four keys.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialSecondaryGearOutputSchema definition provided earlier in this prompt.`,
+    });
+    const initialAccessoryGearPrompt = ai.definePrompt({
+        name: 'initialAccessoryGearPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialAccessoryGearOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialAccessoryGearOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY an object with 'neck', 'ring1', 'ring2' equipped items. Each field ('neck', 'ring1', 'ring2') MUST be present.
+- Each slot: item object (unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), 'equipSlot' (should be "neck" or "ring")) or 'null'. All item fields are required if an item object is provided. If 'equipSlot' is "ring", it's for ring1 or ring2.
+Adhere to JSON schema. Output ONLY an object with these three keys.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialAccessoryGearOutputSchema definition provided earlier in this prompt.`,
+    });
+    const initialWorldFactsPrompt = ai.definePrompt({
+        name: 'initialWorldFactsPrompt', model: modelName, input: { schema: MinimalContextForItemsFactsInputSchema }, output: { schema: InitialWorldFactsOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialWorldFactsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
+Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+Generate ONLY 'worldFacts': An array of 3-5 key world facts (strings).
+- If 'character.languageReading' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot read the local script, making signs and books incomprehensible."
+- If 'character.languageSpeaking' is 0 (or very low, e.g., < 10), one fact MUST state the consequence, e.g., "Character {{character.name}} currently cannot understand or speak the local language, making verbal communication impossible."
+Adhere to JSON schema. Output ONLY { "worldFacts": [...] }.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialWorldFactsOutputSchema definition provided earlier in this prompt.`,
+    });
+    const initialQuestsAndChaptersPrompt = ai.definePrompt({
+        name: 'initialQuestsAndChaptersPrompt', model: modelName, input: { schema: InitialQuestsAndChaptersInputSchema }, output: { schema: InitialQuestsAndChaptersOutputSchema }, config: modelConfig,
+        tools: [lookupLoreTool],
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialQuestsAndChaptersOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+You are creating the initial chapters and main quests for a game set in the series "{{seriesName}}".
+Player Character: {{character.name}} ({{character.class}}, Level {{character.level}}) - {{character.description}}
+Initial Scene: {{sceneDescription}}
+Starting Location: {{currentLocation}}
+Key Canonical Plot Points for Early Story:
+{{{seriesPlotSummary}}}
+
+Your Task: Generate 'chapters' and 'quests'.
+1.  **'chapters' (Array of Chapter Objects):**
+    *   Based on the \`seriesPlotSummary\`, define 2-3 initial \`Chapter\` objects.
+    *   The FIRST chapter (order: 1) will have its main quests fully generated (see step 2). Its \`mainQuestIds\` field should list the IDs of these generated quests.
+    *   SUBSEQUENT chapters (order: 2, 3, etc.) MUST be generated as OUTLINES: they should have an 'id', 'title', 'description', 'order', \`isCompleted: false\`, and an EMPTY \`mainQuestIds: []\` array. Their quests will be fleshed out later.
+    *   Each chapter MUST have a unique 'id', 'title', 'description', 'order' (sequential number starting from 1), and 'isCompleted: false'.
+2.  **'quests' (Array of Quest Objects):**
+    *   Generate 2-3 'main' type \`Quest\` objects ONLY for the VERY FIRST chapter (the one with order: 1).
+    *   These main quests MUST closely follow the canonical events described in the \`seriesPlotSummary\` for that part of the story. Use \`lookupLoreTool\` if needed for accuracy on names, locations, or series-specific terms.
+    *   Each quest MUST have a unique 'id', 'title' (optional), 'description' (clear objective), 'type: "main"', 'status: "active"', and be linked to the first chapter via 'chapterId'. Assign 'orderInChapter' for sequence.
+    *   **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items (each with 'id', 'name', 'description', 'basePrice' (number), and optional 'equipSlot' - OMIT for non-equippable items)).
+    *   Include 1-2 'objectives' for each quest (with 'isCompleted: false').
+    *   Do NOT generate quests for the outlined subsequent chapters.
+
+**Adherence to Canon:** The 'main' quests for the first chapter MUST be as faithful as possible to the \`seriesPlotSummary\`.
+Output ONLY the JSON object { "quests": [...], "chapters": [...] }. Ensure all fields are correctly populated and typed (especially numbers for prices, XP, currency).
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialQuestsAndChaptersOutputSchema definition provided earlier in this prompt.`,
+    });
+    const initialTrackedNPCsPrompt = ai.definePrompt({
+        name: 'initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialTrackedNPCsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+For a story in "{{seriesName}}" starting with:
+Player Character: {{character.name}} ({{character.class}}, Currency: {{character.currency}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100) - {{character.description}}
+Initial Scene: {{sceneDescription}}
+Player's Starting Location: {{currentLocation}}
+
+Generate ONLY 'trackedNPCs': A list of NPC profiles.
+    - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
+        - Required Details: 'id' (unique), 'name', 'description', 'relationshipStatus' (MUST BE a number).
+        - Contextual Details: 'firstEncounteredLocation' MUST be '{{currentLocation}}', 'lastKnownLocation' MUST be '{{currentLocation}}'.
+        - If merchant: \`isMerchant: true\`, populate \`merchantInventory\` with items (each with unique \`id\`, \`name\`, \`description\`, \`basePrice\` (MUST BE a number), and merchant \`price\` (MUST BE a number). OMIT 'equipSlot' for non-equippable items in inventory.). All item fields are required if an item is present.
+    - PRE-POPULATED MAJOR NPCs (NOT in scene): For '{{seriesName}}', **prioritize** pre-populating profiles for 2-4 other major, well-known characters canonically crucial to the player character's ({{#if characterNameInput}}"{{characterNameInput}}"{{else}}the protagonist{{/if}}) very early experiences or the immediate starting context of the series.
+        - Required Details: 'id' (unique), 'name', 'description', 'relationshipStatus' (MUST BE a number).
+        - Contextual Details: Their 'firstEncounteredLocation' and 'lastKnownLocation' should be their canonical known locations from the series, OR a general "Known from series lore" if not tied to a single place. **DO NOT use '{{currentLocation}}' for these pre-populated NPCs unless the 'Initial Scene' input explicitly states they are there.**
+        - If merchant: include merchant data as above.
+    - For ALL NPCs: 'firstEncounteredTurnId' & 'lastSeenTurnId' = "initial_turn_0". Empty dialogue history. Optional 'seriesContextNotes', 'shortTermGoal', 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number).
+Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all fields are correctly populated and typed, especially numeric ones.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialTrackedNPCsOutputSchema definition provided earlier in this prompt.`,
+    });
+    const loreEntriesPrompt = ai.definePrompt({
+        name: 'generateLoreEntriesPrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: z.array(Scenario_RawLoreEntryZodSchema) }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON array conforming to the output schema (an array of Scenario_RawLoreEntryZodSchema objects). Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+You are a lore master for "{{seriesName}}".
+Context: Character "{{characterName}}" ({{characterClass}}).
+Scene: {{sceneDescription}}
+Character Background: {{characterDescription}}
+Generate 6-8 key lore entries. Each entry MUST have a 'keyword' and 'content'. 'category' is optional.
+Output ONLY JSON array.
+Ensure all field names and values in your JSON response strictly match the types and requirements described in the output schema definition provided earlier in this prompt.`,
+    });
+
+
     const mainBatchPromises = [
         initialInventoryPrompt(minimalContextForItemsFactsInput),
         initialMainGearPrompt(minimalContextForItemsFactsInput),
         initialSecondaryGearPrompt(minimalContextForItemsFactsInput),
         initialAccessoryGearPrompt(minimalContextForItemsFactsInput),
         initialWorldFactsPrompt(minimalContextForItemsFactsInput),
-        initialQuestsAndChaptersPrompt(questsAndChaptersInput), // Changed from initialQuestsPrompt
+        initialQuestsAndChaptersPrompt(questsAndChaptersInput),
         initialTrackedNPCsPrompt(npcsInput),
         loreEntriesPrompt(loreInput),
     ];
 
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Firing ${mainBatchPromises.length} parallel AI calls.`);
     const [
         inventoryResult,
         mainGearResult,
         secondaryGearResult,
         accessoryGearResult,
         worldFactsResult,
-        questsAndChaptersResult, // Changed from questsResult
+        questsAndChaptersResult,
         npcsResult,
         loreResult,
-    ] = await Promise.all(mainBatchPromises);
+    ] = await Promise.all(mainBatchPromises.map(async (promise, index) => {
+        const callStartTime = Date.now();
+        const promptName = ['inventory', 'mainGear', 'secondaryGear', 'accessoryGear', 'worldFacts', 'questsChapters', 'npcs', 'lore'][index];
+        console.log(`[${new Date(callStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Calling ${promptName}Prompt.`);
+        const result = await promise;
+        console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - ${promptName}Prompt call completed in ${Date.now() - callStartTime}ms.`);
+        return result;
+    }));
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Main Parallel Batch completed in ${Date.now() - stepStartTime}ms.`);
 
     const inventoryOutput = inventoryResult.output;
@@ -610,7 +595,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     const secondaryGearRaw = secondaryGearResult.output;
     const accessoryGearRaw = accessoryGearResult.output;
     const worldFactsOutput = worldFactsResult.output;
-    const questsAndChaptersOutput = questsAndChaptersResult.output; // Changed
+    const questsAndChaptersOutput = questsAndChaptersResult.output;
     const npcsOutput = npcsResult.output;
     const loreEntries = loreResult.output || [];
 
@@ -622,15 +607,14 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     const accessoryGearOutput = accessoryGearRaw || { neck: null, ring1: null, ring2: null };
     if (!worldFactsOutput || !worldFactsOutput.worldFacts) { throw new Error('Failed to generate initial world facts.'); }
     const worldFacts = worldFactsOutput.worldFacts;
-    
-    // Handle quests and chapters
+
     if (!questsAndChaptersOutput || !questsAndChaptersOutput.quests || !questsAndChaptersOutput.chapters) { throw new Error('Failed to generate initial quests and chapters.'); }
     const quests = questsAndChaptersOutput.quests;
     const chapters = questsAndChaptersOutput.chapters;
 
     if (!npcsOutput || !npcsOutput.trackedNPCs) { throw new Error('Failed to generate initial tracked NPCs.'); }
     const trackedNPCs = npcsOutput.trackedNPCs;
-    
+
     const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
         weapon: mainGearOutput.weapon ?? null, shield: mainGearOutput.shield ?? null, body: mainGearOutput.body ?? null,
         head: secondaryGearOutput.head ?? null, legs: secondaryGearOutput.legs ?? null, feet: secondaryGearOutput.feet ?? null, hands: secondaryGearOutput.hands ?? null,
@@ -638,23 +622,24 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     };
     const seriesStyleGuide = styleGuideRaw === null ? undefined : styleGuideRaw;
 
+    const firstChapter = chapters.find(c => c.order === 1);
     const storyState: z.infer<typeof StructuredStoryStateSchemaInternal> = {
-        character: fullCharacterProfile, 
-        currentLocation: currentLocation, 
+        character: fullCharacterProfile,
+        currentLocation: currentLocation,
         inventory: inventory,
-        equippedItems: equippedItemsIntermediate as Required<typeof equippedItemsIntermediate>, 
-        quests: quests, 
-        chapters: chapters, // Added chapters
-        currentChapterId: chapters.find(c => c.order === 1 && !c.isCompleted)?.id, // Set initial chapter
-        worldFacts: worldFacts, 
+        equippedItems: equippedItemsIntermediate as Required<typeof equippedItemsIntermediate>,
+        quests: quests,
+        chapters: chapters,
+        currentChapterId: firstChapter?.id,
+        worldFacts: worldFacts,
         trackedNPCs: trackedNPCs,
-        storySummary: `The adventure begins for ${fullCharacterProfile.name} in ${mainInput.seriesName}, at ${currentLocation}. Chapter 1: ${chapters.find(c=>c.order===1)?.title || 'The Beginning'}. Initial scene: ${sceneDescription.substring(0,100)}...`,
+        storySummary: `The adventure begins for ${fullCharacterProfile.name} in ${mainInput.seriesName}, at ${currentLocation}. Chapter 1: ${firstChapter?.title || 'The Beginning'}. Initial scene: ${sceneDescription.substring(0,100)}...`,
     };
-    
-    let finalOutput: GenerateScenarioFromSeriesOutput = {
-      sceneDescription: sceneDescription, storyState: storyState, initialLoreEntries: loreEntries, seriesStyleGuide: seriesStyleGuide,
+
+    let finalOutput: IGenerateScenarioFromSeriesOutput = {
+      sceneDescription: sceneDescription, storyState: storyState, initialLoreEntries: loreEntries, seriesStyleGuide: seriesStyleGuide, seriesPlotSummary: generatedSeriesPlotSummary
     };
-    
+
     // --- Final Sanitation Pass ---
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Performing final data sanitation.`);
     if (finalOutput.storyState.character) {
@@ -678,7 +663,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       char.experienceToNextLevel = char.experienceToNextLevel && char.experienceToNextLevel > 0 ? char.experienceToNextLevel : 100;
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
-      
+
       char.languageReading = char.languageReading ?? 100;
       if (char.languageReading < 0) char.languageReading = 0;
       if (char.languageReading > 100) char.languageReading = 100;
@@ -686,7 +671,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       char.languageSpeaking = char.languageSpeaking ?? 100;
       if (char.languageSpeaking < 0) char.languageSpeaking = 0;
       if (char.languageSpeaking > 100) char.languageSpeaking = 100;
-      
+
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
       char.skillsAndAbilities.forEach((skill, index) => {
           if (!skill.id) skill.id = `skill_generated_series_${Date.now()}_${index}`;
@@ -710,7 +695,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
         item.basePrice = item.basePrice ?? 0;
         if (item.basePrice < 0) item.basePrice = 0;
       });
-      
+
       finalOutput.storyState.chapters = finalOutput.storyState.chapters ?? [];
       const chapterIds = new Set<string>();
       finalOutput.storyState.chapters.forEach((chapter, index) => {
@@ -725,8 +710,8 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
           chapter.mainQuestIds = chapter.mainQuestIds ?? [];
       });
       if (!finalOutput.storyState.currentChapterId && finalOutput.storyState.chapters.length > 0) {
-        const firstChapter = finalOutput.storyState.chapters.find(c => c.order === 1);
-        if (firstChapter) finalOutput.storyState.currentChapterId = firstChapter.id;
+        const firstChap = finalOutput.storyState.chapters.find(c => c.order === 1);
+        if (firstChap) finalOutput.storyState.currentChapterId = firstChap.id;
       }
 
 
@@ -737,7 +722,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
             quest.id = `quest_series_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
         }
         questIds.add(quest.id);
-        quest.title = quest.title || "Untitled Quest";
+        quest.title = quest.title || undefined;
         quest.description = quest.description || "No description.";
         quest.type = quest.type || 'dynamic';
         quest.status = quest.status || 'active';
@@ -769,13 +754,13 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
           delete quest.rewards;
         }
       });
-      
+
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts ?? [];
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
       const defaultEquippedSlots: Record<EquipmentSlot, null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
       const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>;
-      const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots}; 
+      const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots};
       const equippedItemIdSet = new Set<string>();
 
       for (const slotKey of Object.keys(defaultEquippedSlots) as EquipmentSlot[]) {
@@ -817,12 +802,12 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
                 if (!mItem.id || mItem.id.trim() === "" || invItemIds.has(mItem.id) || equippedItemIdSet.has(mItem.id)) {
                   mItem.id = `item_merchant_series_${Date.now()}_${mIndex}_${Math.random().toString(36).substring(2,7)}`;
                 }
-                invItemIds.add(mItem.id); 
+                invItemIds.add(mItem.id);
                 mItem.name = mItem.name || "Unnamed Merchant Item";
                 mItem.description = mItem.description || "No description.";
                 mItem.basePrice = mItem.basePrice ?? 0;
                 if(mItem.basePrice < 0) mItem.basePrice = 0;
-                (mItem as any).price = (mItem as any).price ?? mItem.basePrice; 
+                (mItem as any).price = (mItem as any).price ?? mItem.basePrice;
                 if((mItem as any).price < 0) (mItem as any).price = 0;
             });
         }
@@ -830,10 +815,14 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       });
       finalOutput.storyState.storySummary = finalOutput.storyState.storySummary ?? "";
     }
-    
+
     if (finalOutput.seriesStyleGuide === '' || finalOutput.seriesStyleGuide === undefined || finalOutput.seriesStyleGuide === null) delete finalOutput.seriesStyleGuide;
+    if (finalOutput.seriesPlotSummary === '' || finalOutput.seriesPlotSummary === undefined || finalOutput.seriesPlotSummary === null) delete finalOutput.seriesPlotSummary;
+
 
     console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
     return finalOutput;
   }
 );
+
+    

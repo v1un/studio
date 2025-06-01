@@ -3,8 +3,10 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
-import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment, DisplayMessage } from "@/types/story";
+import { fleshOutChapterQuests as callFleshOutChapterQuests } from "@/ai/flows/flesh-out-chapter-quests";
+import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment, DisplayMessage, FleshOutChapterQuestsInput, FleshOutChapterQuestsOutput } from "@/types/story";
 import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, Chapter } from "@/types/story";
+import { produce } from "immer";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -17,10 +19,10 @@ import LorebookDisplay from "@/components/story-forge/lorebook-display";
 import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-log-display";
 
-import { simpleTestAction } from '@/ai/actions/simple-test-action'; 
+import { simpleTestAction } from '@/ai/actions/simple-test-action';
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,7 +56,7 @@ export default function StoryForgePage() {
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
-  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | null>(null);
+  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'chapterLoad' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
@@ -63,16 +65,18 @@ export default function StoryForgePage() {
 
     if (isLoadingInteraction && loadingType === 'scenario') {
         let stepIndex = 0;
-        setLoadingMessage(scenarioGenerationSteps[stepIndex]); 
+        setLoadingMessage(scenarioGenerationSteps[stepIndex]);
 
         intervalId = setInterval(() => {
             stepIndex = (stepIndex + 1) % scenarioGenerationSteps.length;
             setLoadingMessage(scenarioGenerationSteps[stepIndex]);
         }, 2500);
     } else if (isLoadingInteraction && loadingType === 'nextScene') {
-        setLoadingMessage("AI is crafting the next part of your tale..."); 
+        setLoadingMessage("AI is crafting the next part of your tale...");
+    } else if (isLoadingInteraction && loadingType === 'chapterLoad') {
+        setLoadingMessage("The next chapter of your saga is unfolding...");
     }
-    
+
     return () => {
         if (intervalId) {
             clearInterval(intervalId);
@@ -107,7 +111,7 @@ export default function StoryForgePage() {
           setStoryHistory([]);
         }
       } else {
-        localStorage.removeItem(ACTIVE_SESSION_ID_KEY); 
+        localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
         setCurrentSession(null);
         setStoryHistory([]);
       }
@@ -130,10 +134,10 @@ export default function StoryForgePage() {
         storyHistory: storyHistory,
         lastPlayedAt: new Date().toISOString(),
       };
-    
+
     const sessionKey = `${SESSION_KEY_PREFIX}${currentSession.id}`;
     localStorage.setItem(sessionKey, JSON.stringify(sessionToSave));
-    
+
   }, [storyHistory, currentSession, isLoadingPage]);
 
 
@@ -142,7 +146,7 @@ export default function StoryForgePage() {
 
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
-    setLoadingType('scenario'); 
+    setLoadingType('scenario');
     const input: GenerateScenarioFromSeriesInput = {
       seriesName: data.seriesName,
       characterNameInput: data.characterName,
@@ -154,8 +158,8 @@ export default function StoryForgePage() {
     try {
       const result: GenerateScenarioFromSeriesOutput = await generateScenarioFromSeries(input);
       console.log("CLIENT: Scenario generation successful. Result:", result);
-      
-      clearLorebook(); 
+
+      clearLorebook();
       if (result.initialLoreEntries) {
         initializeLorebook(result.initialLoreEntries);
       }
@@ -170,13 +174,13 @@ export default function StoryForgePage() {
         avatarHint: "wizard staff",
         isPlayer: false,
       };
-      
+
       const firstTurn: StoryTurn = {
         id: crypto.randomUUID(),
         messages: [initialGMMessage],
         storyStateAfterScene: result.storyState,
       };
-      
+
       const newSessionId = crypto.randomUUID();
       const newSession: GameSession = {
         id: newSessionId,
@@ -187,13 +191,14 @@ export default function StoryForgePage() {
         lastPlayedAt: new Date().toISOString(),
         seriesName: data.seriesName,
         seriesStyleGuide: result.seriesStyleGuide,
+        seriesPlotSummary: result.seriesPlotSummary,
         isPremiumSession: data.usePremiumAI,
         allDataCorrectionWarnings: [],
       };
 
       localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
       localStorage.setItem(ACTIVE_SESSION_ID_KEY, newSession.id);
-      
+
       setStoryHistory([firstTurn]);
       setCurrentSession(newSession);
       setActiveTab("story");
@@ -224,7 +229,7 @@ export default function StoryForgePage() {
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
       speakerType: 'Player',
-      speakerNameLabel: character.name, 
+      speakerNameLabel: character.name,
       speakerDisplayName: character.name,
       content: userInput,
       avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
@@ -237,7 +242,7 @@ export default function StoryForgePage() {
          const newTurnForPlayerMessage: StoryTurn = {
             id: `pending-${crypto.randomUUID()}`,
             messages: [playerMessage],
-            storyStateAfterScene: lastTurn.storyStateAfterScene 
+            storyStateAfterScene: lastTurn.storyStateAfterScene
         };
         return [...prevHistory, newTurnForPlayerMessage];
     });
@@ -245,20 +250,20 @@ export default function StoryForgePage() {
 
     try {
       const { generateNextScene } = await import("@/ai/flows/generate-next-scene");
-      
+
       const lastGMMessagesContent = storyHistory
         .flatMap(turn => turn.messages)
         .filter(m => m.speakerType === 'GM')
-        .slice(-3) 
+        .slice(-3)
         .map(m => m.content)
-        .join("\n...\n"); 
+        .join("\n...\n");
 
       const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
       console.log("CLIENT: Calling generateNextScene with context:", { currentSceneContext, userInput, currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial' });
 
 
       const result = await generateNextScene({
-        currentScene: currentSceneContext, 
+        currentScene: currentSceneContext,
         userInput: userInput,
         storyState: currentStoryState,
         seriesName: currentSession.seriesName,
@@ -268,28 +273,98 @@ export default function StoryForgePage() {
       });
       console.log("CLIENT: generateNextScene successful. Result:", result);
 
+      let finalUpdatedState = result.updatedStoryState;
+
+      // Check for chapter completion and flesh out next chapter
+      const previousChapterId = currentStoryState.currentChapterId;
+      const currentChapterInNewState = finalUpdatedState.chapters.find(c => c.id === previousChapterId);
+
+      if (previousChapterId && currentChapterInNewState?.isCompleted) {
+        console.log(`CLIENT: Chapter "${currentChapterInNewState.title}" (ID: ${previousChapterId}) completed.`);
+        const nextChapterOrder = currentChapterInNewState.order + 1;
+        const nextChapterToFleshOut = finalUpdatedState.chapters.find(
+          c => c.order === nextChapterOrder && !c.isCompleted && (!c.mainQuestIds || c.mainQuestIds.length === 0)
+        );
+
+        if (nextChapterToFleshOut && currentSession.seriesPlotSummary) {
+          console.log(`CLIENT: Found next outlined chapter: "${nextChapterToFleshOut.title}". Attempting to flesh out quests.`);
+          setLoadingType('chapterLoad'); // Update loading message for chapter
+          toast({
+            title: "Chapter Complete!",
+            description: (
+              <div className="flex items-start">
+                <Milestone className="w-5 h-5 mr-2 mt-0.5 text-accent shrink-0" />
+                <span>{currentChapterInNewState.title} finished. Preparing the next chapter...</span>
+              </div>
+            ),
+            duration: 6000,
+          });
+
+
+          try {
+            const fleshOutInput: FleshOutChapterQuestsInput = {
+              chapterToFleshOut: nextChapterToFleshOut,
+              seriesName: currentSession.seriesName,
+              seriesPlotSummary: currentSession.seriesPlotSummary,
+              overallStorySummarySoFar: finalUpdatedState.storySummary || "",
+              characterContext: { name: finalUpdatedState.character.name, class: finalUpdatedState.character.class, level: finalUpdatedState.character.level },
+              usePremiumAI: currentSession.isPremiumSession,
+            };
+            console.log("CLIENT: Calling fleshOutChapterQuests with input:", fleshOutInput);
+            const fleshedResult: FleshOutChapterQuestsOutput = await callFleshOutChapterQuests(fleshOutInput);
+            console.log("CLIENT: fleshOutChapterQuests successful. Result:", fleshedResult);
+
+            finalUpdatedState = produce(finalUpdatedState, draftState => {
+              draftState.quests.push(...fleshedResult.fleshedOutQuests);
+              const chapterIndex = draftState.chapters.findIndex(c => c.id === nextChapterToFleshOut.id);
+              if (chapterIndex !== -1) {
+                draftState.chapters[chapterIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
+              }
+              draftState.currentChapterId = nextChapterToFleshOut.id;
+            });
+            toast({
+              title: `Chapter Started: ${nextChapterToFleshOut.title}`,
+              description: `New main quests are available in your journal.`,
+              duration: 5000,
+            });
+          } catch (fleshOutError: any) {
+            console.error("CLIENT: Failed to flesh out chapter quests:", fleshOutError);
+            toast({
+              title: "Error Loading Next Chapter",
+              description: `Could not generate quests for "${nextChapterToFleshOut.title}". ${fleshOutError.message || ""}`,
+              variant: "destructive",
+            });
+          }
+          setLoadingType('nextScene'); // Revert loading type after chapter load attempt
+        } else if (nextChapterToFleshOut && !currentSession.seriesPlotSummary) {
+            console.warn("CLIENT: Next chapter is outlined, but no seriesPlotSummary found in session to flesh it out.");
+        } else if (!nextChapterToFleshOut && currentChapterInNewState?.isCompleted) {
+            toast({ title: "Main Story Progress!", description: "You've completed all available chapters for now!" });
+        }
+      }
+
 
       const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
-        const isGM = aiMsg.speaker.toUpperCase() === 'GM'; 
+        const isGM = aiMsg.speaker.toUpperCase() === 'GM';
         const speakerLabel = isGM ? 'GAME-MASTER' : aiMsg.speaker;
         const speakerDisplayName = isGM ? 'admin' : aiMsg.speaker;
-        
+
         return {
           id: crypto.randomUUID(),
           speakerType: isGM ? 'GM' : 'NPC',
           speakerNameLabel: speakerLabel,
           speakerDisplayName: speakerDisplayName,
           content: aiMsg.content,
-          avatarSrc: GM_AVATAR_PLACEHOLDER, 
-          avatarHint: isGM ? "wizard staff" : "merchant friendly", 
+          avatarSrc: GM_AVATAR_PLACEHOLDER,
+          avatarHint: isGM ? "wizard staff" : "merchant friendly",
           isPlayer: false,
         };
       });
-      
+
       const completedTurn: StoryTurn = {
         id: crypto.randomUUID(),
-        messages: [playerMessage, ...aiDisplayMessages], 
-        storyStateAfterScene: result.updatedStoryState,
+        messages: [playerMessage, ...aiDisplayMessages],
+        storyStateAfterScene: finalUpdatedState,
       };
 
       setStoryHistory(prevHistory => {
@@ -311,7 +386,7 @@ export default function StoryForgePage() {
           duration: 5000,
         });
       }
-      
+
       if (result.dataCorrectionWarnings && result.dataCorrectionWarnings.length > 0) {
         const newWarningsEntry = {
           timestamp: new Date().toISOString(),
@@ -331,7 +406,7 @@ export default function StoryForgePage() {
                 <span>{warning}</span>
               </div>
             ),
-            duration: 7000, 
+            duration: 7000,
           });
         });
       }
@@ -352,10 +427,10 @@ export default function StoryForgePage() {
   };
 
   const handleUndo = () => {
-    if (storyHistory.length > 1) { 
+    if (storyHistory.length > 1) {
       setStoryHistory((prevHistory) => prevHistory.slice(0, -1));
        toast({ title: "Last interaction undone."});
-    } else if (storyHistory.length === 1) { 
+    } else if (storyHistory.length === 1) {
       handleRestart();
     }
   };
@@ -365,10 +440,10 @@ export default function StoryForgePage() {
       localStorage.removeItem(`${SESSION_KEY_PREFIX}${currentSession.id}`);
     }
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
-    clearLorebook(); 
+    clearLorebook();
     setStoryHistory([]);
     setCurrentSession(null);
-    setActiveTab("story"); 
+    setActiveTab("story");
     toast({
       title: "Story Session Cleared",
       description: "Ready for a new adventure!",
@@ -388,26 +463,26 @@ export default function StoryForgePage() {
   };
 
   const handleTestSimpleAction = async () => {
-    console.log("CLIENT: Calling simpleTestAction..."); 
-    setIsLoadingInteraction(true); 
+    console.log("CLIENT: Calling simpleTestAction...");
+    setIsLoadingInteraction(true);
     try {
       const result = await simpleTestAction({ name: "StoryForge User" });
-      console.log("CLIENT: simpleTestAction result:", result); 
+      console.log("CLIENT: simpleTestAction result:", result);
       toast({
         title: "Simple Test Action Successful",
         description: `Greeting: ${result.greeting} (Server Time: ${new Date(result.timestamp).toLocaleTimeString()})`,
       });
     } catch (error: any) {
-      console.error("CLIENT: Error calling simpleTestAction:", error); 
+      console.error("CLIENT: Error calling simpleTestAction:", error);
       toast({
         title: "Simple Test Action Failed",
         description: error.message || "Unknown error",
         variant: "destructive",
       });
     }
-    setIsLoadingInteraction(false); 
+    setIsLoadingInteraction(false);
   };
-  
+
   if (isLoadingPage) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 sm:p-8">
@@ -439,13 +514,13 @@ export default function StoryForgePage() {
 
         {!currentSession && !isLoadingInteraction && (
           <div className="flex-grow flex items-center justify-center">
-            <InitialPromptForm 
+            <InitialPromptForm
               onSubmitSeries={handleStartStoryFromSeries}
-              isLoading={isLoadingInteraction} 
+              isLoading={isLoadingInteraction}
             />
           </div>
         )}
-        
+
         {currentSession && character && currentStoryState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
             <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
@@ -455,7 +530,7 @@ export default function StoryForgePage() {
               <TabsTrigger value="character" className="text-xs sm:text-sm">
                 <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
               </TabsTrigger>
-               <TabsTrigger value="npcs" className="text-xs sm:text-sm"> 
+               <TabsTrigger value="npcs" className="text-xs sm:text-sm">
                 <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
               </TabsTrigger>
               <TabsTrigger value="journal" className="text-xs sm:text-sm">
@@ -489,9 +564,9 @@ export default function StoryForgePage() {
                 </Button>
               </div>
               <div className="shrink-0">
-                <MinimalCharacterStatus 
-                    character={character} 
-                    storyState={currentStoryState} 
+                <MinimalCharacterStatus
+                    character={character}
+                    storyState={currentStoryState}
                     isPremiumSession={currentSession.isPremiumSession}
                 />
               </div>
@@ -508,32 +583,32 @@ export default function StoryForgePage() {
               <CharacterSheet character={character} storyState={currentStoryState} />
             </TabsContent>
 
-            <TabsContent value="npcs" className="overflow-y-auto flex-grow"> 
+            <TabsContent value="npcs" className="overflow-y-auto flex-grow">
               <NPCTrackerDisplay trackedNPCs={currentStoryState.trackedNPCs as NPCProfile[]} currentTurnId={storyHistory[storyHistory.length-1]?.id || 'initial'} />
             </TabsContent>
 
             <TabsContent value="journal" className="overflow-y-auto flex-grow">
-              <JournalDisplay 
-                quests={currentStoryState.quests as Quest[]} 
+              <JournalDisplay
+                quests={currentStoryState.quests as Quest[]}
                 chapters={currentStoryState.chapters as Chapter[]}
                 currentChapterId={currentStoryState.currentChapterId}
-                worldFacts={currentStoryState.worldFacts} 
+                worldFacts={currentStoryState.worldFacts}
               />
             </TabsContent>
-            
+
             <TabsContent value="lorebook" className="overflow-y-auto flex-grow">
               <LorebookDisplay />
             </TabsContent>
 
             <TabsContent value="dev-logs" className="overflow-y-auto flex-grow">
-              <DataCorrectionLogDisplay 
+              <DataCorrectionLogDisplay
                 warnings={currentSession?.allDataCorrectionWarnings || []}
                 onClearLogs={handleClearCorrectionLogs}
               />
             </TabsContent>
           </Tabs>
         )}
-         {currentSession && (!character || !currentStoryState) && !isLoadingInteraction && ( 
+         {currentSession && (!character || !currentStoryState) && !isLoadingInteraction && (
             <div className="text-center p-6 bg-card rounded-lg shadow-md flex-grow flex flex-col items-center justify-center">
                 <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
                 <Button onClick={handleRestart}>Start a New Adventure</Button>
@@ -546,6 +621,3 @@ export default function StoryForgePage() {
     </div>
   );
 }
-
-    
-

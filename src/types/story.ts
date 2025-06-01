@@ -67,15 +67,15 @@ export interface QuestRewards {
 
 export interface Quest {
   id: string;
-  title?: string; // New: Short title for the quest
+  title?: string;
   description: string;
-  type: 'main' | 'side' | 'dynamic' | 'chapter_goal'; // New: Categorize quests
-  status: 'active' | 'completed' | 'failed'; // Added 'failed'
-  chapterId?: string; // New: Link to a chapter for main quests
-  orderInChapter?: number; // New: Suggested order within a chapter
+  type: 'main' | 'side' | 'dynamic' | 'chapter_goal';
+  status: 'active' | 'completed' | 'failed';
+  chapterId?: string;
+  orderInChapter?: number;
   category?: string;
   objectives?: QuestObjective[];
-  rewards?: QuestRewards; // Potential rewards defined at quest creation
+  rewards?: QuestRewards;
   updatedAt?: string;
 }
 
@@ -84,9 +84,9 @@ export interface Chapter {
   title: string;
   description: string;
   order: number;
-  mainQuestIds?: string[]; // IDs of 'main' type Quests belonging to this chapter
+  mainQuestIds: string[]; // Initially, for outlined chapters, this might be empty.
   isCompleted: boolean;
-  unlockCondition?: string; // e.g., "previousChapterCompleted"
+  unlockCondition?: string;
 }
 
 
@@ -97,28 +97,28 @@ export interface NPCDialogueEntry {
 }
 
 export interface NPCProfile {
-  id: string; // Unique identifier, e.g., npc_borin_the_dwarf_001
+  id: string;
   name: string;
-  description: string; // Physical appearance, general demeanor, key characteristics
-  classOrRole?: string; // e.g., "Merchant", "Guard Captain"
-  health?: number; // Current health, if applicable (e.g., for combat)
-  maxHealth?: number; // Maximum health, if applicable
-  mana?: number; // Current mana/energy, if applicable
-  maxMana?: number; // Maximum mana/energy, if applicable
+  description: string;
+  classOrRole?: string;
+  health?: number;
+  maxHealth?: number;
+  mana?: number;
+  maxMana?: number;
   firstEncounteredLocation?: string;
-  firstEncounteredTurnId?: string; // ID of the StoryTurn when first met
-  relationshipStatus: number; // Numerical score, e.g., -100 (Hostile) to 100 (Allied), 0 is Neutral.
-  knownFacts: string[]; // Specific pieces of information player has learned
-  dialogueHistory?: NPCDialogueEntry[]; // Logs key interaction moments
+  firstEncounteredTurnId?: string;
+  relationshipStatus: number;
+  knownFacts: string[];
+  dialogueHistory?: NPCDialogueEntry[];
   lastKnownLocation?: string;
   lastSeenTurnId?: string;
-  seriesContextNotes?: string; // AI-internal note about their role if from a known series
-  shortTermGoal?: string; // A simple, immediate goal this NPC might be pursuing.
-  updatedAt?: string; // Timestamp of the last update to this profile
+  seriesContextNotes?: string;
+  shortTermGoal?: string;
+  updatedAt?: string;
   isMerchant?: boolean;
-  merchantInventory?: Item[]; // Items the merchant sells (item should include its specific sale price)
-  buysItemTypes?: string[]; // Optional: Categories of items they buy
-  sellsItemTypes?: string[]; // Optional: Categories of items they sell
+  merchantInventory?: Item[];
+  buysItemTypes?: string[];
+  sellsItemTypes?: string[];
 }
 
 export interface StructuredStoryState {
@@ -127,39 +127,40 @@ export interface StructuredStoryState {
   inventory: Item[];
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   quests: Quest[];
-  chapters: Chapter[]; // New: Main storyline chapters
-  currentChapterId?: string; // New: Tracks the active chapter
+  chapters: Chapter[];
+  currentChapterId?: string;
   worldFacts: string[];
   trackedNPCs: NPCProfile[];
-  storySummary?: string; // A brief, running summary of key story events and character developments.
+  storySummary?: string;
 }
 
 export interface DisplayMessage {
-  id: string; // Unique ID for key prop
+  id: string;
   speakerType: 'Player' | 'GM' | 'NPC';
-  speakerNameLabel: string; // "Player", "GAME-MASTER", or NPC's actual name for the label
-  speakerDisplayName?: string; // For NPC, this would be their name. For GM, "admin". For Player, their character name.
+  speakerNameLabel: string;
+  speakerDisplayName?: string;
   content: string;
-  avatarSrc?: string; // URL for the avatar image
-  avatarHint?: string; // For AI-assisted image search if placeholder
+  avatarSrc?: string;
+  avatarHint?: string;
   isPlayer: boolean;
 }
 
 export interface StoryTurn {
   id: string;
   messages: DisplayMessage[];
-  storyStateAfterScene: StructuredStoryState; // Retains the full state after AI processing for this turn
+  storyStateAfterScene: StructuredStoryState;
 }
 
 export interface GameSession {
   id:string;
   storyPrompt: string;
   characterName: string;
-  storyHistory: StoryTurn[]; // Array of story turns, each containing messages and state
+  storyHistory: StoryTurn[];
   createdAt: string;
   lastPlayedAt: string;
   seriesName: string;
   seriesStyleGuide?: string;
+  seriesPlotSummary?: string; // Added to store plot summary for fleshing out chapters
   isPremiumSession?: boolean;
   allDataCorrectionWarnings?: { timestamp: string; warnings: string[] }[];
 }
@@ -180,7 +181,6 @@ export interface RawLoreEntry {
   category?: string;
 }
 
-// Input/Output types for AI Flows
 export interface GenerateScenarioFromSeriesInput {
   seriesName: string;
   characterNameInput?: string;
@@ -189,10 +189,11 @@ export interface GenerateScenarioFromSeriesInput {
 }
 
 export interface GenerateScenarioFromSeriesOutput {
-  sceneDescription: string; // AI's initial scene description
+  sceneDescription: string;
   storyState: StructuredStoryState;
   initialLoreEntries: RawLoreEntry[];
   seriesStyleGuide?: string;
+  seriesPlotSummary?: string; // Added to pass plot summary to client
 }
 
 export interface ActiveNPCInfo {
@@ -201,20 +202,18 @@ export interface ActiveNPCInfo {
   keyDialogueOrAction?: string;
 }
 
-// This represents a single piece of dialogue or narration from the AI
 export interface AIMessageSegment {
-    speaker: string; // 'GM' for Game Master/narration, or the NPC's name if an NPC is speaking
-    content: string; // The text of the dialogue or narration
+    speaker: string;
+    content: string;
 }
 
-// --- Types for Multi-Step GenerateNextScene ---
-export type EventType = 
-  | 'healthChange' 
+export type EventType =
+  | 'healthChange'
   | 'manaChange'
   | 'xpChange'
-  | 'levelUp' // Generic level up, specific rewards handled by TypeScript or subsequent focused AI call
+  | 'levelUp'
   | 'currencyChange'
-  | 'languageSkillChange' // Changed from languageImprovement
+  | 'languageSkillChange'
   | 'itemFound'
   | 'itemLost'
   | 'itemUsed'
@@ -223,34 +222,34 @@ export type EventType =
   | 'questAccepted'
   | 'questObjectiveUpdate'
   | 'questCompleted'
-  | 'questFailed' // Future
+  | 'questFailed'
   | 'npcRelationshipChange'
-  | 'npcStateChange' // e.g., becomes hostile, starts following player
-  | 'newNPCIntroduced' // When an NPC is mentioned for the first time with enough detail to create a basic profile
+  | 'npcStateChange'
+  | 'newNPCIntroduced'
   | 'worldFactAdded'
   | 'worldFactRemoved'
   | 'worldFactUpdated'
-  | 'skillLearned'; // For new skills gained
+  | 'skillLearned';
 
 export interface DescribedEventBase {
   type: EventType;
-  reason?: string; // Optional narrative reason for the event
+  reason?: string;
 }
 
-export interface HealthChangeEvent extends DescribedEventBase { type: 'healthChange'; characterTarget: 'player' | string; amount: number; } // amount can be negative
+export interface HealthChangeEvent extends DescribedEventBase { type: 'healthChange'; characterTarget: 'player' | string; amount: number; }
 export interface ManaChangeEvent extends DescribedEventBase { type: 'manaChange'; characterTarget: 'player' | string; amount: number; }
 export interface XPChangeEvent extends DescribedEventBase { type: 'xpChange'; amount: number; }
-export interface LevelUpEvent extends DescribedEventBase { type: 'levelUp'; newLevel: number; rewardSuggestion?: string; } // e.g., "suggests increasing strength"
+export interface LevelUpEvent extends DescribedEventBase { type: 'levelUp'; newLevel: number; rewardSuggestion?: string; }
 export interface CurrencyChangeEvent extends DescribedEventBase { type: 'currencyChange'; amount: number; }
 export interface LanguageSkillChangeEvent extends DescribedEventBase { type: 'languageSkillChange'; skillTarget: 'reading' | 'speaking'; amount: number; }
 
 
-export interface ItemFoundEvent extends DescribedEventBase { 
-  type: 'itemFound'; 
-  itemName: string; 
-  itemDescription: string; 
+export interface ItemFoundEvent extends DescribedEventBase {
+  type: 'itemFound';
+  itemName: string;
+  itemDescription: string;
   quantity?: number;
-  suggestedBasePrice?: number; 
+  suggestedBasePrice?: number;
   equipSlot?: Item['equipSlot'];
   isConsumable?: boolean;
   effectDescription?: string;
@@ -258,28 +257,29 @@ export interface ItemFoundEvent extends DescribedEventBase {
   relevantQuestId?: string;
 }
 export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
-export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; } // Effects handled by TypeScript based on item properties
+export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; }
 export interface ItemEquippedEvent extends DescribedEventBase { type: 'itemEquipped'; itemIdOrName: string; slot: EquipmentSlot; }
 export interface ItemUnequippedEvent extends DescribedEventBase { type: 'itemUnequipped'; itemIdOrName: string; slot: EquipmentSlot; }
 
-export interface QuestAcceptedEvent extends DescribedEventBase { 
-  type: 'questAccepted'; 
-  questIdSuggestion?: string; // AI can suggest an ID
-  questTitle?: string; // New
-  questDescription: string; 
-  questType?: Quest['type']; // New
-  chapterId?: string; // New
-  orderInChapter?: number; // New
-  category?: string; 
-  objectives?: { description: string }[]; 
-  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] }; // Changed itemNames to Partial<Item>[]
+export interface QuestAcceptedEvent extends DescribedEventBase {
+  type: 'questAccepted';
+  questIdSuggestion?: string;
+  questTitle?: string;
+  questDescription: string;
+  questType?: Quest['type']; // To allow AI to suggest type for dynamic quests
+  chapterId?: string;       // If it's part of a chapter
+  orderInChapter?: number;
+  category?: string;
+  objectives?: { description: string }[];
+  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] };
 }
 export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
 export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCompleted'; questIdOrDescription: string; }
-// export interface QuestFailedEvent extends DescribedEventBase { type: 'questFailed'; questIdOrDescription: string; }
+export interface QuestFailedEvent extends DescribedEventBase { type: 'questFailed'; questIdOrDescription: string; }
 
-export interface NPCRelationshipChangeEvent extends DescribedEventBase { type: 'npcRelationshipChange'; npcName: string; changeAmount: number; newStatus?: number; } // changeAmount e.g. +10, -20
-export interface NPCStateChangeEvent extends DescribedEventBase { type: 'npcStateChange'; npcName: string; newState: string; } // e.g. "hostile", "friendly", "following", "fled"
+
+export interface NPCRelationshipChangeEvent extends DescribedEventBase { type: 'npcRelationshipChange'; npcName: string; changeAmount: number; newStatus?: number; }
+export interface NPCStateChangeEvent extends DescribedEventBase { type: 'npcStateChange'; npcName: string; newState: string; }
 export interface NewNPCIntroducedEvent extends DescribedEventBase {
   type: 'newNPCIntroduced';
   npcName: string;
@@ -287,14 +287,14 @@ export interface NewNPCIntroducedEvent extends DescribedEventBase {
   classOrRole?: string;
   initialRelationship?: number;
   isMerchant?: boolean;
-  initialHealth?: number; // Suggestion for initial health
-  initialMana?: number;   // Suggestion for initial mana
+  initialHealth?: number;
+  initialMana?: number;
   merchantSellsItemTypes?: string[];
   merchantBuysItemTypes?: string[];
 }
 
 export interface WorldFactAddedEvent extends DescribedEventBase { type: 'worldFactAdded'; fact: string; }
-export interface WorldFactRemovedEvent extends DescribedEventBase { type: 'worldFactRemoved'; factDescription: string; } // AI describes the fact to remove
+export interface WorldFactRemovedEvent extends DescribedEventBase { type: 'worldFactRemoved'; factDescription: string; }
 export interface WorldFactUpdatedEvent extends DescribedEventBase { type: 'worldFactUpdated'; oldFactDescription: string; newFact: string; }
 
 export interface SkillLearnedEvent extends DescribedEventBase {
@@ -305,10 +305,10 @@ export interface SkillLearnedEvent extends DescribedEventBase {
 }
 
 
-export type DescribedEvent = 
+export type DescribedEvent =
   | HealthChangeEvent | ManaChangeEvent | XPChangeEvent | LevelUpEvent | CurrencyChangeEvent | LanguageSkillChangeEvent
   | ItemFoundEvent | ItemLostEvent | ItemUsedEvent | ItemEquippedEvent | ItemUnequippedEvent
-  | QuestAcceptedEvent | QuestObjectiveUpdateEvent | QuestCompletedEvent // | QuestFailedEvent
+  | QuestAcceptedEvent | QuestObjectiveUpdateEvent | QuestCompletedEvent | QuestFailedEvent
   | NPCRelationshipChangeEvent | NPCStateChangeEvent | NewNPCIntroducedEvent
   | WorldFactAddedEvent | WorldFactRemovedEvent | WorldFactUpdatedEvent
   | SkillLearnedEvent;
@@ -318,10 +318,8 @@ export interface NarrativeAndEventsOutput {
   describedEvents?: DescribedEvent[];
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreProposals?: RawLoreEntry[];
-  sceneSummaryFragment: string; // Summary of just this scene's events
+  sceneSummaryFragment: string;
 }
-// --- End Types for Multi-Step ---
-
 
 export interface GenerateNextSceneInput {
   currentScene: string;
@@ -338,8 +336,8 @@ export interface GenerateNextSceneOutput {
   updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
-  updatedStorySummary: string; // The new running summary of the story
-  dataCorrectionWarnings?: string[]; // Warnings about data corrections made
+  updatedStorySummary: string;
+  dataCorrectionWarnings?: string[];
 }
 
 export interface GenerateStoryStartInput {
@@ -354,3 +352,16 @@ export interface GenerateStoryStartOutput {
   storyState: StructuredStoryState;
 }
 
+// Types for FleshOutChapterQuests flow
+export interface FleshOutChapterQuestsInput {
+  chapterToFleshOut: Chapter;
+  seriesName: string;
+  seriesPlotSummary: string;
+  overallStorySummarySoFar: string;
+  characterContext: { name: string; class: string; level: number; }; // Minimal context
+  usePremiumAI?: boolean;
+}
+
+export interface FleshOutChapterQuestsOutput {
+  fleshedOutQuests: Quest[];
+}
