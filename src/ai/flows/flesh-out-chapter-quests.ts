@@ -12,12 +12,29 @@
 
 import { ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME } from '@/ai/genkit';
 import { z } from 'zod';
-import type { Quest as QuestType, Chapter as ChapterType, Item as ItemType, FleshOutChapterQuestsInput as IFleshOutChapterQuestsInput, FleshOutChapterQuestsOutput as IFleshOutChapterQuestsOutput, ItemRarity } from '@/types/story';
+import type { Quest as QuestType, Chapter as ChapterType, Item as ItemType, FleshOutChapterQuestsInput as IFleshOutChapterQuestsInput, FleshOutChapterQuestsOutput as IFleshOutChapterQuestsOutput, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 
 // --- Schemas for AI communication (Subset, focused on Quest generation) ---
 const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
+
+const StatModifierSchemaInternal = z.object({
+  stat: z.enum(['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'maxHealth', 'maxMana', 'health', 'mana', 'level', 'experiencePoints', 'currency', 'languageReading', 'languageSpeaking']),
+  value: z.number(),
+  type: z.enum(['add', 'multiply']),
+  description: z.string().optional(),
+});
+
+const ActiveEffectSchemaInternal = z.object({
+  id: z.string().describe("Unique ID for this specific effect on this item instance."),
+  name: z.string().describe("Descriptive name of the effect."),
+  description: z.string().describe("Narrative description of what the effect does."),
+  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']),
+  duration: z.union([z.literal('permanent_while_equipped'), z.number()]).optional(),
+  statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', array of stat changes."),
+  sourceItemId: z.string().optional(),
+});
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_reward_key_001'. Make it unique within the current rewards."),
@@ -25,11 +42,12 @@ const ItemSchemaInternal = z.object({
   description: z.string().describe("A brief description of the item."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If equippable gear, specify slot. OMIT if not (e.g. potion, key)."),
   isConsumable: z.boolean().optional(),
-  effectDescription: z.string().optional(),
+  effectDescription: z.string().optional().describe("For simple items. For gear with stat mods or complex effects, use 'activeEffects'."),
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
   basePrice: z.number().optional().describe("Base value. MUST BE a number if provided."),
-  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most quest rewards can be 'uncommon' or 'rare'.")
+  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most quest rewards can be 'uncommon' or 'rare'."),
+  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("Array of structured active effects. For reward gear, consider adding 'stat_modifier' effects. 'duration' should be 'permanent_while_equipped' for gear stat mods."),
 });
 
 const QuestObjectiveSchemaInternal = z.object({
@@ -39,7 +57,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("XP awarded. MUST BE a number if provided."),
-  items: z.array(ItemSchemaInternal).optional().describe("Items awarded. Each must have unique ID, name, description, 'basePrice' (number), optional 'rarity', and optional 'equipSlot' (omit if not equippable)."),
+  items: z.array(ItemSchemaInternal).optional().describe("Items awarded. Each must have unique ID, name, description, 'basePrice' (number), optional 'rarity', optional 'equipSlot', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier')."),
   currency: z.number().optional().describe("Currency awarded. MUST BE a number if provided."),
 }).describe("Potential rewards. Defined at quest creation.");
 
@@ -82,7 +100,7 @@ const FleshOutChapterQuestsInputSchema = z.object({
 export type FleshOutChapterQuestsInput = z.infer<typeof FleshOutChapterQuestsInputSchema>;
 
 const FleshOutChapterQuestsOutputSchema = z.object({
-  fleshedOutQuests: z.array(QuestSchemaInternal).describe("An array of 2-3 detailed main quests for the specified chapter, consistent with the series plot and chapter theme. Each quest must have a unique ID, title, description, type: 'main', status: 'active', the correct chapterId, orderInChapter, optional objectives, and rewards (with numeric prices/currency and optional item rarity)."),
+  fleshedOutQuests: z.array(QuestSchemaInternal).describe("An array of 2-3 detailed main quests for the specified chapter, consistent with the series plot and chapter theme. Each quest must have a unique ID, title, description, type: 'main', status: 'active', the correct chapterId, orderInChapter, optional objectives, and rewards (with numeric prices/currency and optional item rarity and optional item activeEffects with statModifiers)."),
 });
 export type FleshOutChapterQuestsOutput = z.infer<typeof FleshOutChapterQuestsOutputSchema>;
 
@@ -134,8 +152,10 @@ Generate an array of 2-3 'fleshedOutQuests' for the chapter titled "{{chapterToF
 - Assign sequential \`orderInChapter\` numbers (e.g., 1, 2, 3).
 - Quests MUST align with the \`seriesPlotSummary\` and the theme of \`{{chapterToFleshOut.title}}\`. They must also logically connect to the events described in \`overallStorySummarySoFar\`. Use the \`lookupLoreTool\` if needed for canonical accuracy on names, locations, specific items, or series-specific terms.
 - Each quest MUST have a unique \`id\` (e.g., quest_main_{{chapterToFleshOut.id}}_001), an optional \`title\`, a detailed \`description\`, and 1-2 \`objectives\` (with \`isCompleted: false\`).
-- **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items (each with unique 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', and optional 'equipSlot' - OMIT for non-equippable items)).
-- Ensure all numeric fields (prices, XP, currency, etc.) are actual numbers.
+- **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items).
+- For reward items: each MUST have a unique 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', and optional 'equipSlot' (OMIT for non-equippable items).
+- **For reward items that are gear (especially 'uncommon' or 'rare'), you MAY include 'activeEffects'.** If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped' for gear stat mods), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
+- Ensure all numeric fields (prices, XP, currency, stat values etc.) are actual numbers.
 
 Output ONLY the JSON object adhering to 'FleshOutChapterQuestsOutputSchema'. Example: \`{"fleshedOutQuests": [{"id": "...", "title": "...", ...}]}\`
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the FleshOutChapterQuestsOutputSchema definition provided earlier in this prompt.`,
@@ -162,18 +182,35 @@ Ensure all field names and values in your JSON response strictly match the types
         rewards: q.rewards ? {
             experiencePoints: q.rewards.experiencePoints,
             currency: q.rewards.currency,
-            items: q.rewards.items?.map((item, i) => ({
-                ...item,
-                id: item.id || `reward_item_${q.id}_${Date.now()}_${i}`,
-                basePrice: item.basePrice ?? 0,
-                rarity: item.rarity ?? undefined,
-            } as ItemType)) || []
+            items: q.rewards.items?.map((item, i) => {
+                const validatedItem: ItemType = {
+                    ...item,
+                    id: item.id || `reward_item_${q.id}_${Date.now()}_${i}`,
+                    basePrice: item.basePrice ?? 0,
+                    rarity: item.rarity ?? undefined,
+                    activeEffects: (item.activeEffects as ActiveEffectType[] | undefined)?.map((effect, effIdx) => ({
+                        ...effect,
+                        id: effect.id || `eff_${item.id || 'new_item'}_${Date.now()}_${effIdx}`,
+                        name: effect.name || "Unnamed Effect",
+                        description: effect.description || "No effect description.",
+                        type: effect.type || 'passive_aura',
+                        statModifiers: (effect.statModifiers as StatModifierType[] | undefined)?.map(mod => ({
+                            ...mod,
+                            value: mod.value ?? 0,
+                            type: mod.type || 'add',
+                        })) || [],
+                        duration: effect.duration || (effect.type === 'stat_modifier' ? 'permanent_while_equipped' : undefined),
+                    })).filter(effect => effect.statModifiers && effect.statModifiers.length > 0 || effect.type !== 'stat_modifier') || [],
+                };
+                if (validatedItem.activeEffects && validatedItem.activeEffects.length === 0) {
+                    delete validatedItem.activeEffects;
+                }
+                return validatedItem;
+            }) || []
         } : undefined,
     }));
 
     console.log(`[${new Date().toISOString()}] fleshOutChapterQuestsFlow: END. Total time: ${Date.now() - flowStartTime}ms. Generated ${validatedQuests.length} quests.`);
-    return { fleshedOutQuests: validatedQuests };
+    return { fleshedOutQuests: validatedQuests as QuestType[] };
   }
 );
-
-    

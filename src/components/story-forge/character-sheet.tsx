@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { CharacterProfile, StructuredStoryState, Item, EquipmentSlot, Skill } from "@/types/story";
+import type { CharacterProfile, StructuredStoryState, Item, EquipmentSlot, Skill, ActiveEffect } from "@/types/story";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -14,7 +14,7 @@ import {
     PackageIcon, HeartIcon, ZapIcon, 
     DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon, 
     GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
-    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon, BookOpenIcon, MessageSquareIcon
+    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon, BookOpenIcon, MessageSquareIcon, BoltIcon
 } from "lucide-react";
 
 interface CharacterSheetProps {
@@ -65,6 +65,30 @@ function getLanguageProficiencyLabel(level?: number, type?: 'Reading' | 'Speakin
     if (level <= 99) return `${skillType}Good (${level}/100)`;
     return `${skillType}Fluent (${level}/100)`;
 }
+
+const ItemEffectsTooltipContent: React.FC<{ item: Item }> = ({ item }) => (
+  <>
+    <p className="text-sm font-medium">{item.name}</p>
+    <p className="text-xs text-muted-foreground max-w-xs">{item.description}</p>
+    {item.basePrice !== undefined && <p className="text-xs text-muted-foreground">Value: {item.basePrice}</p>}
+    {item.rarity && <p className="text-xs text-muted-foreground">Rarity: <Badge variant="outline" className="text-xs">{item.rarity}</Badge></p>}
+    {item.isConsumable && <p className="text-xs text-muted-foreground">Consumable: {item.effectDescription}</p>}
+    {item.activeEffects && item.activeEffects.length > 0 && (
+      <div className="mt-1 pt-1 border-t border-muted-foreground/20">
+        <p className="text-xs font-semibold text-muted-foreground">Active Effects:</p>
+        {item.activeEffects.map(effect => (
+          <div key={effect.id} className="text-xs text-muted-foreground">
+            - {effect.name}: {effect.description}
+            {effect.type === 'stat_modifier' && effect.statModifiers && effect.statModifiers.map(mod => (
+              <span key={mod.stat} className="ml-1 text-green-400">({mod.stat} {mod.type === 'add' ? (mod.value > 0 ? `+${mod.value}` : mod.value) : `x${mod.value}`})</span>
+            ))}
+          </div>
+        ))}
+      </div>
+    )}
+  </>
+);
+
 
 export default function CharacterSheet({ character, storyState }: CharacterSheetProps) {
   const healthPercentage = character.maxHealth > 0 ? (character.health / character.maxHealth) * 100 : 0;
@@ -211,12 +235,13 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                     <TooltipProvider delayDuration={100}>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-foreground cursor-help hover:text-primary transition-colors truncate">{equippedItem.name}</span>
+                           <span className="text-foreground cursor-help hover:text-primary transition-colors truncate flex items-center">
+                              {equippedItem.name}
+                              {equippedItem.activeEffects && equippedItem.activeEffects.length > 0 && <BoltIcon className="w-3 h-3 ml-1 text-yellow-500"/>}
+                           </span>
                         </TooltipTrigger>
                         <TooltipContent side="top" align="start">
-                           <p className="text-sm font-medium">{equippedItem.name}</p>
-                           <p className="text-xs text-muted-foreground max-w-xs">{equippedItem.description}</p>
-                           {equippedItem.basePrice !== undefined && <p className="text-xs text-muted-foreground">Value: {equippedItem.basePrice}</p>}
+                           <ItemEffectsTooltipContent item={equippedItem} />
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -242,16 +267,14 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
                       <TooltipProvider delayDuration={100}>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="cursor-help font-medium text-foreground hover:text-primary transition-colors">
+                            <span className="cursor-help font-medium text-foreground hover:text-primary transition-colors flex items-center">
                               {item.name}
                               {item.equipSlot && <Badge variant="outline" className="ml-1 text-xs">({item.equipSlot})</Badge>}
+                              {item.activeEffects && item.activeEffects.length > 0 && <BoltIcon className="w-3 h-3 ml-1 text-yellow-500"/>}
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="top" align="start">
-                             <p className="text-sm font-medium">{item.name}</p>
-                             <p className="text-xs text-muted-foreground max-w-xs">{item.description}</p>
-                             {item.basePrice !== undefined && <p className="text-xs text-muted-foreground">Value: {item.basePrice}</p>}
-                             {item.isConsumable && <p className="text-xs text-muted-foreground">Consumable: {item.effectDescription}</p>}
+                             <ItemEffectsTooltipContent item={item} />
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

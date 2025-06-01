@@ -8,18 +8,42 @@ export interface Skill {
 
 export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
+// New: Define StatModifier structure
+export interface StatModifier {
+  stat: keyof Pick<CharacterProfile, 'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma' | 'maxHealth' | 'maxMana' | 'health' | 'mana' | 'level' | 'experiencePoints' | 'currency' | 'languageReading' | 'languageSpeaking'>;
+  value: number; // Can be positive or negative
+  type: 'add' | 'multiply'; // e.g. +5 strength, or *1.1 health (multiply might be for future use)
+  description?: string; // Optional short description like "+5 Strength"
+}
+
+// New: Define ActiveEffect structure
+export interface ActiveEffect {
+  id: string; // Unique ID for the effect instance on an item
+  name: string; // e.g., "Blessing of Strength", "Minor Health Boost"
+  description: string; // Narrative description of the effect
+  type: 'stat_modifier' | 'temporary_ability' | 'passive_aura'; // Start with stat_modifier and passive_aura
+  duration?: 'permanent_while_equipped' | number; // Number of turns, or permanent
+  statModifiers?: StatModifier[]; // Array of stat modifications
+  // Placeholder for future: grantedAbilityId?: string;
+  // Placeholder for future: onUseEffect?: DescribedEvent;
+  // Placeholder for future: onEquipEffect?: DescribedEvent;
+  // Placeholder for future: onUnequipEffect?: DescribedEvent;
+  sourceItemId?: string; // ID of the item granting this effect
+}
+
 export interface Item {
   id: string;
   name: string;
   description: string;
   equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
   isConsumable?: boolean;
-  effectDescription?: string; // E.g., "Restores 20 HP", "Grants temporary invisibility"
+  effectDescription?: string; // Narrative effect for consumables or simple items. For complex gear, prefer activeEffects.
   isQuestItem?: boolean;
   relevantQuestId?: string;
-  basePrice?: number; // Base value of the item
-  price?: number; // The price a merchant sells this item for
+  basePrice?: number;
+  price?: number;
   rarity?: ItemRarity;
+  activeEffects?: ActiveEffect[]; // New: Array of structured active effects
 }
 
 export interface CharacterProfile {
@@ -40,7 +64,7 @@ export interface CharacterProfile {
   experiencePoints: number;
   experienceToNextLevel: number;
   skillsAndAbilities: Skill[];
-  currency?: number; // Player's currency
+  currency?: number;
   languageReading?: number;
   languageSpeaking?: number;
 }
@@ -138,10 +162,10 @@ export interface StructuredStoryState {
 }
 
 export interface CombatEventLogEntry {
-  description: string; // e.g., "Player took 10 damage from Goblin's attack."
-  target?: 'player' | string; // 'player' or NPC ID/Name
-  type: 'damage' | 'healing' | 'effect' | 'death' | 'action'; // Add more as needed
-  value?: string | number; // e.g., amount of damage/healing, or effect name
+  description: string;
+  target?: 'player' | string;
+  type: 'damage' | 'healing' | 'effect' | 'death' | 'action';
+  value?: string | number;
 }
 
 export interface CombatHelperInfo {
@@ -159,11 +183,11 @@ export interface DisplayMessage {
   speakerType: 'Player' | 'GM' | 'NPC' | 'SystemHelper';
   speakerNameLabel: string;
   speakerDisplayName?: string;
-  content?: string; // Optional because SystemHelper might not have direct content
+  content?: string;
   avatarSrc?: string;
   avatarHint?: string;
   isPlayer: boolean;
-  combatHelperInfo?: CombatHelperInfo; // New field for combat helper data
+  combatHelperInfo?: CombatHelperInfo;
 }
 
 export interface StoryTurn {
@@ -273,13 +297,14 @@ export interface ItemFoundEvent extends DescribedEventBase {
   suggestedBasePrice?: number;
   equipSlot?: Item['equipSlot'];
   isConsumable?: boolean;
-  effectDescription?: string;
+  effectDescription?: string; // Keep for simple effects, especially consumables
   isQuestItem?: boolean;
   relevantQuestId?: string;
   rarity?: ItemRarity;
+  activeEffects?: ActiveEffect[]; // New: For more complex, structured effects
 }
 export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
-export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; }
+export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; } // Consider adding effect details if used item has active effects
 export interface ItemEquippedEvent extends DescribedEventBase { type: 'itemEquipped'; itemIdOrName: string; slot: EquipmentSlot; }
 export interface ItemUnequippedEvent extends DescribedEventBase { type: 'itemUnequipped'; itemIdOrName: string; slot: EquipmentSlot; }
 
@@ -293,7 +318,8 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   orderInChapter?: number;
   category?: string;
   objectives?: { description: string }[];
-  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] };
+  // Ensure items in rewards can also have activeEffects
+  rewards?: { experiencePoints?: number; currency?: number; items?: Array<Partial<Item> & { activeEffects?: ActiveEffect[] }> };
 }
 export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
 export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCompleted'; questIdOrDescription: string; }
@@ -387,3 +413,67 @@ export interface FleshOutChapterQuestsInput {
 export interface FleshOutChapterQuestsOutput {
   fleshedOutQuests: Quest[];
 }
+
+// --- Placeholder types for future systems ---
+
+export interface Faction {
+  id: string;
+  name: string;
+  description: string;
+  // More fields like allies, enemies, leader etc.
+}
+
+export interface CharacterReputation {
+  factionId: string;
+  reputationScore: number; // e.g., -100 (Hostile) to 100 (Exalted)
+  // More fields like status (e.g., "Outcast", "Member", "Champion")
+}
+
+export interface PlayerReputation {
+  factionReputations: CharacterReputation[];
+}
+
+export interface SkillSpecialization {
+  id: string;
+  name: string;
+  description: string;
+  baseSkillId?: string; // If it branches from a core skill
+  grantsAbilities: Skill[]; // New abilities unlocked by this specialization
+  // Requirements: e.g., level, specific skill levels
+}
+
+export interface ResourceItem extends Item {
+  resourceType: 'herb' | 'ore' | 'monster_part' | 'wood' | 'gem';
+  // Potentially: gatheringToolRequired?: string;
+}
+
+export interface CraftingRecipeIngredient {
+  itemId: string; // ID of the item (could be resource or other item)
+  quantity: number;
+}
+
+export interface CraftingRecipe {
+  id: string;
+  name: string; // e.g., "Minor Healing Potion Recipe"
+  description: string;
+  ingredients: CraftingRecipeIngredient[];
+  outputItemId: string; // ID of the item crafted
+  outputQuantity: number;
+  requiredSkill?: { skillId: string; level: number }; // e.g., Alchemy Lvl 5
+  discovered?: boolean; // If the player has learned this recipe
+}
+
+// Add to CharacterProfile (example for placeholders)
+// export interface CharacterProfile {
+//   // ... existing fields
+//   reputation?: PlayerReputation;
+//   knownRecipes?: string[]; // IDs of CraftingRecipe
+//   specializations?: SkillSpecialization[];
+// }
+
+// Add to StructuredStoryState (example for placeholders)
+// export interface StructuredStoryState {
+//   // ... existing fields
+//   worldFactions?: Faction[];
+//   availableRecipes?: CraftingRecipe[]; // Globally known or discoverable recipes
+// }

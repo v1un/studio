@@ -12,10 +12,27 @@
 
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z}from 'zod';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType, ItemRarity } from '@/types/story'; // Use exported types
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType } from '@/types/story'; // Use exported types
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 
 const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
+
+const StatModifierSchemaInternal = z.object({
+  stat: z.enum(['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'maxHealth', 'maxMana', 'health', 'mana', 'level', 'experiencePoints', 'currency', 'languageReading', 'languageSpeaking']),
+  value: z.number(),
+  type: z.enum(['add', 'multiply']),
+  description: z.string().optional(),
+});
+
+const ActiveEffectSchemaInternal = z.object({
+  id: z.string().describe("Unique ID for this specific effect on this item instance, e.g., 'effect_sword_fire_dmg_001'."),
+  name: z.string().describe("Descriptive name of the effect, e.g., 'Fiery Aura', 'Eagle Eye'."),
+  description: z.string().describe("Narrative description of what the effect does or looks like."),
+  type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("Type of effect. For now, prioritize 'stat_modifier' or 'passive_aura' for equippable gear."),
+  duration: z.union([z.literal('permanent_while_equipped'), z.number()]).optional().describe("Duration of the effect. 'permanent_while_equipped' for ongoing effects from gear. Number for turns if temporary."),
+  statModifiers: z.array(StatModifierSchemaInternal).optional().describe("If type is 'stat_modifier', an array of specific stat changes. Each must include 'stat', 'value' (number), and 'type' ('add' or 'multiply')."),
+  sourceItemId: z.string().optional().describe("The ID of the item granting this effect (auto-filled by system if needed)."),
+});
 
 const ItemSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the item, e.g., 'item_potion_123' or 'sword_ancient_001'. Make it unique within the current inventory if any items are pre-assigned (though typically inventory starts empty)."),
@@ -23,11 +40,12 @@ const ItemSchemaInternal = z.object({
   description: z.string().describe("A brief description of the item, its appearance, or its basic function."),
   equipSlot: EquipSlotEnumInternal.optional().describe("If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), specify the slot it occupies. Examples: 'weapon', 'head', 'body', 'ring'. If it is not an equippable type of item (e.g., a potion, a key, a generic diary/book), this field MUST BE OMITTED ENTIRELY."),
   isConsumable: z.boolean().optional().describe("True if the item is consumed on use (e.g., potion, scroll)."),
-  effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect."),
+  effectDescription: z.string().optional().describe("Briefly describes the item's effect when used (e.g., 'Restores health', 'Reveals hidden paths'). Relevant if isConsumable or has a direct use effect. For equippable gear with complex effects, prefer using 'activeEffects'."),
   isQuestItem: z.boolean().optional().describe("True if this item is specifically required for a quest objective."),
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
   basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. MUST BE a number if provided."),
-  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item (e.g., 'common', 'uncommon', 'rare'). Most starting items should be 'common'.")
+  rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item (e.g., 'common', 'uncommon', 'rare'). Most starting items should be 'common'."),
+  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("An array of structured active effects this item provides. For equippable gear, these might include 'stat_modifier' effects. Each effect needs a unique id, name, description, type. If 'stat_modifier', include 'statModifiers' array detailing changes. 'duration' should be 'permanent_while_equipped' for gear stat mods."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -71,7 +89,7 @@ const EquipmentSlotsSchemaInternal = z.object({
   neck: ItemSchemaInternal.nullable(),
   ring1: ItemSchemaInternal.nullable(),
   ring2: ItemSchemaInternal.nullable(),
-}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'basePrice' as a number, optional 'rarity', and 'equipSlot' if applicable, otherwise OMIT 'equipSlot') or 'null' if the slot is empty.");
+}).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object (including 'basePrice' (number), optional 'rarity', 'activeEffects' (if any), and 'equipSlot' if applicable) or 'null'.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 const QuestObjectiveSchemaInternal = z.object({
@@ -81,7 +99,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded. MUST BE a number if provided."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice' (as a number), optional 'rarity', and optional 'equipSlot' (omit if not inherently equippable gear), and other item properties like `isConsumable` if applicable."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item needs id, name, description, basePrice (number), optional rarity, optional activeEffects, etc."),
   currency: z.number().optional().describe("Amount of currency awarded. MUST BE a number if provided."),
 }).describe("Potential rewards to be given upon quest completion. Defined when the quest is created. Omit if the quest has no specific material rewards.");
 
@@ -100,9 +118,9 @@ const QuestSchemaInternal = z.object({
 });
 
 const NPCDialogueEntrySchemaInternal = z.object({
-    playerInput: z.string().optional().describe("The player's input that led to the NPC's response, if applicable. This helps track the conversation flow."),
-    npcResponse: z.string().describe("The NPC's spoken dialogue or a summary of their significant verbal response."),
-    turnId: z.string().describe("The ID of the story turn in which this dialogue occurred."),
+    playerInput: z.string().optional(),
+    npcResponse: z.string(),
+    turnId: z.string(),
 });
 
 const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
@@ -111,26 +129,26 @@ const MerchantItemSchemaInternal = ItemSchemaInternal.extend({
 
 const NPCProfileSchemaInternal = z.object({
     id: z.string().describe("Unique identifier for the NPC, e.g., npc_bartender_giles_001."),
-    name: z.string().describe("NPC's name."),
-    description: z.string().describe("Physical appearance, general demeanor, key characteristics."),
-    classOrRole: z.string().optional().describe("e.g., 'Merchant', 'Guard Captain'."),
-    firstEncounteredLocation: z.string().optional().describe("Location where NPC was first met."),
-    firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
-    relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value, typically 0 for Neutral start. MUST BE a number."),
-    knownFacts: z.array(z.string()).describe("Specific pieces of information player has learned about this NPC. Should be empty or reflect general world knowledge if pre-populated and not yet met."),
-    dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional().describe("Log of key interaction moments. Should be empty or omitted for initial scenario."),
-    lastKnownLocation: z.string().optional().describe("Last known location of the NPC. If pre-populated and not met, this could be their canonical location."),
-    lastSeenTurnId: z.string().optional().describe("ID of the story turn when NPC was last seen or interacted with (use 'initial_turn_0' for all NPCs known at game start)."),
-    seriesContextNotes: z.string().optional().describe("AI-internal note about their role if from a known series (not for player). Not typically applicable in generic story starts."),
-    shortTermGoal: z.string().optional().describe("A simple, immediate goal this NPC might be pursuing. Can be set or updated by the AI based on events."),
-    updatedAt: z.string().optional().describe("Timestamp of the last update to this profile."),
-    isMerchant: z.boolean().optional().describe("Set to true if this NPC is a merchant and can buy/sell items."),
-    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice' (MUST BE a number), optional 'rarity', and a 'price' (MUST BE a number) they sell it for. OMIT 'equipSlot' for non-equippable items."),
-    buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Potions', 'Old Books')."),
-    sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they typically sell (e.g., 'Adventuring Gear', 'Herbs')."),
+    name: z.string(),
+    description: z.string(),
+    classOrRole: z.string().optional(),
+    firstEncounteredLocation: z.string().optional(),
+    firstEncounteredTurnId: z.string().optional().describe("Use 'initial_turn_0' for NPCs known at game start."),
+    relationshipStatus: z.number().describe("Numerical score for relationship. MUST BE a number."),
+    knownFacts: z.array(z.string()),
+    dialogueHistory: z.array(NPCDialogueEntrySchemaInternal).optional(),
+    lastKnownLocation: z.string().optional(),
+    lastSeenTurnId: z.string().optional().describe("Use 'initial_turn_0' for NPCs known at game start."),
+    seriesContextNotes: z.string().optional(),
+    shortTermGoal: z.string().optional(),
+    updatedAt: z.string().optional(),
+    isMerchant: z.boolean().optional(),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If merchant, list items for sale. Each needs id, name, description, basePrice (number), optional rarity, and price (number). Also include 'activeEffects' if any."),
+    buysItemTypes: z.array(z.string()).optional(),
+    sellsItemTypes: z.array(z.string()).optional(),
 });
 
-const ChapterSchemaInternal = z.object({ // Added for consistency with scenario flow, though simpler here
+const ChapterSchemaInternal = z.object({
     id: z.string(),
     title: z.string(),
     description: z.string(),
@@ -141,28 +159,28 @@ const ChapterSchemaInternal = z.object({ // Added for consistency with scenario 
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('The profile of the main character, including core stats, level, XP, currency, starting skills/abilities, languageReading (0-100), and languageSpeaking (0-100). Ensure all numeric fields are numbers.'),
-  currentLocation: z.string().describe('The current location of the character in the story.'),
-  inventory: z.array(ItemSchemaInternal).describe('A list of items in the character\'s inventory. Initialize as an empty array: []. Each item must be an object with id, name, description, optional rarity, and basePrice (MUST BE a number). If the item is an inherently equippable piece of gear (like armor, a weapon, a magic ring), include an \'equipSlot\' (e.g. \'weapon\', \'head\', \'body\'). If it\'s not an equippable type of item (e.g., a potion, a key, a generic diary/book), the \'equipSlot\' field MUST BE OMITTED ENTIRELY.** Consider adding `isConsumable`, `effectDescription`, `isQuestItem`, `relevantQuestId`.'),
+  character: CharacterProfileSchemaInternal,
+  currentLocation: z.string(),
+  inventory: z.array(ItemSchemaInternal).describe("List of unequipped items. Each item requires id, name, description, basePrice (number), optional rarity, and optional 'activeEffects' (if any, include statModifiers with numeric values)."),
   equippedItems: EquipmentSlotsSchemaInternal,
-  quests: z.array(QuestSchemaInternal).describe('A list of quests. Initialize as an empty array if no quest is generated, or with one simple starting quest. Each quest is an object with id, description, status (active), and optionally category, objectives, and rewards (which specify what the player will get on completion, including items with basePrice (MUST BE a number) and optional rarity, and currency (MUST BE a number)).'),
-  chapters: z.array(ChapterSchemaInternal).optional().describe("An array of chapters. For generic starts, this might be a single 'Prologue' chapter."),
-  currentChapterId: z.string().optional().describe("The ID of the currently active chapter."),
-  worldFacts: z.array(z.string()).describe('Key facts or observations about the game world state. Initialize with one or two relevant facts. If languageReading or languageSpeaking is low, a fact should describe the specific barrier.'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs encountered. Initialize as an empty array, or with profiles for any NPCs introduced in the starting scene. If an NPC is a merchant, set 'isMerchant' and populate 'merchantInventory' with priced items (basePrice and price MUST BE numbers, items can have rarity). Ensure all numeric fields are numbers."),
-  storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro."),
+  quests: z.array(QuestSchemaInternal).describe("List of quests. Rewards items should also include optional 'activeEffects' and 'rarity'."),
+  chapters: z.array(ChapterSchemaInternal).optional(),
+  currentChapterId: z.string().optional(),
+  worldFacts: z.array(z.string()),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs encountered. Merchant inventory items also need optional 'activeEffects' and 'rarity'."),
+  storySummary: z.string().optional(),
 });
 
 const GenerateStoryStartInputSchemaInternal = z.object({
-  prompt: z.string().describe('A prompt to kickstart the story (e.g., \'A lone knight enters a dark forest\').'),
-  characterNameInput: z.string().optional().describe('Optional user-suggested character name.'),
-  characterClassInput: z.string().optional().describe('Optional user-suggested character class.'),
-  usePremiumAI: z.boolean().optional().describe("Whether to use the premium AI model."),
+  prompt: z.string(),
+  characterNameInput: z.string().optional(),
+  characterClassInput: z.string().optional(),
+  usePremiumAI: z.boolean().optional(),
 });
 
 const GenerateStoryStartOutputSchemaInternal = z.object({
-  sceneDescription: z.string().describe('The generated initial scene description.'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The initial structured state of the story, including character details (with languageReading and languageSpeaking skills), stats, level, XP, currency (all as numbers), empty equipment slots, any initial quests (with categories, objectives, and pre-defined rewards including currency (number) and items with basePrice (number) and optional rarity), starting skills/abilities, and profiles for any NPCs introduced (including merchant details if applicable, with item prices as numbers and optional rarity).'),
+  sceneDescription: z.string(),
+  storyState: StructuredStoryStateSchemaInternal,
 });
 
 export async function generateStoryStart(input: GenerateStoryStartInputType): Promise<GenerateStoryStartOutputType> {
@@ -193,215 +211,111 @@ User suggestions: Character Name: {{#if characterNameInput}}{{characterNameInput
 Based on the theme and user suggestions, generate the following:
 1.  'sceneDescription': An engaging initial scene for the story.
 2.  'storyState': The complete initial structured state:
-    a.  'character':
-        -   Invent a character 'name' and 'class' if not provided or if the suggestion is too generic.
-        -   Write a brief 'description' (backstory).
-        -   'health' & 'maxHealth': e.g., 100 (MUST BE numbers).
-        -   'mana' & 'maxMana': e.g., 50 (MUST BE numbers, use 0 if not applicable to the class, or omit if truly not part of concept).
-        -   Core stats ('strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'): Assign sensible values (e.g., between 5-15, MUST BE numbers if provided, omit if not directly relevant).
-        -   'level': Initialize to 1 (MUST BE a number).
-        -   'experiencePoints': Initialize to 0 (MUST BE a number).
-        -   'experienceToNextLevel': Initialize to a starting value, e.g., 100 (MUST BE a number, and > 0).
-        -   'currency': Initialize to a small amount, e.g., 20-50 (MUST BE a number, can be 0).
-        -   'languageReading' (MUST BE a number, 0-100): Default to 100 (fluent) unless the theme "{{prompt}}" strongly implies a reading barrier (e.g., "lost in a foreign land and cannot read signs"), in which case set to an appropriate low value like 0-10.
-        -   'languageSpeaking' (MUST BE a number, 0-100): Default to 100 (fluent) unless the theme "{{prompt}}" strongly implies a speaking/understanding barrier (e.g., "lost in a foreign land and can't understand anyone"), in which case set to an appropriate low value like 0-10.
-        -   'skillsAndAbilities': An array of 1-2 starting skills (each with a unique 'id', 'name', 'description', and 'type'). Can be an empty array if no starting skills are appropriate.
+    a.  'character': (Profile fields as described in CharacterProfileSchemaInternal)
     b.  'currentLocation': A fitting starting location string.
-    c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number, can be 0), and optional 'rarity' ('common', 'uncommon', etc.). 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear (like potions, keys, generic books). For equippable gear, 'equipSlot' must be a valid slot name. 'isConsumable', 'effectDescription', 'isQuestItem', 'relevantQuestId' are optional but useful.
-    d.  'equippedItems': All 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') MUST be present. Each slot should contain 'null' if empty. If an item object is provided for a slot, it MUST have a unique 'id', 'name', 'description', its correct 'equipSlot' value, 'basePrice' (MUST BE a number), and optional 'rarity'.
-    e.  'quests': An array of initial quests. Can be an empty array \`[]\`. If a quest is included, it MUST have a unique 'id', 'description', and 'status: "active"'. 'category' and 'objectives' (with 'isCompleted: false') are optional. **For any included quest, it is highly recommended to define a 'rewards' block.** If 'rewards' are included, they MUST specify at least some 'experiencePoints' (number) or 'currency' (number). 'items' are optional; if included, each item MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. For example, rewards could be: \`{"experiencePoints": 50, "currency": 10, "items": [{"id": "item_starting_potion_01", "name": "Minor Healing Potion", "description": "A simple potion to mend small wounds.", "basePrice": 5, "rarity": "common", "isConsumable": true, "effectDescription": "Heals 10 HP"}]}\`.
-    f.  'chapters': Optionally, a single 'Prologue' chapter object can be included.
-    g.  'currentChapterId': If chapters are included, set this to the ID of the initial chapter.
-    h.  'worldFacts': An array of 1-2 key facts about the world or starting situation. If 'languageReading' for the character is low (e.g., 0-10), one fact MUST state something like: "The local script is currently unreadable to {{character.name}}." If 'languageSpeaking' is low, one fact MUST state: "Spoken language in this area is currently incomprehensible to {{character.name}}."
-    i.  'trackedNPCs': An array of NPC profiles. Initialize as an empty array \`[]\` unless NPCs are directly part of the initial scene. If an NPC is included, they MUST have a unique 'id', 'name', 'description', and 'relationshipStatus' (MUST BE a number, e.g., 0 for neutral). Other fields like 'classOrRole', locations, turn IDs ("initial_turn_0"), 'knownFacts' (empty for new NPCs), 'dialogueHistory' (empty), 'isMerchant' are optional but useful. If 'isMerchant' is true, 'merchantInventory' (array of items, each with unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), optional 'rarity', and merchant 'price' (MUST BE a number). OMIT 'equipSlot' for non-equippable items in inventory), 'buysItemTypes', and 'sellsItemTypes' can be populated.
-    j.  'storySummary': Initialize as an empty string "" or a very brief (1-sentence) thematic intro.
+    c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear. Consider adding 'isConsumable', 'effectDescription'. For some items (especially gear of 'uncommon' rarity or higher), you MAY include 'activeEffects'. If so, each effect needs an 'id', 'name', 'description', 'type' (e.g., 'stat_modifier', 'passive_aura'), 'duration' (e.g., 'permanent_while_equipped'), and if 'stat_modifier', a 'statModifiers' array (each with 'stat', 'value' (number), 'type': 'add').
+    d.  'equippedItems': All 10 equipment slots MUST be present, each 'null' or an item object. If an item, it MUST have 'id', 'name', 'description', 'equipSlot', 'basePrice' (number), optional 'rarity', and optional 'activeEffects' as described for inventory items.
+    e.  'quests': An array of initial quests (can be empty). If included, each quest MUST have 'id', 'description', 'status: "active"'. 'title', 'category', 'objectives' are optional. Rewards (if any) MUST use numeric values for 'experiencePoints' and 'currency', and items in rewards follow the same structure as inventory items (including optional 'rarity' and 'activeEffects').
+    f.  'chapters': Optionally, a single 'Prologue' chapter.
+    g.  'currentChapterId': If chapters are included, set to the initial chapter's ID.
+    h.  'worldFacts': 1-2 key facts. If language skills are low, include facts about the barrier.
+    i.  'trackedNPCs': Array of NPC profiles (can be empty). If an NPC is a merchant, their 'merchantInventory' items should also follow the full item structure (including optional 'rarity' and 'activeEffects').
+    j.  'storySummary': Initialize as an empty string "" or a very brief thematic intro.
 
-Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'. Ensure all item definitions include optional 'rarity'.
+Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'. Ensure all item definitions (inventory, equipped, rewards, merchant stock) include optional 'rarity' and may include 'activeEffects' (with correctly structured 'statModifiers' if type is 'stat_modifier').
 `,
     });
 
     const {output} = await storyStartPrompt(input);
     if (!output) throw new Error("Failed to generate story start output.");
 
-    // Sanitation logic
+    // Basic Sanitation for key numeric and structural fields. More can be added.
     if (output.storyState.character) {
       const char = output.storyState.character;
       char.mana = char.mana ?? 0;
       char.maxMana = char.maxMana ?? 0;
-      char.strength = char.strength ?? 10;
-      char.dexterity = char.dexterity ?? 10;
-      char.constitution = char.constitution ?? 10;
-      char.intelligence = char.intelligence ?? 10;
-      char.wisdom = char.wisdom ?? 10;
-      char.charisma = char.charisma ?? 10;
-      char.level = char.level ?? 1;
-      char.experiencePoints = char.experiencePoints ?? 0;
-      char.experienceToNextLevel = char.experienceToNextLevel ?? 100;
-      if (char.experienceToNextLevel <= 0) char.experienceToNextLevel = 100;
       char.currency = char.currency ?? 0;
-      if (char.currency < 0) char.currency = 0;
-      
       char.languageReading = char.languageReading ?? 100;
-      if (char.languageReading < 0) char.languageReading = 0;
-      if (char.languageReading > 100) char.languageReading = 100;
-
       char.languageSpeaking = char.languageSpeaking ?? 100;
-      if (char.languageSpeaking < 0) char.languageSpeaking = 0;
-      if (char.languageSpeaking > 100) char.languageSpeaking = 100;
-
       char.skillsAndAbilities = char.skillsAndAbilities ?? [];
-      char.skillsAndAbilities.forEach((skill, index) => {
-        if (!skill.id) skill.id = `skill_generated_start_${Date.now()}_${index}`;
-        skill.name = skill.name || "Unnamed Skill";
-        skill.description = skill.description || "No description provided.";
-        skill.type = skill.type || "Generic";
-      });
     }
 
-    const npcIdSet = new Set<string>();
+    output.storyState.inventory = output.storyState.inventory ?? [];
+    output.storyState.inventory.forEach((item: Partial<ItemType>) => {
+        if (!item.id) item.id = `item_inv_start_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        item.basePrice = item.basePrice ?? 0;
+        item.activeEffects = item.activeEffects ?? [];
+        item.activeEffects.forEach((effect: Partial<ActiveEffectType>, idx: number) => {
+            if(!effect.id) effect.id = `eff_${item.id}_${idx}`;
+            effect.statModifiers = effect.statModifiers ?? [];
+            effect.statModifiers.forEach((mod: Partial<StatModifierType>) => {
+                if (typeof mod.value !== 'number') mod.value = 0;
+                if (!mod.type) mod.type = 'add';
+            });
+        });
+    });
 
-    if (output.storyState) {
-        output.storyState.inventory = output.storyState.inventory ?? [];
-        output.storyState.inventory.forEach(item => {
-          if (!item.id) item.id = `item_generated_inv_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-          if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
-          if (item.isConsumable === undefined) delete item.isConsumable;
-          if (item.effectDescription === undefined || item.effectDescription === '') delete item.effectDescription;
-          if (item.isQuestItem === undefined) delete item.isQuestItem;
-          if (item.relevantQuestId === undefined || item.relevantQuestId === '') delete item.relevantQuestId;
+    const defaultSlots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
+    defaultSlots.forEach(slot => {
+        const item = output.storyState.equippedItems[slot] as Partial<ItemType> | null;
+        if (item) {
+            if (!item.id) item.id = `item_eqp_start_${slot}_${Date.now()}`;
+            item.basePrice = item.basePrice ?? 0;
+            item.activeEffects = item.activeEffects ?? [];
+            item.activeEffects.forEach((effect: Partial<ActiveEffectType>, idx: number) => {
+                if(!effect.id) effect.id = `eff_${item.id}_${idx}`;
+                effect.statModifiers = effect.statModifiers ?? [];
+                effect.statModifiers.forEach((mod: Partial<StatModifierType>) => {
+                    if (typeof mod.value !== 'number') mod.value = 0;
+                    if (!mod.type) mod.type = 'add';
+                });
+            });
+        } else {
+            (output.storyState.equippedItems as any)[slot] = null;
+        }
+    });
+
+
+    output.storyState.quests = output.storyState.quests ?? [];
+    output.storyState.quests.forEach(quest => {
+      if (quest.rewards && quest.rewards.items) {
+        quest.rewards.items.forEach((item: Partial<ItemType>) => {
+          if (!item.id) item.id = `item_reward_start_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
           item.basePrice = item.basePrice ?? 0;
-          if (item.basePrice < 0) item.basePrice = 0;
-          if (item.rarity === undefined) delete item.rarity;
-        });
-        
-        output.storyState.quests = output.storyState.quests ?? [];
-        output.storyState.quests.forEach((quest, index) => {
-          if (!quest.id) quest.id = `quest_start_generated_${Date.now()}_${index}`;
-          if (!quest.status) quest.status = 'active';
-          if (quest.category === null || (quest.category as unknown) === '') delete (quest as Partial<QuestType>).category;
-          quest.objectives = quest.objectives ?? [];
-          quest.objectives.forEach(obj => {
-            if (typeof obj.isCompleted !== 'boolean') obj.isCompleted = false;
-            if (typeof obj.description !== 'string' || obj.description.trim() === '') obj.description = "Objective details missing";
-          });
-          if (quest.rewards) {
-            quest.rewards.items = quest.rewards.items ?? [];
-            quest.rewards.items.forEach(rewardItem => {
-              if (!rewardItem.id) rewardItem.id = `item_reward_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-              if (rewardItem.equipSlot === null || (rewardItem.equipSlot as unknown) === '') delete (rewardItem as Partial<ItemType>).equipSlot;
-              if (rewardItem.isConsumable === undefined) delete rewardItem.isConsumable;
-              if (rewardItem.effectDescription === undefined || rewardItem.effectDescription === '') delete rewardItem.effectDescription;
-              if (rewardItem.isQuestItem === undefined) delete rewardItem.isQuestItem;
-              if (rewardItem.relevantQuestId === undefined || rewardItem.relevantQuestId === '') delete rewardItem.relevantQuestId;
-              rewardItem.basePrice = rewardItem.basePrice ?? 0;
-              if (rewardItem.basePrice < 0) rewardItem.basePrice = 0;
-              if (rewardItem.rarity === undefined) delete rewardItem.rarity;
+          item.activeEffects = item.activeEffects ?? [];
+           item.activeEffects.forEach((effect: Partial<ActiveEffectType>, idx: number) => {
+                if(!effect.id) effect.id = `eff_${item.id}_${idx}`;
+                effect.statModifiers = effect.statModifiers ?? [];
+                effect.statModifiers.forEach((mod: Partial<StatModifierType>) => {
+                    if (typeof mod.value !== 'number') mod.value = 0;
+                    if (!mod.type) mod.type = 'add';
+                });
             });
-            quest.rewards.currency = quest.rewards.currency ?? undefined;
-            if (quest.rewards.currency !== undefined && quest.rewards.currency < 0) quest.rewards.currency = 0;
-
-            if (!quest.rewards.experiencePoints && quest.rewards.items.length === 0 && quest.rewards.currency === undefined) delete quest.rewards;
-            else {
-              if (quest.rewards.experiencePoints === undefined) delete quest.rewards.experiencePoints;
-              if (quest.rewards.items.length === 0) delete quest.rewards.items;
-              if (quest.rewards.currency === undefined) delete quest.rewards.currency;
-            }
-          }
         });
+      }
+    });
 
-        output.storyState.chapters = output.storyState.chapters ?? [];
-        if (output.storyState.chapters.length > 0 && !output.storyState.currentChapterId) {
-            output.storyState.currentChapterId = output.storyState.chapters[0].id;
-        }
-
-
-        output.storyState.worldFacts = output.storyState.worldFacts ?? [];
-        output.storyState.worldFacts = output.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
-
-        const defaultEquippedItems: Record<EquipmentSlot, ItemType | null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-        const aiEquipped = output.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>;
-        const newEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedItems};
-
-        for (const slotKey of Object.keys(defaultEquippedItems) as EquipmentSlot[]) {
-            const item = aiEquipped[slotKey];
-            if (item && typeof item === 'object' && item.name) { 
-               if (!item.id) item.id = `item_generated_equip_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-              if ((item.equipSlot === null || (item.equipSlot as unknown) === '')) delete (item as Partial<ItemType>)!.equipSlot;
-              delete (item as Partial<ItemType>)!.isConsumable;
-              delete (item as Partial<ItemType>)!.effectDescription;
-              delete (item as Partial<ItemType>)!.isQuestItem;
-              delete (item as Partial<ItemType>)!.relevantQuestId;
-              item.basePrice = item.basePrice ?? 0;
-              if (item.basePrice! < 0) item.basePrice = 0;
-              if (item.rarity === undefined) delete item.rarity;
-              newEquippedItems[slotKey] = item;
-            } else {
-              newEquippedItems[slotKey] = null;
-            }
-        }
-        output.storyState.equippedItems = newEquippedItems;
-
-        output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
-        output.storyState.trackedNPCs.forEach((npc, index) => {
-            const processedNpc = {...npc} as Partial<NPCProfileType>;
-            delete (processedNpc as any).currentGoal; // Clean up potential old field
-
-            if (!processedNpc.id) {
-                let baseId = `npc_start_${processedNpc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
-                let newId = baseId; let counter = 0;
-                while(npcIdSet.has(newId)) { newId = `${baseId}_u${counter++}`; }
-                processedNpc.id = newId;
-            } else {
-                 let currentId = processedNpc.id;
-                 if(npcIdSet.has(currentId)){
-                    let baseId = currentId; let counter = 0;
-                    while(npcIdSet.has(currentId)) { currentId = `${baseId}_u${counter++}`; }
-                    processedNpc.id = currentId;
-                 }
-            }
-            npcIdSet.add(processedNpc.id!);
-            
-            processedNpc.name = processedNpc.name || "Unnamed NPC";
-            processedNpc.description = processedNpc.description || "No description provided.";
-            processedNpc.relationshipStatus = typeof processedNpc.relationshipStatus === 'number' ? processedNpc.relationshipStatus : 0; 
-            
-            if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '') delete processedNpc.classOrRole;
-            if (processedNpc.firstEncounteredLocation === null || (processedNpc.firstEncounteredLocation as unknown) === '') delete processedNpc.firstEncounteredLocation;
-            if (processedNpc.lastKnownLocation === null || (processedNpc.lastKnownLocation as unknown) === '') delete processedNpc.lastKnownLocation;
-            if (processedNpc.seriesContextNotes === null || (processedNpc.seriesContextNotes as unknown) === '') delete processedNpc.seriesContextNotes;
-            if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '') delete processedNpc.shortTermGoal;
-            
-            processedNpc.knownFacts = processedNpc.knownFacts ?? [];
-            processedNpc.dialogueHistory = processedNpc.dialogueHistory ?? [];
-            processedNpc.firstEncounteredTurnId = processedNpc.firstEncounteredTurnId || "initial_turn_0";
-            processedNpc.updatedAt = new Date().toISOString(); 
-            processedNpc.lastKnownLocation = processedNpc.lastKnownLocation || processedNpc.firstEncounteredLocation;
-            processedNpc.lastSeenTurnId = processedNpc.lastSeenTurnId || processedNpc.firstEncounteredTurnId;
-            
-            processedNpc.isMerchant = processedNpc.isMerchant ?? false;
-            processedNpc.merchantInventory = processedNpc.merchantInventory ?? [];
-            processedNpc.merchantInventory.forEach(item => {
-                if (!item.id) item.id = `item_merchant_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
+    output.storyState.trackedNPCs.forEach(npc => {
+        if (npc.merchantInventory) {
+            npc.merchantInventory.forEach((item: Partial<ItemType>) => {
+                 if (!item.id) item.id = `item_merch_start_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
                 item.basePrice = item.basePrice ?? 0;
-                if (item.basePrice < 0) item.basePrice = 0;
-                (item as any).price = (item as any).price ?? item.basePrice; 
-                if ((item as any).price < 0) (item as any).price = 0;
-                if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
-                if (item.rarity === undefined) delete item.rarity;
+                (item as any).price = (item as any).price ?? item.basePrice;
+                item.activeEffects = item.activeEffects ?? [];
+                item.activeEffects.forEach((effect: Partial<ActiveEffectType>, idx: number) => {
+                    if(!effect.id) effect.id = `eff_${item.id}_${idx}`;
+                    effect.statModifiers = effect.statModifiers ?? [];
+                    effect.statModifiers.forEach((mod: Partial<StatModifierType>) => {
+                        if (typeof mod.value !== 'number') mod.value = 0;
+                        if (!mod.type) mod.type = 'add';
+                    });
+                });
             });
+        }
+    });
 
-            if (processedNpc.buysItemTypes === null) delete processedNpc.buysItemTypes;
-            else processedNpc.buysItemTypes = processedNpc.buysItemTypes ?? undefined;
 
-            if (processedNpc.sellsItemTypes === null) delete processedNpc.sellsItemTypes;
-            else processedNpc.sellsItemTypes = processedNpc.sellsItemTypes ?? undefined;
-
-            output.storyState.trackedNPCs[index] = processedNpc as NPCProfileType;
-        });
-        output.storyState.storySummary = output.storyState.storySummary ?? "";
-    }
     return output!;
   }
 );
-
-    
