@@ -68,7 +68,7 @@ const FleshOutChapterQuestsInputSchema = z.object({
   chapterToFleshOut: ChapterSchemaForInput.describe("The outlined chapter object that needs its main quests generated."),
   seriesName: z.string().describe("The name of the series for context."),
   seriesPlotSummary: z.string().describe("A summary of the series' overall plot points to guide canonical quest generation."),
-  overallStorySummarySoFar: z.string().describe("A summary of what has happened in the game so far, to provide context for the current state of the story."),
+  overallStorySummarySoFar: z.string().describe("A summary of what has happened in the game so far, including events of the PREVIOUS chapter. This is crucial for narrative continuity."),
   characterContext: z.object({
       name: z.string(),
       class: z.string(),
@@ -99,7 +99,7 @@ const fleshOutChapterQuestsFlow = ai.defineFlow(
     console.log(`[${new Date(flowStartTime).toISOString()}] fleshOutChapterQuestsFlow: START for Chapter: "${input.chapterToFleshOut.title}" in Series: ${input.seriesName}, Premium: ${input.usePremiumAI}`);
 
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = { maxOutputTokens: 4000 }; // Reduced slightly as this is more focused than full scenario
+    const modelConfig = { maxOutputTokens: 4000 };
 
     const prompt = ai.definePrompt({
       name: 'fleshOutChapterQuestsPrompt',
@@ -112,23 +112,24 @@ const fleshOutChapterQuestsFlow = ai.defineFlow(
 
 You are a master storyteller crafting the main quests for a chapter in an interactive game set in the series: "{{seriesName}}".
 The player character is {{characterContext.name}}, a level {{characterContext.level}} {{characterContext.class}}.
-The overall story summary so far is:
-{{{overallStorySummarySoFar}}}
 
 The specific chapter to flesh out is (ID: {{chapterToFleshOut.id}}):
 - Chapter Title: {{chapterToFleshOut.title}}
 - Chapter Description: {{chapterToFleshOut.description}}
 - Chapter Order: {{chapterToFleshOut.order}}
 
-Key Canonical Plot Points for the Series (use this as the primary guide for quest content):
-{{{seriesPlotSummary}}}
+Key Context for Quest Generation:
+1.  **Series Canonical Plot Points (Primary Guide):**
+    {{{seriesPlotSummary}}}
+2.  **Overall Story Summary So Far (Crucial for Continuity):** This summary includes events from previous chapters. Ensure the new quests logically follow from these past events and create a smooth narrative transition.
+    {{{overallStorySummarySoFar}}}
 
 Your Task:
 Generate an array of 2-3 'fleshedOutQuests' for the chapter titled "{{chapterToFleshOut.title}}".
 - Each quest MUST be of \`type: "main"\` and \`status: "active"\`.
 - Each quest's \`chapterId\` MUST be "{{chapterToFleshOut.id}}".
 - Assign sequential \`orderInChapter\` numbers (e.g., 1, 2, 3).
-- Quests MUST align with the \`seriesPlotSummary\` and the theme of \`{{chapterToFleshOut.title}}\`. Use the \`lookupLoreTool\` if needed for canonical accuracy on names, locations, specific items, or series-specific terms.
+- Quests MUST align with the \`seriesPlotSummary\` and the theme of \`{{chapterToFleshOut.title}}\`. They must also logically connect to the events described in \`overallStorySummarySoFar\`. Use the \`lookupLoreTool\` if needed for canonical accuracy on names, locations, specific items, or series-specific terms.
 - Each quest MUST have a unique \`id\` (e.g., quest_main_{{chapterToFleshOut.id}}_001), an optional \`title\`, a detailed \`description\`, and 1-2 \`objectives\` (with \`isCompleted: false\`).
 - **Crucially, include meaningful 'rewards' for these main quests** (experiencePoints (number), currency (number), and/or items (each with unique 'id', 'name', 'description', 'basePrice' (number), and optional 'equipSlot' - OMIT for non-equippable items)).
 - Ensure all numeric fields (prices, XP, currency, etc.) are actual numbers.
@@ -172,3 +173,5 @@ Ensure all field names and values in your JSON response strictly match the types
     return { fleshedOutQuests: validatedQuests };
   }
 );
+
+
