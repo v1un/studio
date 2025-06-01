@@ -10,19 +10,19 @@ export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
 export interface StatModifier {
   stat: keyof Pick<CharacterProfile, 'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma' | 'maxHealth' | 'maxMana' | 'health' | 'mana' | 'level' | 'experiencePoints' | 'currency' | 'languageReading' | 'languageSpeaking'>;
-  value: number; 
-  type: 'add' | 'multiply'; 
-  description?: string; 
+  value: number;
+  type: 'add' | 'multiply';
+  description?: string;
 }
 
 export interface ActiveEffect {
-  id: string; 
-  name: string; 
-  description: string; 
-  type: 'stat_modifier' | 'temporary_ability' | 'passive_aura'; 
-  duration?: 'permanent_while_equipped' | number; 
-  statModifiers?: StatModifier[]; 
-  sourceItemId?: string; 
+  id: string;
+  name: string;
+  description: string;
+  type: 'stat_modifier' | 'temporary_ability' | 'passive_aura';
+  duration?: 'permanent_while_equipped' | number;
+  statModifiers?: StatModifier[];
+  sourceItemId?: string;
 }
 
 export interface Item {
@@ -31,7 +31,7 @@ export interface Item {
   description: string;
   equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
   isConsumable?: boolean;
-  effectDescription?: string; 
+  effectDescription?: string;
   isQuestItem?: boolean;
   relevantQuestId?: string;
   basePrice?: number;
@@ -90,17 +90,17 @@ export interface Quest {
   id: string;
   title?: string;
   description: string;
-  type: 'main' | 'side' | 'dynamic' | 'chapter_goal';
+  type: 'main' | 'side' | 'dynamic' | 'arc_goal'; // Renamed chapter_goal to arc_goal
   status: 'active' | 'completed' | 'failed';
-  chapterId?: string;
-  orderInChapter?: number;
+  storyArcId?: string; // Renamed from chapterId
+  orderInStoryArc?: number; // Renamed from orderInChapter
   category?: string;
   objectives?: QuestObjective[];
   rewards?: QuestRewards;
   updatedAt?: string;
 }
 
-export interface Chapter {
+export interface StoryArc { // Renamed from Chapter
   id: string;
   title: string;
   description: string;
@@ -148,8 +148,8 @@ export interface StructuredStoryState {
   inventory: Item[];
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   quests: Quest[];
-  chapters: Chapter[];
-  currentChapterId?: string;
+  storyArcs: StoryArc[]; // Renamed from chapters
+  currentStoryArcId?: string; // Renamed from currentChapterId
   worldFacts: string[];
   trackedNPCs: NPCProfile[];
   storySummary?: string;
@@ -220,7 +220,7 @@ export interface RawLoreEntry {
   category?: string;
 }
 
-// Input/Output for the generateScenarioFoundationFlow (formerly generateScenarioFromSeries)
+// Input/Output for the generateScenarioFoundationFlow
 export interface GenerateScenarioFoundationInput {
   seriesName: string;
   characterNameInput?: string;
@@ -230,29 +230,29 @@ export interface GenerateScenarioFoundationInput {
 
 export interface GenerateScenarioFoundationOutput {
   sceneDescription: string;
-  characterProfile: CharacterProfile; // Full profile including skills
+  characterProfile: CharacterProfile;
   currentLocation: string;
   inventory: Item[];
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   worldFacts: string[];
   seriesStyleGuide?: string;
-  seriesPlotSummary: string; 
+  seriesPlotSummary: string;
 }
 
-// Input/Output for the new generateScenarioNarrativeElementsFlow
+// Input/Output for the generateScenarioNarrativeElementsFlow
 export interface GenerateScenarioNarrativeElementsInput {
   seriesName: string;
   seriesPlotSummary: string;
   characterProfile: CharacterProfile;
   sceneDescription: string;
   currentLocation: string;
-  characterNameInput?: string; // From original user input
+  characterNameInput?: string;
   usePremiumAI?: boolean;
 }
 
 export interface GenerateScenarioNarrativeElementsOutput {
   quests: Quest[];
-  chapters: Chapter[];
+  storyArcs: StoryArc[]; // Renamed from chapters
   trackedNPCs: NPCProfile[];
   initialLoreEntries: RawLoreEntry[];
 }
@@ -331,8 +331,8 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   questTitle?: string;
   questDescription: string;
   questType?: Quest['type'];
-  chapterId?: string;
-  orderInChapter?: number;
+  storyArcId?: string; // Renamed from chapterId
+  orderInStoryArc?: number; // Renamed from orderInChapter
   category?: string;
   objectives?: { description: string }[];
   rewards?: { experiencePoints?: number; currency?: number; items?: Array<Partial<Item> & { activeEffects?: ActiveEffect[] }> };
@@ -388,7 +388,7 @@ export interface NarrativeAndEventsOutput {
 export interface GenerateNextSceneInput {
   currentScene: string;
   userInput: string;
-  storyState: StructuredStoryState; 
+  storyState: StructuredStoryState;
   seriesName: string;
   seriesStyleGuide?: string;
   currentTurnId: string;
@@ -397,12 +397,12 @@ export interface GenerateNextSceneInput {
 
 export interface GenerateNextSceneOutput {
   generatedMessages: AIMessageSegment[];
-  updatedStoryState: StructuredStoryState; 
+  updatedStoryState: StructuredStoryState;
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
   updatedStorySummary: string;
   dataCorrectionWarnings?: string[];
-  describedEvents?: DescribedEvent[]; // Pass through described events for client processing
+  describedEvents?: DescribedEvent[];
 }
 
 export interface GenerateStoryStartInput {
@@ -417,8 +417,9 @@ export interface GenerateStoryStartOutput {
   storyState: StructuredStoryState;
 }
 
-export interface FleshOutChapterQuestsInput {
-  chapterToFleshOut: Chapter;
+// Renamed from FleshOutChapterQuestsInput
+export interface FleshOutStoryArcQuestsInput {
+  storyArcToFleshOut: StoryArc; // Renamed from chapterToFleshOut
   seriesName: string;
   seriesPlotSummary: string;
   overallStorySummarySoFar: string;
@@ -426,7 +427,8 @@ export interface FleshOutChapterQuestsInput {
   usePremiumAI?: boolean;
 }
 
-export interface FleshOutChapterQuestsOutput {
+// Renamed from FleshOutChapterQuestsOutput
+export interface FleshOutStoryArcQuestsOutput {
   fleshedOutQuests: Quest[];
 }
 
@@ -438,7 +440,7 @@ export interface Faction {
 
 export interface CharacterReputation {
   factionId: string;
-  reputationScore: number; 
+  reputationScore: number;
 }
 
 export interface PlayerReputation {
@@ -449,8 +451,8 @@ export interface SkillSpecialization {
   id: string;
   name: string;
   description: string;
-  baseSkillId?: string; 
-  grantsAbilities: Skill[]; 
+  baseSkillId?: string;
+  grantsAbilities: Skill[];
 }
 
 export interface ResourceItem extends Item {
@@ -458,17 +460,17 @@ export interface ResourceItem extends Item {
 }
 
 export interface CraftingRecipeIngredient {
-  itemId: string; 
+  itemId: string;
   quantity: number;
 }
 
 export interface CraftingRecipe {
   id: string;
-  name: string; 
+  name: string;
   description: string;
   ingredients: CraftingRecipeIngredient[];
-  outputItemId: string; 
+  outputItemId: string;
   outputQuantity: number;
-  requiredSkill?: { skillId: string; level: number }; 
-  discovered?: boolean; 
+  requiredSkill?: { skillId: string; level: number };
+  discovered?: boolean;
 }

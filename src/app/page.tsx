@@ -2,16 +2,16 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@/ai/flows/generate-scenario-from-series"; 
-import { fleshOutChapterQuests as callFleshOutChapterQuests } from "@/ai/flows/flesh-out-chapter-quests";
-import type { 
+import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@/ai/flows/generate-scenario-from-series";
+import { fleshOutStoryArcQuests as callFleshOutStoryArcQuests } from "@/ai/flows/flesh-out-chapter-quests"; // Renamed exported function
+import type {
     GenerateScenarioFoundationInput, GenerateScenarioFoundationOutput,
     GenerateScenarioNarrativeElementsInput, GenerateScenarioNarrativeElementsOutput,
-    AIMessageSegment, DisplayMessage, 
-    FleshOutChapterQuestsInput, FleshOutChapterQuestsOutput, 
-    CombatHelperInfo, CombatEventLogEntry, 
+    AIMessageSegment, DisplayMessage,
+    FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput, // Renamed types
+    CombatHelperInfo, CombatEventLogEntry,
     HealthChangeEvent, NPCStateChangeEvent, DescribedEvent,
-    CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, Chapter,
+    CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc, // Renamed Chapter to StoryArc
     StatModifier, RawLoreEntry
 } from "@/types/story";
 import { produce } from "immer";
@@ -43,11 +43,11 @@ const GM_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 const PLAYER_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 
 const scenarioGenerationSteps = [
-  "Phase 1: Laying Scenario Foundation...", // For generateScenarioFoundation
+  "Phase 1: Laying Scenario Foundation...",
   "Generating character concepts and opening scene...",
   "Establishing core world details and items...",
-  "Phase 2: Weaving Narrative Threads...", // For generateScenarioNarrativeElements
-  "Crafting initial chapters and main quests...",
+  "Phase 2: Weaving Narrative Arcs & Elements...", // Updated
+  "Crafting initial story arcs and main quests...", // Updated
   "Populating the world with notable figures...",
   "Compiling a rich tapestry of lore entries...",
   "Finalizing scenario details..."
@@ -63,9 +63,9 @@ function calculateEffectiveCharacterProfile(
 
   const addStat = (statName: keyof CharacterProfile, value: number) => {
     const numericStats: (keyof CharacterProfile)[] = [
-      'health', 'maxHealth', 'mana', 'maxMana', 
+      'health', 'maxHealth', 'mana', 'maxMana',
       'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma',
-      'level', 'experiencePoints', 'experienceToNextLevel', 'currency', 
+      'level', 'experiencePoints', 'experienceToNextLevel', 'currency',
       'languageReading', 'languageSpeaking'
     ];
     if (numericStats.includes(statName)) {
@@ -94,7 +94,7 @@ function calculateEffectiveCharacterProfile(
     }
   }
 
-  if (effectiveProfile.maxHealth <= 0) effectiveProfile.maxHealth = 1; 
+  if (effectiveProfile.maxHealth <= 0) effectiveProfile.maxHealth = 1;
   if (effectiveProfile.health > effectiveProfile.maxHealth) {
     effectiveProfile.health = effectiveProfile.maxHealth;
   }
@@ -103,7 +103,7 @@ function calculateEffectiveCharacterProfile(
   }
 
   if (effectiveProfile.mana !== undefined && effectiveProfile.maxMana !== undefined) {
-    if (effectiveProfile.maxMana <= 0 && effectiveProfile.mana > 0) effectiveProfile.maxMana = effectiveProfile.mana; 
+    if (effectiveProfile.maxMana <= 0 && effectiveProfile.mana > 0) effectiveProfile.maxMana = effectiveProfile.mana;
     else if (effectiveProfile.maxMana <=0) effectiveProfile.maxMana = 0;
 
     if (effectiveProfile.mana > effectiveProfile.maxMana) {
@@ -126,8 +126,8 @@ export default function StoryForgePage() {
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
-  const [loadingStep, setLoadingStep] = useState(0); 
-  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'chapterLoad' | null>(null);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | null>(null); // Renamed chapterLoad to arcLoad
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
@@ -138,13 +138,12 @@ export default function StoryForgePage() {
         setLoadingMessage(scenarioGenerationSteps[loadingStep]);
     } else if (isLoadingInteraction && loadingType === 'nextScene') {
         setLoadingMessage("AI is crafting the next part of your tale...");
-    } else if (isLoadingInteraction && loadingType === 'chapterLoad') {
-        setLoadingMessage("The next chapter of your saga is unfolding...");
+    } else if (isLoadingInteraction && loadingType === 'arcLoad') { // Renamed
+        setLoadingMessage("The next story arc of your saga is unfolding...");
     } else {
-      setLoadingMessage(null); // Clear message when not loading or different type
+      setLoadingMessage(null);
     }
-    
-    // Update loading message if step changes (for sequential scenario loading)
+
     if (isLoadingInteraction && loadingType === 'scenario' && loadingMessage !== scenarioGenerationSteps[loadingStep]) {
         setLoadingMessage(scenarioGenerationSteps[loadingStep]);
     }
@@ -218,7 +217,7 @@ export default function StoryForgePage() {
   const baseCharacterProfile = useMemo(() => currentStoryState?.character, [currentStoryState]);
   const effectiveCharacterProfileForAI = useMemo(() => {
     if (!baseCharacterProfile || !currentStoryState?.equippedItems) {
-      return baseCharacterProfile; 
+      return baseCharacterProfile;
     }
     return calculateEffectiveCharacterProfile(
       baseCharacterProfile,
@@ -230,13 +229,12 @@ export default function StoryForgePage() {
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
     setLoadingType('scenario');
-    setLoadingStep(0); 
+    setLoadingStep(0);
 
     let foundationResult: GenerateScenarioFoundationOutput;
     let narrativeElementsResult: GenerateScenarioNarrativeElementsOutput;
 
     try {
-      // Step 1: Generate Foundation
       setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Phase 1")));
       const foundationInput: GenerateScenarioFoundationInput = {
         seriesName: data.seriesName,
@@ -250,7 +248,6 @@ export default function StoryForgePage() {
       setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("character concepts")) || 1);
 
 
-      // Step 2: Generate Narrative Elements
       setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Phase 2")) || 3);
       const narrativeElementsInput: GenerateScenarioNarrativeElementsInput = {
         seriesName: data.seriesName,
@@ -264,11 +261,10 @@ export default function StoryForgePage() {
       console.log("CLIENT: Starting scenario generation - Step 2: Narrative Elements. Input:", narrativeElementsInput);
       narrativeElementsResult = await generateScenarioNarrativeElements(narrativeElementsInput);
       console.log("CLIENT: Scenario Narrative Elements generation successful. Result:", narrativeElementsResult);
-      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Crafting initial chapters")) || 4);
+      setLoadingStep(scenarioGenerationSteps.findIndex(s => s.includes("Crafting initial story arcs")) || 4); // Updated
 
 
-      // Step 3: Combine and Finalize
-      setLoadingStep(scenarioGenerationSteps.length - 1); 
+      setLoadingStep(scenarioGenerationSteps.length - 1);
 
       clearLorebook();
       if (narrativeElementsResult.initialLoreEntries) {
@@ -285,8 +281,8 @@ export default function StoryForgePage() {
         avatarHint: "wizard staff",
         isPlayer: false,
       };
-      
-      const firstChapterId = narrativeElementsResult.chapters.find(c => c.order === 1)?.id;
+
+      const firstStoryArcId = narrativeElementsResult.storyArcs.find(arc => arc.order === 1)?.id; // Renamed
 
       const finalStoryState: StructuredStoryState = {
         character: foundationResult.characterProfile,
@@ -296,8 +292,8 @@ export default function StoryForgePage() {
         worldFacts: foundationResult.worldFacts,
         storySummary: `The adventure begins for ${foundationResult.characterProfile.name} in ${data.seriesName}, at ${foundationResult.currentLocation}. Initial scene: ${foundationResult.sceneDescription.substring(0,100)}...`,
         quests: narrativeElementsResult.quests,
-        chapters: narrativeElementsResult.chapters,
-        currentChapterId: firstChapterId,
+        storyArcs: narrativeElementsResult.storyArcs, // Renamed
+        currentStoryArcId: firstStoryArcId, // Renamed
         trackedNPCs: narrativeElementsResult.trackedNPCs,
       };
 
@@ -357,7 +353,7 @@ export default function StoryForgePage() {
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
       speakerType: 'Player',
-      speakerNameLabel: baseCharacterProfile.name, 
+      speakerNameLabel: baseCharacterProfile.name,
       speakerDisplayName: baseCharacterProfile.name,
       content: userInput,
       avatarSrc: PLAYER_AVATAR_PLACEHOLDER,
@@ -370,7 +366,7 @@ export default function StoryForgePage() {
          const newTurnForPlayerMessage: StoryTurn = {
             id: `pending-${crypto.randomUUID()}`,
             messages: [playerMessage],
-            storyStateAfterScene: lastTurn.storyStateAfterScene 
+            storyStateAfterScene: lastTurn.storyStateAfterScene
         };
         return [...prevHistory, newTurnForPlayerMessage];
     });
@@ -386,12 +382,12 @@ export default function StoryForgePage() {
         .join("\n...\n");
 
       const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
-      
+
       const storyStateForAI: StructuredStoryState = {
         ...currentStoryState,
-        character: effectiveCharacterProfileForAI || baseCharacterProfile, 
+        character: effectiveCharacterProfileForAI || baseCharacterProfile,
       };
-      
+
       console.log("CLIENT: Calling generateNextScene with context:", { currentSceneContext, userInput, currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial' });
       console.log("CLIENT: Base Character Profile for turn:", baseCharacterProfile);
       console.log("CLIENT: Effective Character Profile for AI:", effectiveCharacterProfileForAI);
@@ -399,7 +395,7 @@ export default function StoryForgePage() {
       const result = await generateNextScene({
         currentScene: currentSceneContext,
         userInput: userInput,
-        storyState: storyStateForAI, 
+        storyState: storyStateForAI,
         seriesName: currentSession.seriesName,
         seriesStyleGuide: currentSession.seriesStyleGuide,
         currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial',
@@ -411,13 +407,11 @@ export default function StoryForgePage() {
          if (result.updatedStorySummary) draftState.storySummary = result.updatedStorySummary;
          if (result.describedEvents && Array.isArray(result.describedEvents)) {
             result.describedEvents.forEach(event => {
-                // Simplified event processing for brevity - actual application would be more complex
                 if (event.type === 'healthChange' && event.characterTarget === 'player') {
                     draftState.character.health += event.amount;
                     if (draftState.character.health < 0) draftState.character.health = 0;
                     if (draftState.character.health > draftState.character.maxHealth) draftState.character.health = draftState.character.maxHealth;
                 }
-                // Add more event processing here for items, quests, npcs etc.
                  if (event.type === 'itemFound') {
                      const newItem: ItemType = {
                         id: `item_${event.itemName.replace(/\s+/g, '_')}_${Date.now()}`,
@@ -441,8 +435,8 @@ export default function StoryForgePage() {
                         description: event.questDescription,
                         type: event.questType || 'dynamic',
                         status: 'active',
-                        chapterId: event.chapterId,
-                        orderInChapter: event.orderInChapter,
+                        storyArcId: event.storyArcId, // Renamed
+                        orderInStoryArc: event.orderInStoryArc, // Renamed
                         category: event.category,
                         objectives: event.objectives?.map(o => ({...o, isCompleted: false})) || [{description: event.questDescription, isCompleted:false}],
                         rewards: event.rewards ? {
@@ -463,85 +457,83 @@ export default function StoryForgePage() {
                  }
             });
          }
-         // Pass through other parts of AI's proposed state update if they are directly reflected
-         // This part requires careful consideration of what AI can directly update vs. what events drive
-         if (result.updatedStoryState.character) draftState.character = {...draftState.character, ...result.updatedStoryState.character}; // Merge AI's character perception if needed
+         if (result.updatedStoryState.character) draftState.character = {...draftState.character, ...result.updatedStoryState.character};
          if (result.updatedStoryState.currentLocation) draftState.currentLocation = result.updatedStoryState.currentLocation;
          if (result.updatedStoryState.worldFacts) draftState.worldFacts = result.updatedStoryState.worldFacts;
          if (result.updatedStoryState.trackedNPCs) draftState.trackedNPCs = result.updatedStoryState.trackedNPCs;
-         if (result.updatedStoryState.chapters) draftState.chapters = result.updatedStoryState.chapters;
-         if (result.updatedStoryState.currentChapterId) draftState.currentChapterId = result.updatedStoryState.currentChapterId;
+         if (result.updatedStoryState.storyArcs) draftState.storyArcs = result.updatedStoryState.storyArcs; // Renamed
+         if (result.updatedStoryState.currentStoryArcId) draftState.currentStoryArcId = result.updatedStoryState.currentStoryArcId; // Renamed
 
       });
-      
 
-      const previousChapterId = currentStoryState.currentChapterId;
-      const currentChapterInNewBaseState = finalUpdatedBaseStoryState.chapters.find(c => c.id === previousChapterId);
 
-      if (previousChapterId && currentChapterInNewBaseState?.isCompleted) {
-        console.log(`CLIENT: Chapter "${currentChapterInNewBaseState.title}" (ID: ${previousChapterId}) completed.`);
-        const nextChapterOrder = currentChapterInNewBaseState.order + 1;
-        const nextChapterToFleshOut = finalUpdatedBaseStoryState.chapters.find(
-          c => c.order === nextChapterOrder && !c.isCompleted && (!c.mainQuestIds || c.mainQuestIds.length === 0)
+      const previousStoryArcId = currentStoryState.currentStoryArcId; // Renamed
+      const currentStoryArcInNewBaseState = finalUpdatedBaseStoryState.storyArcs.find(arc => arc.id === previousStoryArcId); // Renamed
+
+      if (previousStoryArcId && currentStoryArcInNewBaseState?.isCompleted) { // Renamed
+        console.log(`CLIENT: Story Arc "${currentStoryArcInNewBaseState.title}" (ID: ${previousStoryArcId}) completed.`);
+        const nextStoryArcOrder = currentStoryArcInNewBaseState.order + 1; // Renamed
+        const nextStoryArcToFleshOut = finalUpdatedBaseStoryState.storyArcs.find( // Renamed
+          arc => arc.order === nextStoryArcOrder && !arc.isCompleted && (!arc.mainQuestIds || arc.mainQuestIds.length === 0)
         );
 
-        if (nextChapterToFleshOut && currentSession.seriesPlotSummary) {
-          console.log(`CLIENT: Found next outlined chapter: "${nextChapterToFleshOut.title}". Attempting to flesh out quests.`);
-          setLoadingType('chapterLoad');
+        if (nextStoryArcToFleshOut && currentSession.seriesPlotSummary) {
+          console.log(`CLIENT: Found next outlined story arc: "${nextStoryArcToFleshOut.title}". Attempting to flesh out quests.`);
+          setLoadingType('arcLoad'); // Renamed
           toast({
-            title: "Chapter Complete!",
+            title: "Story Arc Complete!", // Renamed
             description: (
               <div className="flex items-start">
                 <Milestone className="w-5 h-5 mr-2 mt-0.5 text-accent shrink-0" />
-                <span>{currentChapterInNewBaseState.title} finished. Preparing the next chapter...</span>
+                <span>{currentStoryArcInNewBaseState.title} finished. Preparing the next story arc...</span>
               </div>
             ),
             duration: 6000,
           });
 
           try {
-            const fleshOutInput: FleshOutChapterQuestsInput = {
-              chapterToFleshOut: nextChapterToFleshOut,
+            const fleshOutInput: FleshOutStoryArcQuestsInput = { // Renamed
+              storyArcToFleshOut: nextStoryArcToFleshOut, // Renamed
               seriesName: currentSession.seriesName,
               seriesPlotSummary: currentSession.seriesPlotSummary,
               overallStorySummarySoFar: finalUpdatedBaseStoryState.storySummary || "",
-              characterContext: { 
-                name: finalUpdatedBaseStoryState.character.name, 
-                class: finalUpdatedBaseStoryState.character.class, 
-                level: finalUpdatedBaseStoryState.character.level 
+              characterContext: {
+                name: finalUpdatedBaseStoryState.character.name,
+                class: finalUpdatedBaseStoryState.character.class,
+                level: finalUpdatedBaseStoryState.character.level
               },
               usePremiumAI: currentSession.isPremiumSession,
             };
-            console.log("CLIENT: Calling fleshOutChapterQuests with input:", fleshOutInput);
-            const fleshedResult: FleshOutChapterQuestsOutput = await callFleshOutChapterQuests(fleshOutInput);
-            console.log("CLIENT: fleshOutChapterQuests successful. Result:", fleshedResult);
+            console.log("CLIENT: Calling fleshOutStoryArcQuests with input:", fleshOutInput); // Renamed
+            const fleshedResult: FleshOutStoryArcQuestsOutput = await callFleshOutStoryArcQuests(fleshOutInput); // Renamed
+            console.log("CLIENT: fleshOutStoryArcQuests successful. Result:", fleshedResult); // Renamed
 
             finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
               draftState.quests.push(...fleshedResult.fleshedOutQuests);
-              const chapterIndex = draftState.chapters.findIndex(c => c.id === nextChapterToFleshOut.id);
-              if (chapterIndex !== -1) {
-                draftState.chapters[chapterIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
+              const arcIndex = draftState.storyArcs.findIndex(arc => arc.id === nextStoryArcToFleshOut.id); // Renamed
+              if (arcIndex !== -1) {
+                draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id); // Renamed
               }
-              draftState.currentChapterId = nextChapterToFleshOut.id;
+              draftState.currentStoryArcId = nextStoryArcToFleshOut.id; // Renamed
             });
             toast({
-              title: `Chapter Started: ${nextChapterToFleshOut.title}`,
+              title: `Story Arc Started: ${nextStoryArcToFleshOut.title}`, // Renamed
               description: `New main quests are available in your journal.`,
               duration: 5000,
             });
           } catch (fleshOutError: any) {
-            console.error("CLIENT: Failed to flesh out chapter quests:", fleshOutError);
+            console.error("CLIENT: Failed to flesh out story arc quests:", fleshOutError); // Renamed
             toast({
-              title: "Error Loading Next Chapter",
-              description: `Could not generate quests for "${nextChapterToFleshOut.title}". ${fleshOutError.message || ""}`,
+              title: "Error Loading Next Story Arc", // Renamed
+              description: `Could not generate quests for "${nextStoryArcToFleshOut.title}". ${fleshOutError.message || ""}`,
               variant: "destructive",
             });
           }
-          setLoadingType('nextScene'); 
-        } else if (nextChapterToFleshOut && !currentSession.seriesPlotSummary) {
-            console.warn("CLIENT: Next chapter is outlined, but no seriesPlotSummary found in session to flesh it out.");
-        } else if (!nextChapterToFleshOut && currentChapterInNewBaseState?.isCompleted) {
-            toast({ title: "Main Story Progress!", description: "You've completed all available chapters for now!" });
+          setLoadingType('nextScene');
+        } else if (nextStoryArcToFleshOut && !currentSession.seriesPlotSummary) {
+            console.warn("CLIENT: Next story arc is outlined, but no seriesPlotSummary found in session to flesh it out.");
+        } else if (!nextStoryArcToFleshOut && currentStoryArcInNewBaseState?.isCompleted) {
+            toast({ title: "Main Story Progress!", description: "You've completed all available story arcs for now!" });
         }
       }
 
@@ -601,13 +593,13 @@ export default function StoryForgePage() {
         const currentEffectivePlayerProfile = calculateEffectiveCharacterProfile(finalUpdatedBaseStoryState.character, finalUpdatedBaseStoryState.equippedItems);
 
         finalUpdatedBaseStoryState.trackedNPCs.forEach(npc => {
-          if (npc.shortTermGoal?.toLowerCase().includes('attack') || 
+          if (npc.shortTermGoal?.toLowerCase().includes('attack') ||
               npc.shortTermGoal?.toLowerCase().includes('hostile') ||
-              (npc.health !== undefined && npc.maxHealth !== undefined && npc.health < npc.maxHealth && combatTurnEvents.some(e => e.target === npc.name && e.type === 'damage'))) { 
+              (npc.health !== undefined && npc.maxHealth !== undefined && npc.health < npc.maxHealth && combatTurnEvents.some(e => e.target === npc.name && e.type === 'damage'))) {
             hostileNPCsInTurn.push({
               id: npc.id,
               name: npc.name,
-              health: npc.health, 
+              health: npc.health,
               maxHealth: npc.maxHealth,
               description: npc.description.substring(0,50) + "..."
             });
@@ -615,14 +607,14 @@ export default function StoryForgePage() {
         });
 
         const combatHelperData: CombatHelperInfo = {
-          playerHealth: currentEffectivePlayerProfile.health, 
+          playerHealth: currentEffectivePlayerProfile.health,
           playerMaxHealth: currentEffectivePlayerProfile.maxHealth,
           playerMana: currentEffectivePlayerProfile.mana,
           playerMaxMana: currentEffectivePlayerProfile.maxMana,
           hostileNPCs: hostileNPCsInTurn,
-          turnEvents: combatTurnEvents.slice(0, 5), 
+          turnEvents: combatTurnEvents.slice(0, 5),
         };
-        
+
         const combatHelperMessage: DisplayMessage = {
           id: crypto.randomUUID(),
           speakerType: 'SystemHelper',
@@ -636,7 +628,7 @@ export default function StoryForgePage() {
       const completedTurn: StoryTurn = {
         id: crypto.randomUUID(),
         messages: [playerMessage, ...aiDisplayMessages],
-        storyStateAfterScene: finalUpdatedBaseStoryState, 
+        storyStateAfterScene: finalUpdatedBaseStoryState,
       };
 
       setStoryHistory(prevHistory => {
@@ -835,8 +827,8 @@ export default function StoryForgePage() {
               </div>
               <div className="shrink-0">
                 <MinimalCharacterStatus
-                    character={baseCharacterProfile} 
-                    storyState={currentStoryState} 
+                    character={baseCharacterProfile}
+                    storyState={currentStoryState}
                     isPremiumSession={currentSession.isPremiumSession}
                 />
               </div>
@@ -860,8 +852,8 @@ export default function StoryForgePage() {
             <TabsContent value="journal" className="overflow-y-auto flex-grow">
               <JournalDisplay
                 quests={currentStoryState.quests as Quest[]}
-                chapters={currentStoryState.chapters as Chapter[]}
-                currentChapterId={currentStoryState.currentChapterId}
+                storyArcs={currentStoryState.storyArcs as StoryArc[]} // Renamed
+                currentStoryArcId={currentStoryState.currentStoryArcId} // Renamed
                 worldFacts={currentStoryState.worldFacts}
               />
             </TabsContent>
@@ -891,5 +883,3 @@ export default function StoryForgePage() {
     </div>
   );
 }
-
-    

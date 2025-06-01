@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview A flow for generating the initial scene of an interactive story, including character creation with core stats, mana, level, XP, initial empty equipment, initial quests (with optional objectives, categories, and pre-defined rewards), initial tracked NPCs, starting skills/abilities, and separate languageReading/languageSpeaking skills.
- * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFromSeries.ts for series-based starts. Supports model selection.
+ * THIS FLOW IS NOW LARGELY SUPERSEDED BY generateScenarioFoundation.ts + generateScenarioNarrativeElements.ts for series-based starts. Supports model selection.
  *
  * - generateStoryStart - A function that generates the initial scene description and story state.
  * - GenerateStoryStartInput - The input type for the generateStoryStart function.
@@ -12,7 +12,7 @@
 
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z}from 'zod';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType } from '@/types/story'; // Use exported types
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, NPCProfile as NPCProfileType, Skill as SkillType, StoryArc as StoryArcType, GenerateStoryStartInput as GenerateStoryStartInputType, GenerateStoryStartOutput as GenerateStoryStartOutputType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType } from '@/types/story'; // StoryArcType
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 
 const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
@@ -107,10 +107,10 @@ const QuestSchemaInternal = z.object({
   id: z.string().describe("A unique identifier for the quest, e.g., 'quest_generic_001'. REQUIRED."),
   title: z.string().optional().describe("A short, engaging title for the quest."),
   description: z.string().describe("A clear description of the quest's overall objective. REQUIRED."),
-  type: z.enum(['main', 'side', 'dynamic', 'chapter_goal']).describe("The type of quest. REQUIRED."),
+  type: z.enum(['main', 'side', 'dynamic', 'arc_goal']).describe("The type of quest. REQUIRED."), // arc_goal
   status: QuestStatusEnumInternal.describe("The current status of the quest, typically 'active' for starting quests. REQUIRED."),
-  chapterId: z.string().optional().describe("If a 'main' quest, the ID of the Chapter it belongs to."),
-  orderInChapter: z.number().optional().describe("If a 'main' quest, its suggested sequence within the chapter."),
+  storyArcId: z.string().optional().describe("If a 'main' quest, the ID of the Story Arc it belongs to."), // Renamed
+  orderInStoryArc: z.number().optional().describe("If a 'main' quest, its suggested sequence within the Story Arc."), // Renamed
   category: z.string().optional().describe("An optional category for the quest (e.g., 'Main Story', 'Side Quest', 'Tutorial'). Omit if not clearly classifiable."),
   objectives: z.array(QuestObjectiveSchemaInternal).optional().describe("An optional list of specific sub-objectives for this quest. If the quest is simple, this can be omitted. For initial quests, all objectives should have 'isCompleted: false'."),
   rewards: QuestRewardsSchemaInternal.optional(),
@@ -148,7 +148,8 @@ const NPCProfileSchemaInternal = z.object({
     sellsItemTypes: z.array(z.string()).optional(),
 });
 
-const ChapterSchemaInternal = z.object({
+// Renamed from ChapterSchemaInternal
+const StoryArcSchemaInternal = z.object({
     id: z.string().describe("REQUIRED."),
     title: z.string().describe("REQUIRED."),
     description: z.string().describe("REQUIRED."),
@@ -164,8 +165,8 @@ const StructuredStoryStateSchemaInternal = z.object({
   inventory: z.array(ItemSchemaInternal).describe("REQUIRED (can be empty array). List of unequipped items. Each item requires id, name, description, basePrice (number), optional rarity, and optional 'activeEffects' (if any, include statModifiers with numeric values)."),
   equippedItems: EquipmentSlotsSchemaInternal.describe("REQUIRED."),
   quests: z.array(QuestSchemaInternal).describe("REQUIRED (can be empty array). List of quests. Rewards items should also include optional 'activeEffects' and 'rarity'."),
-  chapters: z.array(ChapterSchemaInternal).optional().describe("Optional array of chapters."),
-  currentChapterId: z.string().optional().describe("Optional ID of the active chapter."),
+  storyArcs: z.array(StoryArcSchemaInternal).optional().describe("Optional array of story arcs."), // Renamed
+  currentStoryArcId: z.string().optional().describe("Optional ID of the active story arc."), // Renamed
   worldFacts: z.array(z.string()).describe("REQUIRED (can be empty array)."),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("REQUIRED (can be empty array). NPCs encountered. Merchant inventory items also need optional 'activeEffects' and 'rarity'."),
   storySummary: z.string().optional().describe("Optional running story summary."),
@@ -195,8 +196,8 @@ const generateStoryStartFlow = ai.defineFlow(
   },
   async (input: GenerateStoryStartInputType) => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const modelConfig = input.usePremiumAI 
-        ? { maxOutputTokens: 32000 } 
+    const modelConfig = input.usePremiumAI
+        ? { maxOutputTokens: 32000 }
         : { maxOutputTokens: 8000 };
 
     const storyStartPrompt = ai.definePrompt({
@@ -218,8 +219,8 @@ Based on the theme and user suggestions, generate the following, ensuring all RE
     c.  'inventory': An array of starting items. Typically initialize as an empty array \`[]\`. If items are included, each MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'rarity'. 'equipSlot' MUST BE OMITTED if the item is not inherently equippable gear. Consider adding 'isConsumable', 'effectDescription'. For some items (especially gear of 'uncommon' rarity or higher), you MAY include 'activeEffects' (each effect needs 'id', 'name', 'description', 'type', and structured 'statModifiers' if type is 'stat_modifier'). (REQUIRED field, can be empty array)
     d.  'equippedItems': All 10 equipment slots ('weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2') MUST be present, each 'null' or an item object. If an item, it MUST have 'id', 'name', 'description', 'equipSlot', 'basePrice' (number), optional 'rarity', and optional 'activeEffects' as described for inventory items. (REQUIRED field, all slots must be specified as item or null)
     e.  'quests': An array of initial quests (can be empty). If included, each quest MUST have 'id', 'description', 'type', 'status: "active"'. 'title', 'category', 'objectives' are optional. Rewards (if any) MUST use numeric values for 'experiencePoints' and 'currency', and items in rewards follow the same structure as inventory items (including potential 'activeEffects'). (REQUIRED field, can be empty array)
-    f.  'chapters': Optionally, a single 'Prologue' chapter. If included, each chapter MUST have 'id', 'title', 'description', 'order', 'mainQuestIds' (can be empty), 'isCompleted'. (Optional array)
-    g.  'currentChapterId': If chapters are included, set to the initial chapter's ID. (Optional)
+    f.  'storyArcs': Optionally, a single 'Prologue' or 'Introduction' story arc. If included, each story arc MUST have 'id', 'title', 'description', 'order', 'mainQuestIds' (can be empty), 'isCompleted'. (Optional array)
+    g.  'currentStoryArcId': If story arcs are included, set to the initial story arc's ID. (Optional)
     h.  'worldFacts': 1-2 key facts. If language skills are low, include facts about the barrier. (REQUIRED field, can be empty array)
     i.  'trackedNPCs': Array of NPC profiles (can be empty). If an NPC is included, it MUST have 'id', 'name', 'description', 'relationshipStatus', 'knownFacts' (can be empty array). If an NPC is a merchant, their 'merchantInventory' items should also follow the full item structure (including optional 'activeEffects'). (REQUIRED field, can be empty array)
     j.  'storySummary': Initialize as an empty string "" or a very brief thematic intro. (Optional)
@@ -261,9 +262,9 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
     });
 
     const defaultSlots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
-    output.storyState.equippedItems = output.storyState.equippedItems || {}; 
+    output.storyState.equippedItems = output.storyState.equippedItems || {};
     defaultSlots.forEach(slot => {
-        const item = output.storyState.equippedItems[slot] as Partial<ItemType> | null | undefined; 
+        const item = output.storyState.equippedItems[slot] as Partial<ItemType> | null | undefined;
         if (item) {
             if (!item.id) item.id = `item_eqp_start_${slot}_${Date.now()}`;
             item.basePrice = item.basePrice ?? 0;
@@ -280,7 +281,7 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
                 });
             });
         } else {
-            (output.storyState.equippedItems as any)[slot] = null; 
+            (output.storyState.equippedItems as any)[slot] = null;
         }
     });
 
@@ -332,10 +333,9 @@ Output ONLY the JSON object adhering to 'GenerateStoryStartOutputSchemaInternal'
     });
 
     output.storyState.worldFacts = output.storyState.worldFacts ?? [];
-    output.storyState.chapters = output.storyState.chapters ?? [];
+    output.storyState.storyArcs = output.storyState.storyArcs ?? []; // Renamed
 
 
     return output!;
   }
 );
-
