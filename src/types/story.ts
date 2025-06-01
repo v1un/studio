@@ -143,6 +143,7 @@ export interface GameSession {
   seriesName: string;
   seriesStyleGuide?: string;
   isPremiumSession?: boolean;
+  allDataCorrectionWarnings?: { timestamp: string; warnings: string[] }[];
 }
 
 export interface LoreEntry {
@@ -248,7 +249,7 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   questDescription: string; 
   category?: string; 
   objectives?: { description: string }[]; 
-  rewards?: { experiencePoints?: number; currency?: number; itemNames?: string[] };
+  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] }; // Changed itemNames to Partial<Item>[]
 }
 export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
 export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCompleted'; questIdOrDescription: string; }
@@ -265,6 +266,8 @@ export interface NewNPCIntroducedEvent extends DescribedEventBase {
   isMerchant?: boolean;
   initialHealth?: number; // Suggestion for initial health
   initialMana?: number;   // Suggestion for initial mana
+  merchantSellsItemTypes?: string[];
+  merchantBuysItemTypes?: string[];
 }
 
 export interface WorldFactAddedEvent extends DescribedEventBase { type: 'worldFactAdded'; fact: string; }
@@ -327,3 +330,5 @@ export interface GenerateStoryStartOutput {
   sceneDescription: string;
   storyState: StructuredStoryState;
 }
+
+    
