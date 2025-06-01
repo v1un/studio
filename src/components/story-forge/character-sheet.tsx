@@ -261,7 +261,7 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <h4 className="font-semibold mb-1 flex items-center"><PackageIcon className="w-4 h-4 mr-1.5 text-primary" />Inventory (Unequipped)</h4>
             {storyState.inventory.length > 0 ? (
               <ScrollArea className="h-28 rounded-md border p-2">
-                <ul className="list-disc list-inside pl-2 space-y-1">
+                <ul className="space-y-1 pl-2">
                   {storyState.inventory.map((item: Item) => (
                     <li key={item.id} className="text-muted-foreground">
                       <TooltipProvider delayDuration={100}>
@@ -291,3 +291,4 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
     </Card>
   );
 }
+
