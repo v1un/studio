@@ -162,7 +162,6 @@ const GenerateNextSceneInputSchemaInternal = z.object({
 
 // --- NEW SCHEMAS FOR MULTI-STEP APPROACH ---
 const DescribedEventBaseSchema = z.object({
-  // type: z.nativeEnum(EventType), // This doesn't work directly with z.discriminatedUnion's expectations
   reason: z.string().optional().describe("Optional narrative reason for the event."),
 });
 
@@ -197,7 +196,7 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   rewards: z.object({ 
     experiencePoints: z.number().optional(), 
     currency: z.number().optional(), 
-    itemNames: z.array(z.string()).optional().describe("Names of items to be rewarded. Details like price to be determined later or by TypeScript.")
+    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true }).deepPartial()).optional().describe("Details of items to be rewarded, including their properties. TypeScript will ensure unique IDs and base prices.")
   }).optional(),
 });
 const QuestObjectiveUpdateEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questObjectiveUpdate'), questIdOrDescription: z.string().describe("ID or distinguishing description of the quest."), objectiveDescription: z.string().describe("Description of the objective being updated."), objectiveCompleted: z.boolean() });
@@ -212,6 +211,9 @@ const NewNPCIntroducedEventSchema = DescribedEventBaseSchema.extend({
   classOrRole: z.string().optional(),
   initialRelationship: z.number().optional().default(0).describe("Initial relationship score."),
   isMerchant: z.boolean().optional().default(false),
+  // For merchant, AI can suggest item types, actual inventory added via TypeScript or separate call
+  merchantSellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically sell (e.g., 'General Goods', 'Magic Scrolls')."), 
+  merchantBuysItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically buy (e.g., 'Herbs', 'Old Books')."),
 });
 
 const WorldFactAddedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('worldFactAdded'), fact: z.string() });
@@ -261,7 +263,6 @@ const NarrativeAndEventsOutputSchema = z.object({
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("NPCs active in this scene."),
   newLoreProposals: z.array(RawLoreEntrySchemaInternal).optional().describe("New lore entries suggested by the AI."),
   sceneSummaryFragment: z.string().describe("A very brief summary of ONLY the key events that transpired in THIS generated scene/turn."),
-  // No updatedStoryState here, as it's now built by TypeScript
 });
 // --- END NEW SCHEMAS ---
 
@@ -407,13 +408,13 @@ Tracked NPCs:
 **Your Task:**
 1.  **Generate Narrative (generatedMessages):** Write the story's continuation, including GM narration and any NPC dialogue. Ensure NPC speaker names match those in 'Tracked NPCs' if they are speaking.
 2.  **Describe Events (describedEvents):** Identify key game events that occurred due to the player's action or narrative progression. Use the 'DescribedEvent' structure. Examples:
-    - Health/Mana/XP/Currency/Language changes: \\\`{ type: 'healthChange', characterTarget: 'player', amount: -10, reason: 'hit by arrow' }\\\`, \\\`{ type: 'languageImprovement', amount: 5, reason: 'studied local script' }\\\`
-    - Items: \\\`{ type: 'itemFound', itemName: 'Old Key', itemDescription: 'A rusty key.', suggestedBasePrice: 5 }\\\`, \\\`{ type: 'itemUsed', itemIdOrName: 'Health Potion' }\\\`
-    - Quests: \\\`{ type: 'questObjectiveUpdate', questIdOrDescription: 'Main Quest 1', objectiveDescription: 'Find the artifact', objectiveCompleted: true }\\\`, \\\`{ type: 'questAccepted', questDescription: 'Slay the Goblins', objectives: [{description: 'Defeat 5 Goblins'}], rewards: {experiencePoints: 100} }\\\`
+    - Health/Mana/XP/Currency/Language changes: \\\`{ type: 'healthChange', characterTarget: 'player', amount: -10, reason: 'hit by arrow' }\\\`, \\\`{ type: 'languageImprovement', amount: 5, reason: 'studied local script' }\\\`, \\\`{ type: 'xpChange', amount: 25 }\\\`
+    - Items: \\\`{ type: 'itemFound', itemName: 'Old Key', itemDescription: 'A rusty key.', suggestedBasePrice: 5 }\\\`, \\\`{ type: 'itemUsed', itemIdOrName: 'Health Potion' }\\\`, \\\`{ type: 'itemLost', itemIdOrName: 'Magic Scroll' }\\\`
+    - Quests: \\\`{ type: 'questObjectiveUpdate', questIdOrDescription: 'Main Quest 1', objectiveDescription: 'Find the artifact', objectiveCompleted: true }\\\`, \\\`{ type: 'questAccepted', questDescription: 'Slay the Goblins', objectives: [{description: 'Defeat 5 Goblins'}], rewards: {experiencePoints: 100} }\\\`, \\\`{ type: 'questCompleted', questIdOrDescription: 'Slay the Goblins' }\\\`
     - NPCs: \\\`{ type: 'npcRelationshipChange', npcName: 'Guard Captain', changeAmount: -20, reason: 'player stole apple' }\\\`, \\\`{ type: 'newNPCIntroduced', npcName: 'Mysterious Stranger', npcDescription: 'Hooded figure in the shadows', classOrRole: 'Unknown' }\\\`
-    - World Facts: \\\`{ type: 'worldFactAdded', fact: 'A new bridge has collapsed north of town.' }\\\`
+    - World Facts: \\\`{ type: 'worldFactAdded', fact: 'A new bridge has collapsed north of town.' }\\\`, \\\`{ type: 'worldFactRemoved', factDescription: 'The old rumors about the haunted mill were false.' }\\\`, \\\`{ type: 'worldFactUpdated', oldFactDescription: 'The weather is sunny.', newFact: 'Dark clouds are gathering.' }\\\`
     - Skills: \\\`{ type: 'skillLearned', skillName: 'Fireball', skillDescription: 'Hurls a ball of fire.', skillType: 'Magic' }\\\`
-    Be specific. If an item is found, describe it. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts).
+    Be specific. If an item is found, describe it. If a quest updates, detail which one and what changed. If language understanding improves, note by how much (1-20 pts). If a level up occurs, indicate the new level.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action.
 4.  **New Lore (newLoreProposals):** If relevant new lore for "{{seriesName}}" is revealed, propose entries. Use 'lookupLoreTool' if more info on existing lore is needed for the narrative.
 5.  **Scene Summary Fragment (sceneSummaryFragment):** A VERY brief (1-2 sentences) summary of ONLY what happened in THIS scene/turn.
@@ -422,9 +423,12 @@ Tracked NPCs:
 - Player's 'languageUnderstanding' (0-100) affects comprehension.
 - If low (0-40), GM narration in 'generatedMessages' MUST reflect this (e.g., indecipherable speech/text). Actual foreign dialogue can be in NPC segments for player OOC knowledge.
 - If player actions lead to language improvement (e.g., "I study the signs", "ask for translation"), describe this as a 'languageImprovement' event with a small 'amount' (e.g., 5-15).
+- If language understanding is very low, the AI can also describe events such as 'currencyChange' by a certain amount without the player knowing exactly how much until their understanding improves or they find a way to verify.
+
+**Crucially, when providing 'updatedStoryState.character', ensure you return the COMPLETE character object.** This means including ALL fields that were present in the input 'storyState.character' (like name, class, description, all stats, maxHealth, experienceToNextLevel, etc.), modifying only those fields that were directly affected by the current scene's events (e.g., health, mana, XP, level, currency, skills, languageUnderstanding). **Do not omit fields like 'class', 'description', or 'maxHealth' if they weren't directly changed by the turn's events.**
 
 Adhere to the 'NarrativeAndEventsOutputSchema' (partially, as it's deepPartial). Prioritize clear narrative and accurate event descriptions.
-DO NOT return a full 'updatedStoryState' object. Focus on describing the events that TypeScript will use to update the state.
+DO NOT return a full 'updatedStoryState' object in this first AI call. Focus on describing the events that TypeScript will use to update the state.
 `,
     });
 
@@ -483,10 +487,40 @@ DO NOT return a full 'updatedStoryState' object. Focus on describing the events 
                 case 'healthChange':
                     if (event.characterTarget === 'player' && typeof event.amount === 'number') {
                         draftState.character.health = (draftState.character.health ?? originalChar.health) + event.amount;
-                        // Max health will be clamped later during character sanitation
-                        localCorrectionWarnings.push(`Event: Character health changed by ${event.amount} due to: ${event.reason || 'unspecified'}`);
+                        localCorrectionWarnings.push(`Event: Character health changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
                     }
                     // TODO: Handle healthChange for NPCs
+                    break;
+                case 'manaChange':
+                     if (event.characterTarget === 'player' && typeof event.amount === 'number') {
+                        draftState.character.mana = ((draftState.character.mana ?? originalChar.mana) ?? 0) + event.amount;
+                        localCorrectionWarnings.push(`Event: Character mana changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
+                    }
+                    // TODO: Handle manaChange for NPCs
+                    break;
+                case 'xpChange':
+                    if (typeof event.amount === 'number') {
+                        draftState.character.experiencePoints = (draftState.character.experiencePoints ?? originalChar.experiencePoints) + event.amount;
+                        localCorrectionWarnings.push(`Event: Character XP changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
+                        // Level up check will happen in character finalization/sanitation, or if a 'levelUp' event is also emitted.
+                    }
+                    break;
+                case 'levelUp':
+                    if (typeof event.newLevel === 'number' && event.newLevel > (draftState.character.level ?? originalChar.level)) {
+                        draftState.character.level = event.newLevel;
+                        // Reset XP to currentXP - XPToNextLevel (or 0 if negative), and set new XPToNextLevel
+                        const prevXPToNextLevel = draftState.character.experienceToNextLevel || originalChar.experienceToNextLevel || 100;
+                        draftState.character.experiencePoints = Math.max(0, (draftState.character.experiencePoints ?? originalChar.experiencePoints) - prevXPToNextLevel);
+                        draftState.character.experienceToNextLevel = Math.floor(prevXPToNextLevel * 1.5); // Example: 50% more XP for next level
+                        localCorrectionWarnings.push(`Event: Character leveled up to ${event.newLevel}! ${event.rewardSuggestion || ''}. Reason: ${event.reason || 'unspecified'}`);
+                    }
+                    break;
+                case 'currencyChange':
+                    if (typeof event.amount === 'number') {
+                        draftState.character.currency = ((draftState.character.currency ?? originalChar.currency) ?? 0) + event.amount;
+                        if (draftState.character.currency < 0) draftState.character.currency = 0; // Don't allow negative currency
+                        localCorrectionWarnings.push(`Event: Character currency changed by ${event.amount}. Reason: ${event.reason || 'unspecified'}`);
+                    }
                     break;
                 case 'languageImprovement':
                     if (typeof event.amount === 'number') {
@@ -503,60 +537,291 @@ DO NOT return a full 'updatedStoryState' object. Focus on describing the events 
                         }
                     }
                     break;
-                // TODO: Implement handlers for each other event.type (manaChange, xpChange, itemFound, itemLost, quest updates, npc changes, etc.)
-                // This is where the core logic for updating the game state based on AI-described events will go.
-                // Example for itemFound:
-                // case 'itemFound':
-                //   const newItem: ItemType = {
-                //     id: `item_${event.itemName.replace(/\s+/g, '_')}_${Date.now()}`,
-                //     name: event.itemName,
-                //     description: event.itemDescription,
-                //     basePrice: event.suggestedBasePrice ?? 0,
-                //     equipSlot: event.equipSlot,
-                //     isConsumable: event.isConsumable,
-                //     effectDescription: event.effectDescription,
-                //     isQuestItem: event.isQuestItem,
-                //     relevantQuestId: event.relevantQuestId,
-                //   };
-                //   draftState.inventory.push(newItem);
-                //   localCorrectionWarnings.push(`Event: Item found - ${event.itemName}.`);
-                //   break;
+                case 'itemFound':
+                    {
+                        const newItem: ItemType = {
+                            id: `item_${event.itemName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                            name: event.itemName,
+                            description: event.itemDescription,
+                            basePrice: event.suggestedBasePrice ?? 0,
+                            equipSlot: event.equipSlot,
+                            isConsumable: event.isConsumable,
+                            effectDescription: event.effectDescription,
+                            isQuestItem: event.isQuestItem,
+                            relevantQuestId: event.relevantQuestId,
+                        };
+                        draftState.inventory.push(newItem);
+                        localCorrectionWarnings.push(`Event: Item found - ${newItem.name}. Reason: ${event.reason || 'unspecified'}`);
+                    }
+                    break;
+                case 'itemLost':
+                    {
+                        const itemIdentifier = event.itemIdOrName.toLowerCase();
+                        const itemIndex = draftState.inventory.findIndex(
+                            item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
+                        );
+                        if (itemIndex > -1) {
+                            const lostItemName = draftState.inventory[itemIndex].name;
+                            draftState.inventory.splice(itemIndex, 1);
+                            localCorrectionWarnings.push(`Event: Item lost - ${lostItemName}. Reason: ${event.reason || 'unspecified'}`);
+                        } else {
+                            localCorrectionWarnings.push(`Event: Attempted to lose item "${event.itemIdOrName}", but it was not found in inventory.`);
+                        }
+                    }
+                    break;
+                case 'itemUsed':
+                     // Typically, using an item means it's consumed (if consumable)
+                    {
+                        const itemIdentifier = event.itemIdOrName.toLowerCase();
+                        const itemIndex = draftState.inventory.findIndex(
+                            item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
+                        );
+                        if (itemIndex > -1) {
+                            const usedItem = draftState.inventory[itemIndex];
+                            if (usedItem.isConsumable) {
+                                draftState.inventory.splice(itemIndex, 1);
+                                localCorrectionWarnings.push(`Event: Item consumed - ${usedItem.name}. Effect: ${usedItem.effectDescription || 'As described in narrative.'} Reason: ${event.reason || 'unspecified'}`);
+                            } else {
+                                localCorrectionWarnings.push(`Event: Item used - ${usedItem.name}. Effect: ${usedItem.effectDescription || 'As described in narrative.'} Reason: ${event.reason || 'unspecified'}`);
+                            }
+                            // Specific item effects (like health gain from potion) should ideally be separate `DescribedEvent`s or handled here if simple.
+                        } else {
+                             localCorrectionWarnings.push(`Event: Attempted to use item "${event.itemIdOrName}", but it was not found in inventory.`);
+                        }
+                    }
+                    break;
+                case 'questAccepted':
+                    {
+                        const newQuest: QuestType = {
+                            id: event.questIdSuggestion || `quest_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                            description: event.questDescription,
+                            status: 'active',
+                            category: event.category,
+                            objectives: event.objectives?.map(obj => ({ ...obj, isCompleted: false })) || [],
+                            rewards: event.rewards ? {
+                                experiencePoints: event.rewards.experiencePoints,
+                                currency: event.rewards.currency,
+                                items: event.rewards.items?.map((itemReward, index) => ({
+                                    id: itemReward.id || `item_reward_${new Date().getTime()}_${index}`,
+                                    name: itemReward.name || "Unknown Reward Item",
+                                    description: itemReward.description || "A mysterious reward item.",
+                                    basePrice: itemReward.basePrice ?? 0,
+                                    equipSlot: itemReward.equipSlot,
+                                    isConsumable: itemReward.isConsumable,
+                                    effectDescription: itemReward.effectDescription,
+                                } as ItemType)) || []
+                            } : undefined,
+                            updatedAt: new Date().toISOString(),
+                        };
+                        draftState.quests.push(newQuest);
+                        localCorrectionWarnings.push(`Event: Quest accepted - "${newQuest.description}". Reason: ${event.reason || 'unspecified'}`);
+                    }
+                    break;
+                case 'questObjectiveUpdate':
+                    {
+                        const questIdentifier = event.questIdOrDescription.toLowerCase();
+                        const quest = draftState.quests.find(
+                            q => q.id.toLowerCase() === questIdentifier || q.description.toLowerCase().includes(questIdentifier)
+                        );
+                        if (quest) {
+                            const objective = quest.objectives?.find(
+                                o => o.description.toLowerCase().includes(event.objectiveDescription.toLowerCase())
+                            );
+                            if (objective) {
+                                objective.isCompleted = event.objectiveCompleted;
+                                quest.updatedAt = new Date().toISOString();
+                                localCorrectionWarnings.push(`Event: Quest "${quest.description}" objective "${objective.description}" status changed to ${event.objectiveCompleted ? 'completed' : 'pending'}. Reason: ${event.reason || 'unspecified'}`);
+                            } else {
+                                localCorrectionWarnings.push(`Event: Quest "${quest.description}" objective "${event.objectiveDescription}" not found.`);
+                            }
+                        } else {
+                            localCorrectionWarnings.push(`Event: Quest "${event.questIdOrDescription}" not found for objective update.`);
+                        }
+                    }
+                    break;
+                case 'questCompleted':
+                    {
+                        const questIdentifier = event.questIdOrDescription.toLowerCase();
+                        const quest = draftState.quests.find(
+                            q => q.id.toLowerCase() === questIdentifier || q.description.toLowerCase().includes(questIdentifier)
+                        );
+                        if (quest) {
+                            quest.status = 'completed';
+                            quest.updatedAt = new Date().toISOString();
+                            localCorrectionWarnings.push(`Event: Quest "${quest.description}" completed! Reason: ${event.reason || 'unspecified'}`);
+                            // Apply rewards
+                            if (quest.rewards) {
+                                if (quest.rewards.experiencePoints) {
+                                    draftState.character.experiencePoints = (draftState.character.experiencePoints ?? originalChar.experiencePoints) + quest.rewards.experiencePoints;
+                                    localCorrectionWarnings.push(`Quest reward: +${quest.rewards.experiencePoints} XP.`);
+                                }
+                                if (quest.rewards.currency) {
+                                    draftState.character.currency = ((draftState.character.currency ?? originalChar.currency) ?? 0) + quest.rewards.currency;
+                                    if (draftState.character.currency < 0) draftState.character.currency = 0;
+                                    localCorrectionWarnings.push(`Quest reward: +${quest.rewards.currency} currency.`);
+                                }
+                                if (quest.rewards.items) {
+                                    quest.rewards.items.forEach(item => {
+                                        const rewardItem: ItemType = { ...item, id: item.id || `item_reward_${Date.now()}_${Math.random().toString(36).substring(2,8)}` };
+                                        draftState.inventory.push(rewardItem);
+                                        localCorrectionWarnings.push(`Quest reward: Received item - ${rewardItem.name}.`);
+                                    });
+                                }
+                            }
+                        } else {
+                             localCorrectionWarnings.push(`Event: Quest "${event.questIdOrDescription}" not found for completion.`);
+                        }
+                    }
+                    break;
+                case 'npcRelationshipChange':
+                    {
+                        const npc = draftState.trackedNPCs.find(n => n.name.toLowerCase() === event.npcName.toLowerCase());
+                        if (npc) {
+                            npc.relationshipStatus = Math.max(-100, Math.min(100, (npc.relationshipStatus) + event.changeAmount));
+                            if (event.newStatus !== undefined) npc.relationshipStatus = Math.max(-100, Math.min(100, event.newStatus)); // AI can override with a specific new value
+                            npc.updatedAt = new Date().toISOString();
+                            localCorrectionWarnings.push(`Event: Relationship with ${npc.name} changed by ${event.changeAmount} to ${npc.relationshipStatus}. Reason: ${event.reason || 'unspecified'}`);
+                        } else {
+                            localCorrectionWarnings.push(`Event: NPC "${event.npcName}" not found for relationship change.`);
+                        }
+                    }
+                    break;
+                case 'newNPCIntroduced':
+                    {
+                         if (!draftState.trackedNPCs.find(n => n.name.toLowerCase() === event.npcName.toLowerCase())) {
+                            const newNPC: NPCProfileType = {
+                                id: `npc_${event.npcName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
+                                name: event.npcName,
+                                description: event.npcDescription,
+                                classOrRole: event.classOrRole,
+                                relationshipStatus: event.initialRelationship ?? 0,
+                                knownFacts: [],
+                                dialogueHistory: [],
+                                firstEncounteredLocation: draftState.currentLocation,
+                                firstEncounteredTurnId: input.currentTurnId,
+                                lastKnownLocation: draftState.currentLocation,
+                                lastSeenTurnId: input.currentTurnId,
+                                updatedAt: new Date().toISOString(),
+                                isMerchant: event.isMerchant ?? false,
+                                merchantInventory: [], // AI should describe items, separate logic to populate if needed
+                                sellsItemTypes: event.merchantSellsItemTypes,
+                                buysItemTypes: event.merchantBuysItemTypes,
+                            };
+                            draftState.trackedNPCs.push(newNPC);
+                            localCorrectionWarnings.push(`Event: New NPC introduced - ${newNPC.name}. Reason: ${event.reason || 'unspecified'}`);
+                        } else {
+                            localCorrectionWarnings.push(`Event: AI tried to introduce existing NPC "${event.npcName}". Profile might be updated via other events.`);
+                        }
+                    }
+                    break;
+                case 'worldFactAdded':
+                    if (!draftState.worldFacts.includes(event.fact)) {
+                        draftState.worldFacts.push(event.fact);
+                        localCorrectionWarnings.push(`Event: World fact added - "${event.fact}". Reason: ${event.reason || 'unspecified'}`);
+                    }
+                    break;
+                case 'worldFactRemoved':
+                    {
+                        const factIndex = draftState.worldFacts.findIndex(f => f.toLowerCase().includes(event.factDescription.toLowerCase()));
+                        if (factIndex > -1) {
+                            const removedFact = draftState.worldFacts[factIndex];
+                            draftState.worldFacts.splice(factIndex, 1);
+                            localCorrectionWarnings.push(`Event: World fact removed - "${removedFact}". Reason: ${event.reason || 'unspecified'}`);
+                        } else {
+                             localCorrectionWarnings.push(`Event: Attempted to remove world fact like "${event.factDescription}", but it was not found.`);
+                        }
+                    }
+                    break;
+                case 'worldFactUpdated':
+                    {
+                        const factIndex = draftState.worldFacts.findIndex(f => f.toLowerCase().includes(event.oldFactDescription.toLowerCase()));
+                        if (factIndex > -1) {
+                            const oldFact = draftState.worldFacts[factIndex];
+                            draftState.worldFacts[factIndex] = event.newFact;
+                            localCorrectionWarnings.push(`Event: World fact updated. Old: "${oldFact}". New: "${event.newFact}". Reason: ${event.reason || 'unspecified'}`);
+                        } else {
+                             localCorrectionWarnings.push(`Event: Attempted to update world fact like "${event.oldFactDescription}", but it was not found.`);
+                        }
+                    }
+                    break;
+                case 'skillLearned':
+                    {
+                        const newSkill: SkillType = {
+                            id: `skill_${event.skillName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
+                            name: event.skillName,
+                            description: event.skillDescription,
+                            type: event.skillType,
+                        };
+                        if (!draftState.character.skillsAndAbilities) {
+                            draftState.character.skillsAndAbilities = [];
+                        }
+                        draftState.character.skillsAndAbilities.push(newSkill);
+                        localCorrectionWarnings.push(`Event: Skill learned - ${newSkill.name} (${newSkill.type}). Reason: ${event.reason || 'unspecified'}`);
+                    }
+                    break;
                 default:
-                    localCorrectionWarnings.push(`Received unhandled event type: ${event.type}`);
+                    // This ensures that if a new event type is added to the union but not handled here, we're aware.
+                    const exhaustiveCheck: never = event; 
+                    localCorrectionWarnings.push(`Received unhandled event type: ${(exhaustiveCheck as DescribedEvent).type}`);
             }
         }
 
-
-        // --- Robust Character Data Finalization ---
+        // --- Robust Character Data Finalization (Post-Event Processing) ---
         // This section ensures all required fields are present and valid,
-        // primarily using originalChar as the source of truth if AI event processing didn't set them,
+        // primarily using originalChar as the source of truth if event processing didn't set them,
         // or if they became invalid. Hardcoded defaults are last resort.
+        const aiCharForFinalSanitize = aiPartialOutput?.updatedStoryState?.character; // Keep a reference if AI attempted full char update
 
         // Name
         if (!(typeof draftState.character.name === 'string' && draftState.character.name.trim() !== "")) {
-             draftState.character.name = (originalChar.name && typeof originalChar.name === 'string' && originalChar.name.trim() !== "") ? originalChar.name : "Unnamed Character";
-            localCorrectionWarnings.push("Character 'name' was missing or invalid after event processing; restored/defaulted.");
+            if (typeof originalChar.name === 'string' && originalChar.name.trim() !== "") {
+                draftState.character.name = originalChar.name;
+                localCorrectionWarnings.push("Character 'name' was invalid after event processing; restored from previous state.");
+            } else {
+                draftState.character.name = "Unnamed Character";
+                localCorrectionWarnings.push("Character 'name' was critically missing after event processing; applied hardcoded default.");
+            }
         }
         // Class
         if (!(typeof draftState.character.class === 'string' && draftState.character.class.trim() !== "")) {
-            draftState.character.class = (originalChar.class && typeof originalChar.class === 'string' && originalChar.class.trim() !== "") ? originalChar.class : "Adventurer";
-            localCorrectionWarnings.push("Character 'class' was missing or invalid after event processing; restored/defaulted.");
+             if (typeof originalChar.class === 'string' && originalChar.class.trim() !== "") {
+                draftState.character.class = originalChar.class;
+                localCorrectionWarnings.push("Character 'class' was invalid after event processing; restored from previous state.");
+            } else {
+                draftState.character.class = "Adventurer";
+                localCorrectionWarnings.push("Character 'class' was critically missing after event processing; applied hardcoded default.");
+            }
         }
         // Description
         if (!(typeof draftState.character.description === 'string' && draftState.character.description.trim() !== "")) {
-            draftState.character.description = (originalChar.description && typeof originalChar.description === 'string' && originalChar.description.trim() !== "") ? originalChar.description : "A mysterious adventurer.";
-            localCorrectionWarnings.push("Character 'description' was missing or invalid after event processing; restored/defaulted.");
+            if (typeof originalChar.description === 'string' && originalChar.description.trim() !== "") {
+                draftState.character.description = originalChar.description;
+                localCorrectionWarnings.push("Character 'description' was invalid after event processing; restored from previous state.");
+            } else {
+                draftState.character.description = "A mysterious adventurer.";
+                localCorrectionWarnings.push("Character 'description' was critically missing after event processing; applied hardcoded default.");
+            }
         }
 
-        // MaxHealth
+        // MaxHealth - must be positive
         if (!(typeof draftState.character.maxHealth === 'number' && draftState.character.maxHealth > 0)) {
-            draftState.character.maxHealth = (typeof originalChar.maxHealth === 'number' && originalChar.maxHealth > 0) ? originalChar.maxHealth : 100;
-            localCorrectionWarnings.push("Character 'maxHealth' was invalid or zero after event processing; restored/defaulted.");
+            if (typeof originalChar.maxHealth === 'number' && originalChar.maxHealth > 0) {
+                draftState.character.maxHealth = originalChar.maxHealth;
+                 localCorrectionWarnings.push("Character 'maxHealth' was invalid or zero after event processing; restored from previous state.");
+            } else {
+                draftState.character.maxHealth = 100;
+                localCorrectionWarnings.push("Character 'maxHealth' was critically missing or zero after event processing; applied hardcoded default.");
+            }
         }
         // Health (ensure it's a number and clamped)
         if (typeof draftState.character.health !== 'number') {
-            draftState.character.health = (typeof originalChar.health === 'number') ? originalChar.health : draftState.character.maxHealth;
-            localCorrectionWarnings.push("Character 'health' was invalid after event processing; restored/defaulted.");
+             if (typeof originalChar.health === 'number') {
+                draftState.character.health = originalChar.health;
+                localCorrectionWarnings.push("Character 'health' was invalid after event processing; restored from previous state.");
+            } else {
+                draftState.character.health = draftState.character.maxHealth; // Default to maxHealth if invalid
+                localCorrectionWarnings.push("Character 'health' was invalid after event processing; defaulted to maxHealth.");
+            }
         }
         draftState.character.health = Math.max(0, Math.min(draftState.character.health, draftState.character.maxHealth));
 
@@ -574,47 +839,74 @@ DO NOT return a full 'updatedStoryState' object. Focus on describing the events 
             draftState.character.experienceToNextLevel = (typeof originalChar.experienceToNextLevel === 'number' && originalChar.experienceToNextLevel > 0) ? originalChar.experienceToNextLevel : 100;
             localCorrectionWarnings.push("Character 'experienceToNextLevel' was invalid or zero after event processing; restored/defaulted.");
         }
-         if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) {
+         // Check for level up condition if not handled by a 'levelUp' event
+        if (draftState.character.experiencePoints >= draftState.character.experienceToNextLevel) {
+            const didLevelUpEventOccur = describedEvents.some(e => e.type === 'levelUp' && e.newLevel === (draftState.character.level || originalChar.level) + 1);
+            if (!didLevelUpEventOccur) { // Only auto-level if no specific levelUp event for this threshold
+                draftState.character.level = (draftState.character.level || originalChar.level) + 1;
+                draftState.character.experiencePoints = Math.max(0, draftState.character.experiencePoints - draftState.character.experienceToNextLevel);
+                draftState.character.experienceToNextLevel = Math.floor(draftState.character.experienceToNextLevel * 1.5);
+                localCorrectionWarnings.push(`Character XP exceeded threshold; automatically leveled up to ${draftState.character.level}.`);
+            }
+        } else if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) {
+             // Correct if XPToNextLevel is somehow less than current XP without a level up
             draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor((originalChar.experienceToNextLevel || 100) * 0.5));
-            localCorrectionWarnings.push("Corrected 'character.experienceToNextLevel' to be greater than current XP for current level.");
+            localCorrectionWarnings.push("Corrected 'character.experienceToNextLevel' to be greater than current XP for current level as no level up event occurred.");
         }
 
 
-        // Optional numeric fields
-        const ensureOptionalNumber = (fieldName: keyof CharacterProfile, defaultValue: number) => {
-            let currentValue = (draftState.character as any)[fieldName];
-            if (typeof currentValue !== 'number') { // If not a number after event processing
-                currentValue = (originalChar as any)[fieldName]; // Try original
-                if (typeof currentValue !== 'number') { // If original also not a number
-                    (draftState.character as any)[fieldName] = defaultValue;
-                    localCorrectionWarnings.push(`Character '${fieldName}' was invalid after events & original state; defaulted to ${defaultValue}.`);
-                } else {
-                    (draftState.character as any)[fieldName] = currentValue; // Use original value
-                    localCorrectionWarnings.push(`Character '${fieldName}' was invalid after events; restored from original state.`);
-                }
-            }
+        const handleOptionalNumber = (aiVal: any, origVal: number | undefined, defaultVal: number): number => {
+            if (typeof aiVal === 'number') return aiVal;
+            if (typeof origVal === 'number') return origVal;
+            return defaultVal;
         };
+        
+        // Check if AI tried to provide these, otherwise rely on event processing or original values
+        const aiMana = aiCharForFinalSanitize?.mana;
+        const aiMaxMana = aiCharForFinalSanitize?.maxMana;
+        const aiStrength = aiCharForFinalSanitize?.strength;
+        const aiDexterity = aiCharForFinalSanitize?.dexterity;
+        const aiConstitution = aiCharForFinalSanitize?.constitution;
+        const aiIntelligence = aiCharForFinalSanitize?.intelligence;
+        const aiWisdom = aiCharForFinalSanitize?.wisdom;
+        const aiCharisma = aiCharForFinalSanitize?.charisma;
+        const aiCurrency = aiCharForFinalSanitize?.currency;
+        const aiLangUnderstanding = aiCharForFinalSanitize?.languageUnderstanding;
 
-        ensureOptionalNumber('mana', 0);
-        ensureOptionalNumber('maxMana', 0);
-        ensureOptionalNumber('strength', 10);
-        ensureOptionalNumber('dexterity', 10);
-        ensureOptionalNumber('constitution', 10);
-        ensureOptionalNumber('intelligence', 10);
-        ensureOptionalNumber('wisdom', 10);
-        ensureOptionalNumber('charisma', 10);
-        ensureOptionalNumber('currency', 0);
-        if (draftState.character.currency! < 0) draftState.character.currency = 0; // ensure non-negative
-        ensureOptionalNumber('languageUnderstanding', 100);
+
+        draftState.character.mana = handleOptionalNumber(aiMana, draftState.character.mana ?? originalChar.mana, 0);
+        draftState.character.maxMana = handleOptionalNumber(aiMaxMana, draftState.character.maxMana ?? originalChar.maxMana, 0);
+        if (draftState.character.mana > draftState.character.maxMana && draftState.character.maxMana > 0) draftState.character.mana = draftState.character.maxMana;
+        else if (draftState.character.maxMana === 0) draftState.character.mana = 0;
+
+
+        draftState.character.strength = handleOptionalNumber(aiStrength, draftState.character.strength ?? originalChar.strength, 10);
+        draftState.character.dexterity = handleOptionalNumber(aiDexterity, draftState.character.dexterity ?? originalChar.dexterity, 10);
+        draftState.character.constitution = handleOptionalNumber(aiConstitution, draftState.character.constitution ?? originalChar.constitution, 10);
+        draftState.character.intelligence = handleOptionalNumber(aiIntelligence, draftState.character.intelligence ?? originalChar.intelligence, 10);
+        draftState.character.wisdom = handleOptionalNumber(aiWisdom, draftState.character.wisdom ?? originalChar.wisdom, 10);
+        draftState.character.charisma = handleOptionalNumber(aiCharisma, draftState.character.charisma ?? originalChar.charisma, 10);
+        
+        draftState.character.currency = handleOptionalNumber(aiCurrency, draftState.character.currency ?? originalChar.currency, 0);
+        if (draftState.character.currency! < 0) draftState.character.currency = 0;
+        
+        draftState.character.languageUnderstanding = handleOptionalNumber(aiLangUnderstanding, draftState.character.languageUnderstanding ?? originalChar.languageUnderstanding, 100);
         if (draftState.character.languageUnderstanding! < 0) draftState.character.languageUnderstanding = 0;
         if (draftState.character.languageUnderstanding! > 100) draftState.character.languageUnderstanding = 100;
 
 
-        // SkillsAndAbilities (Optional Array)
-        if (!Array.isArray(draftState.character.skillsAndAbilities)) {
+        // SkillsAndAbilities (Optional Array) - prefer AI's if valid, else original, else empty
+        if (aiCharForFinalSanitize && Array.isArray(aiCharForFinalSanitize.skillsAndAbilities)) {
+            draftState.character.skillsAndAbilities = aiCharForFinalSanitize.skillsAndAbilities;
+        } else if (!Array.isArray(draftState.character.skillsAndAbilities)) { // If events didn't create it or it was invalid
             draftState.character.skillsAndAbilities = Array.isArray(originalChar.skillsAndAbilities) ? originalChar.skillsAndAbilities : [];
-            localCorrectionWarnings.push("Character 'skillsAndAbilities' was not an array after event processing; restored/defaulted.");
+            if (aiCharForFinalSanitize && aiCharForFinalSanitize.hasOwnProperty('skillsAndAbilities')) {
+                 localCorrectionWarnings.push("AI 'character.skillsAndAbilities' was not an array; restored/defaulted.");
+            } else if (!draftState.character.skillsAndAbilities) {
+                localCorrectionWarnings.push("Character 'skillsAndAbilities' was missing; defaulted to empty array.");
+            }
         }
+        // Sanitize skills after they are set
         const skillIdSetSanitize = new Set<string>();
         (draftState.character.skillsAndAbilities || []).forEach((skill, index) => {
             if (!skill.id || skill.id.trim() === "" || skillIdSetSanitize.has(skill.id)) { 
@@ -636,14 +928,13 @@ DO NOT return a full 'updatedStoryState' object. Focus on describing the events 
              draftState.storySummary = "The story continues..."; // Fallback summary
         }
         
-        // Ensure other state parts are at least empty arrays if not provided or processed
+        // Ensure other state parts are at least empty arrays/default objects if not provided or processed
         draftState.inventory = draftState.inventory || [];
         draftState.quests = draftState.quests || [];
         draftState.worldFacts = draftState.worldFacts || [];
         draftState.trackedNPCs = draftState.trackedNPCs || [];
         draftState.equippedItems = draftState.equippedItems || { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
         draftState.currentLocation = typeof draftState.currentLocation === 'string' ? draftState.currentLocation : (typeof input.storyState.currentLocation === 'string' ? input.storyState.currentLocation : "Unknown Location");
-
 
     });
 
@@ -844,3 +1135,4 @@ DO NOT return a full 'updatedStoryState' object. Focus on describing the events 
     return finalOutput;
   }
 );
+
