@@ -51,24 +51,32 @@ export default function StoryForgePage() {
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | null>(null); // Added loadingType
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (isLoadingInteraction && loadingMessage?.startsWith("AI is forging")) { // Only cycle for scenario generation
-      let stepIndex = 0;
-      setLoadingMessage(scenarioGenerationSteps[stepIndex]); // Set initial step message
-      intervalId = setInterval(() => {
-        stepIndex = (stepIndex + 1) % scenarioGenerationSteps.length;
-        setLoadingMessage(scenarioGenerationSteps[stepIndex]);
-      }, 2500); // Change message every 2.5 seconds
-    } else if (isLoadingInteraction && !loadingMessage?.startsWith("AI is forging")) {
-      // For "AI is crafting the next part of your tale..."
-      // We can keep it simple or add a simple spinner text here too if desired
+    let intervalId: NodeJS.Timeout | undefined;
+
+    if (isLoadingInteraction && loadingType === 'scenario') {
+        let stepIndex = 0;
+        setLoadingMessage(scenarioGenerationSteps[stepIndex]); // Set initial step message for scenario
+
+        intervalId = setInterval(() => {
+            stepIndex = (stepIndex + 1) % scenarioGenerationSteps.length;
+            setLoadingMessage(scenarioGenerationSteps[stepIndex]);
+        }, 2500);
+    } else if (isLoadingInteraction && loadingType === 'nextScene') {
+        setLoadingMessage("AI is crafting the next part of your tale..."); // Set message for next scene
     }
-    return () => clearInterval(intervalId);
-  }, [isLoadingInteraction, loadingMessage]);
+    // No explicit else to clear loadingMessage here; it's cleared when isLoadingInteraction turns false in the handlers.
+
+    return () => {
+        if (intervalId) {
+            clearInterval(intervalId);
+        }
+    };
+  }, [isLoadingInteraction, loadingType]);
 
 
   const loadSession = useCallback(() => {
@@ -132,7 +140,7 @@ export default function StoryForgePage() {
 
   const handleStartStoryFromSeries = async (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => {
     setIsLoadingInteraction(true);
-    setLoadingMessage("AI is forging your initial world and character..."); // Initial generic message, will be overridden by useEffect
+    setLoadingType('scenario'); 
     try {
       const input: GenerateScenarioFromSeriesInput = {
         seriesName: data.seriesName,
@@ -196,13 +204,14 @@ export default function StoryForgePage() {
       });
     }
     setIsLoadingInteraction(false);
+    setLoadingType(null);
     setLoadingMessage(null);
   };
 
   const handleUserAction = async (userInput: string) => {
     if (!currentStoryState || !currentSession || !character) return;
     setIsLoadingInteraction(true);
-    setLoadingMessage("AI is crafting the next part of your tale...");
+    setLoadingType('nextScene');
 
     const playerMessage: DisplayMessage = {
       id: crypto.randomUUID(),
@@ -302,6 +311,7 @@ export default function StoryForgePage() {
         setStoryHistory(prevHistory => prevHistory.filter(turn => !turn.id.startsWith('pending-')));
     }
     setIsLoadingInteraction(false);
+    setLoadingType(null);
     setLoadingMessage(null);
   };
 
