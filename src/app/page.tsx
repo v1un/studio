@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import { fleshOutChapterQuests as callFleshOutChapterQuests } from "@/ai/flows/flesh-out-chapter-quests";
-import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment, DisplayMessage, FleshOutChapterQuestsInput, FleshOutChapterQuestsOutput } from "@/types/story";
+import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment, DisplayMessage, FleshOutChapterQuestsInput, FleshOutChapterQuestsOutput, CombatHelperInfo, CombatEventLogEntry, HealthChangeEvent, NPCStateChangeEvent, DescribedEvent } from "@/types/story";
 import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile, Chapter } from "@/types/story";
 import { produce } from "immer";
 
@@ -242,7 +242,7 @@ export default function StoryForgePage() {
          const newTurnForPlayerMessage: StoryTurn = {
             id: `pending-${crypto.randomUUID()}`,
             messages: [playerMessage],
-            storyStateAfterScene: lastTurn.storyStateAfterScene
+            storyStateAfterScene: lastTurn.storyStateAfterScene // Use last turn's state for pending
         };
         return [...prevHistory, newTurnForPlayerMessage];
     });
@@ -275,7 +275,6 @@ export default function StoryForgePage() {
 
       let finalUpdatedState = result.updatedStoryState;
 
-      // Check for chapter completion and flesh out next chapter
       const previousChapterId = currentStoryState.currentChapterId;
       const currentChapterInNewState = finalUpdatedState.chapters.find(c => c.id === previousChapterId);
 
@@ -288,7 +287,7 @@ export default function StoryForgePage() {
 
         if (nextChapterToFleshOut && currentSession.seriesPlotSummary) {
           console.log(`CLIENT: Found next outlined chapter: "${nextChapterToFleshOut.title}". Attempting to flesh out quests.`);
-          setLoadingType('chapterLoad'); // Update loading message for chapter
+          setLoadingType('chapterLoad');
           toast({
             title: "Chapter Complete!",
             description: (
@@ -335,14 +334,13 @@ export default function StoryForgePage() {
               variant: "destructive",
             });
           }
-          setLoadingType('nextScene'); // Revert loading type after chapter load attempt
+          setLoadingType('nextScene');
         } else if (nextChapterToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next chapter is outlined, but no seriesPlotSummary found in session to flesh it out.");
         } else if (!nextChapterToFleshOut && currentChapterInNewState?.isCompleted) {
             toast({ title: "Main Story Progress!", description: "You've completed all available chapters for now!" });
         }
       }
-
 
       const aiDisplayMessages: DisplayMessage[] = result.generatedMessages.map((aiMsg: AIMessageSegment) => {
         const isGM = aiMsg.speaker.toUpperCase() === 'GM';
@@ -360,6 +358,78 @@ export default function StoryForgePage() {
           isPlayer: false,
         };
       });
+
+      // Combat Helper Logic
+      let isCombatTurn = false;
+      const combatTurnEvents: CombatEventLogEntry[] = [];
+      const hostileNPCsInTurn: CombatHelperInfo['hostileNPCs'] = [];
+
+      if (result.describedEvents) {
+        result.describedEvents.forEach(event => {
+          if (event.type === 'healthChange') {
+            const e = event as HealthChangeEvent;
+            if (e.amount < 0) isCombatTurn = true;
+            combatTurnEvents.push({
+              description: `${e.characterTarget === 'player' ? finalUpdatedState.character.name : e.characterTarget} ${e.amount < 0 ? 'took' : 'recovered'} ${Math.abs(e.amount)} health. ${e.reason || ''}`.trim(),
+              target: e.characterTarget,
+              type: e.amount < 0 ? 'damage' : 'healing',
+              value: Math.abs(e.amount)
+            });
+          } else if (event.type === 'npcStateChange') {
+            const e = event as NPCStateChangeEvent;
+            if (e.newState.toLowerCase().includes('hostile') || e.newState.toLowerCase().includes('attacking')) {
+              isCombatTurn = true;
+            }
+            combatTurnEvents.push({
+                description: `NPC ${e.npcName}'s state changed to ${e.newState}. ${e.reason || ''}`.trim(),
+                target: e.npcName,
+                type: 'effect' // Or a more specific combat state change type
+            });
+          } else if (event.type === 'itemUsed' && (event.reason?.toLowerCase().includes('combat') || event.itemIdOrName.toLowerCase().includes('potion'))){
+            combatTurnEvents.push({
+                description: `Item used: ${event.itemIdOrName}. ${event.reason || ''}`.trim(),
+                type: 'action'
+            });
+          }
+          // Add more event type checks for combat relevance (e.g., skillLearned if it's a combat skill, specific item effects)
+        });
+      }
+
+      if (isCombatTurn) {
+        console.log("CLIENT: Combat detected in turn.");
+        finalUpdatedState.trackedNPCs.forEach(npc => {
+          if (npc.shortTermGoal?.toLowerCase().includes('attack') || 
+              npc.shortTermGoal?.toLowerCase().includes('hostile') ||
+              (npc.health !== undefined && npc.health < (npc.maxHealth ?? npc.health) && combatTurnEvents.some(e => e.target === npc.name && e.type === 'damage'))) { // If NPC took damage this turn
+            hostileNPCsInTurn.push({
+              id: npc.id,
+              name: npc.name,
+              health: npc.health,
+              maxHealth: npc.maxHealth,
+              description: npc.description.substring(0,50) + "..."
+            });
+          }
+        });
+
+        const combatHelperData: CombatHelperInfo = {
+          playerHealth: finalUpdatedState.character.health,
+          playerMaxHealth: finalUpdatedState.character.maxHealth,
+          playerMana: finalUpdatedState.character.mana,
+          playerMaxMana: finalUpdatedState.character.maxMana,
+          hostileNPCs: hostileNPCsInTurn,
+          turnEvents: combatTurnEvents.slice(0, 5), // Limit to 5 most recent/relevant events for the helper
+        };
+        
+        const combatHelperMessage: DisplayMessage = {
+          id: crypto.randomUUID(),
+          speakerType: 'SystemHelper',
+          speakerNameLabel: 'COMBAT LOG',
+          isPlayer: false,
+          combatHelperInfo: combatHelperData,
+        };
+        aiDisplayMessages.push(combatHelperMessage);
+      }
+
 
       const completedTurn: StoryTurn = {
         id: crypto.randomUUID(),
@@ -419,7 +489,7 @@ export default function StoryForgePage() {
         description: `The AI encountered an issue: ${error.message || "Please try again."}`,
         variant: "destructive",
       });
-        setStoryHistory(prevHistory => prevHistory.filter(turn => !turn.id.startsWith('pending-')));
+      setStoryHistory(prevHistory => prevHistory.filter(turn => !turn.id.startsWith('pending-')));
     }
     setIsLoadingInteraction(false);
     setLoadingType(null);

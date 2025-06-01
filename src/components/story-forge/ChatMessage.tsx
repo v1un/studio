@@ -4,13 +4,18 @@
 import type { DisplayMessage } from "@/types/story";
 import { cn } from "@/lib/utils";
 import Image from 'next/image';
-import { Bot, UserCircle } from "lucide-react";
+import { Bot, UserCircle, ShieldAlertIcon } from "lucide-react";
+import CombatHelperDisplay from "./CombatHelperDisplay";
 
 interface ChatMessageProps {
   message: DisplayMessage;
 }
 
 export default function ChatMessage({ message }: ChatMessageProps) {
+  if (message.speakerType === 'SystemHelper' && message.combatHelperInfo) {
+    return <CombatHelperDisplay combatInfo={message.combatHelperInfo} />;
+  }
+  
   const isPlayer = message.speakerType === 'Player';
   
   let nameLabelColor = "text-muted-foreground"; 
@@ -47,7 +52,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         />
       );
     }
-    // Fallback to Lucide icons if no avatarSrc
     if (isPlayer) {
       return <UserCircle className="w-10 h-10 text-muted-foreground" />;
     }
@@ -88,5 +92,3 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     </div>
   );
 }
-
-    

@@ -19,7 +19,7 @@ export interface Item {
   relevantQuestId?: string;
   basePrice?: number; // Base value of the item
   price?: number; // The price a merchant sells this item for
-  rarity?: ItemRarity; // New field for item rarity
+  rarity?: ItemRarity;
 }
 
 export interface CharacterProfile {
@@ -41,8 +41,8 @@ export interface CharacterProfile {
   experienceToNextLevel: number;
   skillsAndAbilities: Skill[];
   currency?: number; // Player's currency
-  languageReading?: number; // Scale of 0 (none) to 100 (fluent) for understanding written language.
-  languageSpeaking?: number; // Scale of 0 (none) to 100 (fluent) for understanding spoken language.
+  languageReading?: number;
+  languageSpeaking?: number;
 }
 
 export type EquipmentSlot =
@@ -64,8 +64,8 @@ export interface QuestObjective {
 
 export interface QuestRewards {
   experiencePoints?: number;
-  items?: Item[]; // Items to be awarded
-  currency?: number; // Currency awarded
+  items?: Item[];
+  currency?: number;
 }
 
 export interface Quest {
@@ -87,7 +87,7 @@ export interface Chapter {
   title: string;
   description: string;
   order: number;
-  mainQuestIds: string[]; // Initially, for outlined chapters, this might be empty.
+  mainQuestIds: string[];
   isCompleted: boolean;
   unlockCondition?: string;
 }
@@ -137,15 +137,33 @@ export interface StructuredStoryState {
   storySummary?: string;
 }
 
+export interface CombatEventLogEntry {
+  description: string; // e.g., "Player took 10 damage from Goblin's attack."
+  target?: 'player' | string; // 'player' or NPC ID/Name
+  type: 'damage' | 'healing' | 'effect' | 'death' | 'action'; // Add more as needed
+  value?: string | number; // e.g., amount of damage/healing, or effect name
+}
+
+export interface CombatHelperInfo {
+  playerHealth: number;
+  playerMaxHealth: number;
+  playerMana?: number;
+  playerMaxMana?: number;
+  hostileNPCs: Array<{ id: string; name: string; health?: number; maxHealth?: number; description?: string }>;
+  turnEvents: CombatEventLogEntry[];
+}
+
+
 export interface DisplayMessage {
   id: string;
-  speakerType: 'Player' | 'GM' | 'NPC';
+  speakerType: 'Player' | 'GM' | 'NPC' | 'SystemHelper';
   speakerNameLabel: string;
   speakerDisplayName?: string;
-  content: string;
+  content?: string; // Optional because SystemHelper might not have direct content
   avatarSrc?: string;
   avatarHint?: string;
   isPlayer: boolean;
+  combatHelperInfo?: CombatHelperInfo; // New field for combat helper data
 }
 
 export interface StoryTurn {
@@ -258,7 +276,7 @@ export interface ItemFoundEvent extends DescribedEventBase {
   effectDescription?: string;
   isQuestItem?: boolean;
   relevantQuestId?: string;
-  rarity?: ItemRarity; // New field
+  rarity?: ItemRarity;
 }
 export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
 export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; }
@@ -270,12 +288,12 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   questIdSuggestion?: string;
   questTitle?: string;
   questDescription: string;
-  questType?: Quest['type']; // To allow AI to suggest type for dynamic quests
-  chapterId?: string;       // If it's part of a chapter
+  questType?: Quest['type'];
+  chapterId?: string;
   orderInChapter?: number;
   category?: string;
-  objectives?: { description: string }[]; // Simplified for AI, full objective created in TS
-  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] }; // Items can include rarity here
+  objectives?: { description: string }[];
+  rewards?: { experiencePoints?: number; currency?: number; items?: Partial<Item>[] };
 }
 export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
 export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCompleted'; questIdOrDescription: string; }
@@ -358,16 +376,14 @@ export interface GenerateStoryStartOutput {
 
 // Types for FleshOutChapterQuests flow
 export interface FleshOutChapterQuestsInput {
-  chapterToFleshOut: Chapter; // Use the full Chapter type
+  chapterToFleshOut: Chapter;
   seriesName: string;
   seriesPlotSummary: string;
   overallStorySummarySoFar: string;
-  characterContext: { name: string; class: string; level: number; }; // Minimal context
+  characterContext: { name: string; class: string; level: number; };
   usePremiumAI?: boolean;
 }
 
 export interface FleshOutChapterQuestsOutput {
   fleshedOutQuests: Quest[];
 }
-
-    
