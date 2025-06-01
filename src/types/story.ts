@@ -16,7 +16,6 @@ export interface Item {
   isQuestItem?: boolean;
   relevantQuestId?: string;
   basePrice?: number; // Base value of the item
-  // For merchant inventory specifically, price might be part of the item object if it's different from basePrice
   price?: number; // The price a merchant sells this item for
 }
 
@@ -184,6 +183,113 @@ export interface AIMessageSegment {
     speaker: string; // 'GM' for Game Master/narration, or the NPC's name if an NPC is speaking
     content: string; // The text of the dialogue or narration
 }
+
+// --- Types for Multi-Step GenerateNextScene ---
+export type EventType = 
+  | 'healthChange' 
+  | 'manaChange'
+  | 'xpChange'
+  | 'levelUp' // Generic level up, specific rewards handled by TypeScript or subsequent focused AI call
+  | 'currencyChange'
+  | 'languageImprovement'
+  | 'itemFound'
+  | 'itemLost'
+  | 'itemUsed'
+  | 'itemEquipped'
+  | 'itemUnequipped'
+  | 'questAccepted'
+  | 'questObjectiveUpdate'
+  | 'questCompleted'
+  | 'questFailed' // Future
+  | 'npcRelationshipChange'
+  | 'npcStateChange' // e.g., becomes hostile, starts following player
+  | 'newNPCIntroduced' // When an NPC is mentioned for the first time with enough detail to create a basic profile
+  | 'worldFactAdded'
+  | 'worldFactRemoved'
+  | 'worldFactUpdated'
+  | 'skillLearned'; // For new skills gained
+
+export interface DescribedEventBase {
+  type: EventType;
+  reason?: string; // Optional narrative reason for the event
+}
+
+export interface HealthChangeEvent extends DescribedEventBase { type: 'healthChange'; characterTarget: 'player' | string; amount: number; } // amount can be negative
+export interface ManaChangeEvent extends DescribedEventBase { type: 'manaChange'; characterTarget: 'player' | string; amount: number; }
+export interface XPChangeEvent extends DescribedEventBase { type: 'xpChange'; amount: number; }
+export interface LevelUpEvent extends DescribedEventBase { type: 'levelUp'; newLevel: number; rewardSuggestion?: string; } // e.g., "suggests increasing strength"
+export interface CurrencyChangeEvent extends DescribedEventBase { type: 'currencyChange'; amount: number; }
+export interface LanguageImprovementEvent extends DescribedEventBase { type: 'languageImprovement'; amount: number; }
+
+export interface ItemFoundEvent extends DescribedEventBase { 
+  type: 'itemFound'; 
+  itemName: string; 
+  itemDescription: string; 
+  quantity?: number;
+  suggestedBasePrice?: number; 
+  equipSlot?: Item['equipSlot'];
+  isConsumable?: boolean;
+  effectDescription?: string;
+  isQuestItem?: boolean;
+  relevantQuestId?: string;
+}
+export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
+export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; } // Effects handled by TypeScript based on item properties
+export interface ItemEquippedEvent extends DescribedEventBase { type: 'itemEquipped'; itemIdOrName: string; slot: EquipmentSlot; }
+export interface ItemUnequippedEvent extends DescribedEventBase { type: 'itemUnequipped'; itemIdOrName: string; slot: EquipmentSlot; }
+
+export interface QuestAcceptedEvent extends DescribedEventBase { 
+  type: 'questAccepted'; 
+  questIdSuggestion?: string; // AI can suggest an ID
+  questDescription: string; 
+  category?: string; 
+  objectives?: { description: string }[]; 
+  rewards?: { experiencePoints?: number; currency?: number; itemNames?: string[] };
+}
+export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
+export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCompleted'; questIdOrDescription: string; }
+// export interface QuestFailedEvent extends DescribedEventBase { type: 'questFailed'; questIdOrDescription: string; }
+
+export interface NPCRelationshipChangeEvent extends DescribedEventBase { type: 'npcRelationshipChange'; npcName: string; changeAmount: number; newStatus?: number; } // changeAmount e.g. +10, -20
+export interface NPCStateChangeEvent extends DescribedEventBase { type: 'npcStateChange'; npcName: string; newState: string; } // e.g. "hostile", "friendly", "following"
+export interface NewNPCIntroducedEvent extends DescribedEventBase {
+  type: 'newNPCIntroduced';
+  npcName: string;
+  npcDescription: string;
+  classOrRole?: string;
+  initialRelationship?: number;
+  isMerchant?: boolean;
+}
+
+export interface WorldFactAddedEvent extends DescribedEventBase { type: 'worldFactAdded'; fact: string; }
+export interface WorldFactRemovedEvent extends DescribedEventBase { type: 'worldFactRemoved'; factDescription: string; } // AI describes the fact to remove
+export interface WorldFactUpdatedEvent extends DescribedEventBase { type: 'worldFactUpdated'; oldFactDescription: string; newFact: string; }
+
+export interface SkillLearnedEvent extends DescribedEventBase {
+  type: 'skillLearned';
+  skillName: string;
+  skillDescription: string;
+  skillType: string;
+}
+
+
+export type DescribedEvent = 
+  | HealthChangeEvent | ManaChangeEvent | XPChangeEvent | LevelUpEvent | CurrencyChangeEvent | LanguageImprovementEvent
+  | ItemFoundEvent | ItemLostEvent | ItemUsedEvent | ItemEquippedEvent | ItemUnequippedEvent
+  | QuestAcceptedEvent | QuestObjectiveUpdateEvent | QuestCompletedEvent // | QuestFailedEvent
+  | NPCRelationshipChangeEvent | NPCStateChangeEvent | NewNPCIntroducedEvent
+  | WorldFactAddedEvent | WorldFactRemovedEvent | WorldFactUpdatedEvent
+  | SkillLearnedEvent;
+
+export interface NarrativeAndEventsOutput {
+  generatedMessages: AIMessageSegment[];
+  describedEvents?: DescribedEvent[];
+  activeNPCsInScene?: ActiveNPCInfo[];
+  newLoreProposals?: RawLoreEntry[];
+  sceneSummaryFragment: string; // Summary of just this scene's events
+}
+// --- End Types for Multi-Step ---
+
 
 export interface GenerateNextSceneInput {
   currentScene: string;
