@@ -2,15 +2,16 @@
 'use server';
 
 /**
- * @fileOverview This file contains Genkit flows for generating the foundational
- * and narrative elements of a game scenario based on a real-life series.
- * It now exports two main functions:
- * - generateScenarioFoundation: Generates character, scene, core world details, initial items.
- * - generateScenarioNarrativeElements: Generates quests, chapters, NPCs, and lore, called after foundation.
+ * @fileOverview This file contains Genkit flows for generating:
+ * 1. Scenario Foundation: Character, scene, core world details, initial items, plot summary, style guide.
+ * 2. Scenario Narrative Elements: Quests, chapters, NPCs, and lore entries.
+ * It exports two main functions:
+ * - generateScenarioFoundation
+ * - generateScenarioNarrativeElements (to be called after foundation)
  */
 
-import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
-import {z}from 'zod';
+import { ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME } from '@/ai/genkit';
+import { z } from 'zod';
 import type { EquipmentSlot, Item as ItemType, CharacterProfile as CharacterProfileType, Skill as SkillType, ItemRarity, ActiveEffect as ActiveEffectType, StatModifier as StatModifierType, Quest as QuestType, NPCProfile as NPCProfileType, Chapter as ChapterType, RawLoreEntry } from '@/types/story';
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
@@ -212,11 +213,11 @@ Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     });
     const foundation_styleGuidePrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig, // Reverted to larger token limit as requested
+        name: 'foundation_generateSeriesStyleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: z.string().nullable() }, config: modelConfig,
         prompt: `For "{{seriesName}}", provide a 2-3 sentence summary of key themes/tone. If unable, output an empty string (""). Output ONLY the summary string or empty string.`,
     });
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
-        name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_generateSeriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}"{{#if characterNameInput}} (character: "{{characterNameInput}}"){{/if}}, provide 'plotSummary': Concise summary of early major plot points/arcs relevant to the character. 5-7 bullet points or short paragraph. Output ONLY JSON for SeriesPlotSummaryOutputSchema.`,
     });
 
@@ -252,7 +253,7 @@ Output ONLY the JSON. Strictly adhere to CharacterAndSceneOutputSchema.`,
     let step2StartTime = Date.now();
     console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
     const foundation_initialCharacterSkillsPrompt = ai.definePrompt({
-        name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
 Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills (unique 'id', 'name', 'description', 'type'). Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
 Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ensure IDs are unique.`,
@@ -289,31 +290,31 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
     };
 
     const foundation_initialInventoryPrompt = ai.definePrompt({
-        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'inventory': 0-3 unequipped items. Each: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). 'equipSlot' if equippable, OMITTED otherwise.
 Output ONLY { "inventory": [...] }. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
-        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Each item: 'id', 'name', 'description', 'basePrice' (number), optional 'rarity', 'equipSlot', optional 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}).
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
-        name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig, // Reverted
+        name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: modelConfig,
         prompt: `For "{{seriesName}}" (Char: {{character.name}} - Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'worldFacts': 3-5 key facts. If languageReading is low, fact MUST state "Character {{character.name}} cannot read local script...". If languageSpeaking is low, fact MUST state "Character {{character.name}} cannot understand/speak local language...".
 Output ONLY { "worldFacts": [...] }.`,
@@ -573,7 +574,7 @@ const GenerateScenarioNarrativeElementsInputSchema = z.object({
   characterProfile: Narrative_CharacterProfileSchemaForInput, 
   sceneDescription: z.string(),
   currentLocation: z.string(),
-  characterNameInput: z.string().optional(),
+  characterNameInput: z.string().optional(), // From original user input
   usePremiumAI: z.boolean().optional(),
 });
 export type GenerateScenarioNarrativeElementsInput = z.infer<typeof GenerateScenarioNarrativeElementsInputSchema>;
@@ -654,31 +655,31 @@ Generate ONLY 'trackedNPCs':
 Output ONLY { "trackedNPCs": [...] }. Ensure 'activeEffects' are structured correctly. Ensure all IDs are unique.`,
     });
 
-    const narrative_characterLorePrompt = ai.definePrompt({
+    const characterLorePrompt = ai.definePrompt({
         name: 'narrative_characterLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR CHARACTERS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Character".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Character"}, ...] }.`,
     });
-    const narrative_locationLorePrompt = ai.definePrompt({
+    const locationLorePrompt = ai.definePrompt({
         name: 'narrative_locationLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 10-12 key lore entries for MAJOR LOCATIONS/REGIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Location".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Location"}, ...] }.`,
     });
-    const narrative_factionLorePrompt = ai.definePrompt({
+    const factionLorePrompt = ai.definePrompt({
         name: 'narrative_factionLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for IMPORTANT FACTIONS/ORGANIZATIONS relevant to early-to-mid game. Each: 'keyword' (name), 'content' (2-3 sentences), 'category': "Faction/Organization".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Faction/Organization"}, ...] }.`,
     });
-    const narrative_itemConceptLorePrompt = ai.definePrompt({
+    const itemConceptLorePrompt = ai.definePrompt({
         name: 'narrative_itemConceptLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Item/Concept" or "Technology".
 Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Item/Concept"}, ...] }.`,
     });
-    const narrative_eventHistoryLorePrompt = ai.definePrompt({
+    const eventHistoryLorePrompt = ai.definePrompt({
         name: 'narrative_eventHistoryLorePrompt', model: modelName, input: { schema: Narrative_LoreGenerationInputSchema }, output: { schema: Narrative_CategorizedLoreOutputSchema }, config: modelConfig,
         prompt: `You are a lore master for "{{seriesName}}". Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
 Generate 8-10 key lore entries for KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS relevant to early-to-mid game. Each: 'keyword', 'content' (2-3 sentences), 'category': "Event/History".
@@ -723,7 +724,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
             eventLore
         ] = await Promise.all([
             narrative_initialQuestsAndChaptersPrompt(questsChaptersInput).then(r => r.output),
-            narrative_initialTrackedNPCsPrompt(npcsInput).then(r => r.output),
+            initialTrackedNPCsPrompt(npcsInput).then(r => r.output),
             characterLorePrompt(loreBaseInput).then(r => r.output),
             locationLorePrompt(loreBaseInput).then(r => r.output),
             factionLorePrompt(loreBaseInput).then(r => r.output),
@@ -753,7 +754,7 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     console.log(`[${new Date().toISOString()}] generateScenarioNarrativeElementsFlow: Generated ${allLoreEntries.length} raw lore entries.`);
 
 
-    // --- Final Sanitation Pass ---
+    // --- Final Sanitation Pass (copied and adapted from original generateScenarioFromSeries) ---
     const sanitizeItem = (item: Partial<ItemType>, prefix: string, index: number | string = '') => {
         if (!item.id || item.id.trim() === "") item.id = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
         item.name = item.name || "Unnamed Item";
@@ -805,3 +806,5 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     return output;
   }
 );
+
+    
