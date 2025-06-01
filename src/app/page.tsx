@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -18,7 +17,7 @@ import type {
     DescribedEvent, // Generic DescribedEvent
     HealthChangeEvent, ManaChangeEvent, XPChangeEvent, LevelUpEvent, CurrencyChangeEvent, LanguageSkillChangeEvent, ItemFoundEvent, ItemLostEvent, ItemUsedEvent, ItemEquippedEvent, ItemUnequippedEvent, QuestAcceptedEvent, QuestObjectiveUpdateEvent, QuestCompletedEvent, QuestFailedEvent, NPCRelationshipChangeEvent, NPCStateChangeEvent, NewNPCIntroducedEvent, WorldFactAddedEvent, WorldFactRemovedEvent, WorldFactUpdatedEvent, SkillLearnedEvent, // Specific event types
     CharacterProfile, EquipmentSlot, Item as ItemType, StructuredStoryState, Quest, NPCProfile, StoryArc,
-    StatModifier, RawLoreEntry
+    StatModifier, RawLoreEntry, TemporaryEffect, ActiveEffect
 } from "@/types/story";
 import { produce } from "immer";
 
@@ -73,67 +72,75 @@ function createSystemMessage(content: string): DisplayMessage {
 }
 
 
-// Helper function to calculate effective character stats including item bonuses
+// Helper function to calculate effective character stats including item bonuses and temporary effects
 function calculateEffectiveCharacterProfile(
   baseProfile: CharacterProfile,
   equippedItems: Partial<Record<EquipmentSlot, ItemType | null>>
 ): CharacterProfile {
-  const effectiveProfile = JSON.parse(JSON.stringify(baseProfile)) as CharacterProfile;
+  const effectiveProfile = produce(baseProfile, draft => {
+    // Ensure activeTemporaryEffects is an array
+    draft.activeTemporaryEffects = draft.activeTemporaryEffects || [];
 
-  const addStat = (statName: keyof CharacterProfile, value: number) => {
-    const numericStats: (keyof CharacterProfile)[] = [
-      'health', 'maxHealth', 'mana', 'maxMana',
-      'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma',
-      'level', 'experiencePoints', 'experienceToNextLevel', 'currency',
-      'languageReading', 'languageSpeaking'
-    ];
-    if (numericStats.includes(statName)) {
-      const currentValue = (effectiveProfile[statName] as number | undefined) ?? 0;
-      (effectiveProfile[statName] as number) = currentValue + value;
-    }
-  };
-
-  for (const slot in equippedItems) {
-    const item = equippedItems[slot as EquipmentSlot];
-    if (item && item.activeEffects) {
-      for (const effect of item.activeEffects) {
-        if (effect.type === 'stat_modifier' && effect.duration === 'permanent_while_equipped' && effect.statModifiers) {
-          for (const modifier of effect.statModifiers) {
-            if (modifier.type === 'add') {
-              const statKey = modifier.stat as keyof CharacterProfile;
-              if (Object.prototype.hasOwnProperty.call(effectiveProfile, statKey) || Object.prototype.hasOwnProperty.call(CharacterProfile.prototype, statKey) || statKey in effectiveProfile) {
-                 addStat(statKey, modifier.value);
-              } else {
-                console.warn(`calculateEffectiveCharacterProfile: Attempted to modify unknown stat '${statKey}'`);
-              }
+    const applyModifier = (statName: keyof CharacterProfile, value: number, type: 'add' | 'multiply') => {
+        const numericStats: (keyof CharacterProfile)[] = [
+            'health', 'maxHealth', 'mana', 'maxMana',
+            'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma',
+            'level', 'experiencePoints', 'experienceToNextLevel', 'currency',
+            'languageReading', 'languageSpeaking'
+        ];
+        if (numericStats.includes(statName)) {
+            let currentValue = (draft[statName] as number | undefined) ?? 0;
+            if (type === 'add') {
+                currentValue += value;
+            } else if (type === 'multiply') {
+                currentValue *= value;
             }
-          }
+            (draft[statName] as number) = currentValue;
+        } else {
+            console.warn(`calculateEffectiveCharacterProfile: Attempted to modify non-numeric or unknown stat '${statName}'`);
         }
-      }
-    }
-  }
+    };
 
-  if (effectiveProfile.maxHealth <= 0) effectiveProfile.maxHealth = 1;
-  if (effectiveProfile.health > effectiveProfile.maxHealth) {
-    effectiveProfile.health = effectiveProfile.maxHealth;
-  }
-  if (effectiveProfile.health < 0) {
-    effectiveProfile.health = 0;
-  }
-
-  if (effectiveProfile.mana !== undefined && effectiveProfile.maxMana !== undefined) {
-    if (effectiveProfile.maxMana <= 0 && effectiveProfile.mana > 0) effectiveProfile.maxMana = effectiveProfile.mana;
-    else if (effectiveProfile.maxMana <=0) effectiveProfile.maxMana = 0;
-
-    if (effectiveProfile.mana > effectiveProfile.maxMana) {
-      effectiveProfile.mana = effectiveProfile.maxMana;
+    // Apply permanent effects from equipped items
+    for (const slot in equippedItems) {
+        const item = equippedItems[slot as EquipmentSlot];
+        if (item && item.activeEffects) {
+            for (const effect of item.activeEffects) {
+                if (effect.type === 'stat_modifier' && effect.duration === 'permanent_while_equipped' && effect.statModifiers) {
+                    for (const modifier of effect.statModifiers) {
+                        applyModifier(modifier.stat as keyof CharacterProfile, modifier.value, modifier.type);
+                    }
+                }
+            }
+        }
     }
-    if (effectiveProfile.mana < 0) {
-      effectiveProfile.mana = 0;
+
+    // Apply temporary effects
+    if (draft.activeTemporaryEffects) {
+        for (const tempEffect of draft.activeTemporaryEffects) {
+            if (tempEffect.type === 'stat_modifier' && tempEffect.statModifiers) {
+                for (const modifier of tempEffect.statModifiers) {
+                     applyModifier(modifier.stat as keyof CharacterProfile, modifier.value, modifier.type);
+                }
+            }
+        }
     }
-  } else if (effectiveProfile.mana !== undefined && effectiveProfile.maxMana === undefined) {
-    effectiveProfile.maxMana = Math.max(0, effectiveProfile.mana);
-  }
+
+
+    // Ensure health and mana are within bounds
+    if (draft.maxHealth <= 0) draft.maxHealth = 1;
+    if (draft.health > draft.maxHealth) draft.health = draft.maxHealth;
+    if (draft.health < 0) draft.health = 0;
+
+    if (draft.mana !== undefined && draft.maxMana !== undefined) {
+        if (draft.maxMana <= 0 && draft.mana > 0) draft.maxMana = draft.mana;
+        else if (draft.maxMana <=0) draft.maxMana = 0;
+        if (draft.mana > draft.maxMana) draft.mana = draft.maxMana;
+        if (draft.mana < 0) draft.mana = 0;
+    } else if (draft.mana !== undefined && draft.maxMana === undefined) {
+        draft.maxMana = Math.max(0, draft.mana);
+    }
+  });
 
   return effectiveProfile;
 }
@@ -242,6 +249,7 @@ export default function StoryForgePage() {
     if (!baseCharacterProfile || !currentStoryState?.equippedItems) {
       return baseCharacterProfile;
     }
+    // This calculates based on base + equipment + active temporary effects for AI's context
     return calculateEffectiveCharacterProfile(
       baseCharacterProfile,
       currentStoryState.equippedItems
@@ -275,7 +283,7 @@ export default function StoryForgePage() {
       const narrativeElementsInput: GenerateScenarioNarrativeElementsInput = {
         seriesName: data.seriesName,
         seriesPlotSummary: foundationResult.seriesPlotSummary,
-        characterProfile: foundationResult.characterProfile,
+        characterProfile: foundationResult.characterProfile, // This now includes initialized activeTemporaryEffects: []
         sceneDescription: foundationResult.sceneDescription,
         currentLocation: foundationResult.currentLocation,
         characterNameInput: data.characterName,
@@ -308,7 +316,7 @@ export default function StoryForgePage() {
       const firstStoryArcId = narrativeElementsResult.storyArcs.find(arc => arc.order === 1)?.id;
 
       const finalStoryState: StructuredStoryState = {
-        character: foundationResult.characterProfile,
+        character: foundationResult.characterProfile, // activeTemporaryEffects is initialized here
         currentLocation: foundationResult.currentLocation,
         inventory: foundationResult.inventory,
         equippedItems: foundationResult.equippedItems,
@@ -389,7 +397,7 @@ export default function StoryForgePage() {
          const newTurnForPlayerMessage: StoryTurn = {
             id: `pending-${crypto.randomUUID()}`,
             messages: [playerMessage],
-            storyStateAfterScene: lastTurn.storyStateAfterScene
+            storyStateAfterScene: lastTurn.storyStateAfterScene // Use the state from before this player message
         };
         return [...prevHistory, newTurnForPlayerMessage];
     });
@@ -406,14 +414,15 @@ export default function StoryForgePage() {
 
       const currentSceneContext = lastGMMessagesContent || "The story has just begun.";
 
+      // The AI sees stats including temporary buffs for its decision making
       const storyStateForAI: StructuredStoryState = {
         ...currentStoryState,
         character: effectiveCharacterProfileForAI || baseCharacterProfile,
       };
 
       console.log("CLIENT: Calling generateNextScene with context:", { currentSceneContext, userInput, currentTurnId: storyHistory[storyHistory.length -1]?.id || 'initial' });
-      console.log("CLIENT: Base Character Profile for turn:", baseCharacterProfile);
-      console.log("CLIENT: Effective Character Profile for AI:", effectiveCharacterProfileForAI);
+      console.log("CLIENT: Base Character Profile (before this turn's events/buffs):", baseCharacterProfile);
+      console.log("CLIENT: Effective Character Profile for AI (includes buffs from previous turn):", effectiveCharacterProfileForAI);
 
       const result = await generateNextScene({
         currentScene: currentSceneContext,
@@ -430,7 +439,10 @@ export default function StoryForgePage() {
       let systemMessagesForTurn: DisplayMessage[] = [];
 
 
+      // Start with the state from *before* this turn's player action / AI scene
       let finalUpdatedBaseStoryState = produce(currentStoryState, draftState => {
+         draftState.character.activeTemporaryEffects = draftState.character.activeTemporaryEffects || [];
+
          if (result.updatedStorySummary) draftState.storySummary = result.updatedStorySummary;
          if (result.describedEvents && Array.isArray(result.describedEvents)) {
             result.describedEvents.forEach(event => {
@@ -439,22 +451,19 @@ export default function StoryForgePage() {
                         const e = event as HealthChangeEvent;
                         if (e.characterTarget === 'player') {
                             draftState.character.health += e.amount;
-                            if (draftState.character.health < 0) draftState.character.health = 0;
-                            if (draftState.character.health > draftState.character.maxHealth) draftState.character.health = draftState.character.maxHealth;
+                            // Max health check will be done by calculateEffectiveCharacterProfile later
                             systemMessagesForTurn.push(createSystemMessage(
-                                `Health ${e.amount > 0 ? 'restored' : 'lost'}: ${Math.abs(e.amount)}. Current HP: ${draftState.character.health}/${draftState.character.maxHealth}. ${e.reason || ''}`.trim()
+                                `Health ${e.amount > 0 ? 'restored' : 'lost'}: ${Math.abs(e.amount)}. ${e.reason || ''}`.trim()
                             ));
                         }
                         break;
                     }
                     case 'manaChange': {
                         const e = event as ManaChangeEvent;
-                         if (e.characterTarget === 'player' && draftState.character.mana !== undefined && draftState.character.maxMana !== undefined) {
+                         if (e.characterTarget === 'player' && draftState.character.mana !== undefined) {
                             draftState.character.mana += e.amount;
-                            if (draftState.character.mana < 0) draftState.character.mana = 0;
-                            if (draftState.character.mana > draftState.character.maxMana) draftState.character.mana = draftState.character.maxMana;
                             systemMessagesForTurn.push(createSystemMessage(
-                                `Mana ${e.amount > 0 ? 'restored' : 'spent'}: ${Math.abs(e.amount)}. Current MP: ${draftState.character.mana}/${draftState.character.maxMana}. ${e.reason || ''}`.trim()
+                                `Mana ${e.amount > 0 ? 'restored' : 'spent'}: ${Math.abs(e.amount)}. ${e.reason || ''}`.trim()
                             ));
                         }
                         break;
@@ -465,11 +474,14 @@ export default function StoryForgePage() {
                         systemMessagesForTurn.push(createSystemMessage(
                             `Gained ${e.amount} XP. Total XP: ${draftState.character.experiencePoints}/${draftState.character.experienceToNextLevel}. ${e.reason || ''}`.trim()
                         ));
+                        // TODO: Add level up logic here if XP >= experienceToNextLevel
                         break;
                     }
                     case 'levelUp': {
                         const e = event as LevelUpEvent;
                         draftState.character.level = e.newLevel;
+                        // XP typically resets or carries over, AI should ideally handle this via new XPToNextLevel or XP value.
+                        // For now, just announce. Actual stat increases from level up would be a separate system or AI event.
                         systemMessagesForTurn.push(createSystemMessage(
                             `Level Up! Reached Level ${e.newLevel}. ${e.rewardSuggestion || ''} ${e.reason || ''}`.trim()
                         ));
@@ -511,7 +523,7 @@ export default function StoryForgePage() {
                             effectDescription: e.effectDescription,
                             isQuestItem: e.isQuestItem,
                             relevantQuestId: e.relevantQuestId,
-                            activeEffects: e.activeEffects || [],
+                            activeEffects: e.activeEffects || [], // AI should specify numeric duration here
                         };
                         draftState.inventory.push(newItem);
                         systemMessagesForTurn.push(createSystemMessage(
@@ -540,8 +552,28 @@ export default function StoryForgePage() {
                         );
                         if (itemIndex > -1) {
                             const consumedItem = draftState.inventory[itemIndex];
+                            let effectMsg = consumedItem.effectDescription || e.reason || "No immediate effect described.";
+
+                            if (consumedItem.isConsumable && consumedItem.activeEffects) {
+                                consumedItem.activeEffects.forEach(effectDef => {
+                                    if (typeof effectDef.duration === 'number' && effectDef.duration > 0) {
+                                        const newTempEffect: TemporaryEffect = {
+                                            ...effectDef, // spread all properties from ActiveEffect
+                                            id: `temp_${effectDef.id}_${Date.now()}`, // Ensure unique ID for this instance
+                                            sourceItemId: consumedItem.id,
+                                            turnsRemaining: effectDef.duration,
+                                        };
+                                        draftState.character.activeTemporaryEffects = draftState.character.activeTemporaryEffects || [];
+                                        draftState.character.activeTemporaryEffects.push(newTempEffect);
+                                        effectMsg += ` Effect '${newTempEffect.name}' active for ${newTempEffect.turnsRemaining} turns.`;
+                                        systemMessagesForTurn.push(createSystemMessage(
+                                            `Buff Applied: ${newTempEffect.name} from ${consumedItem.name} (Duration: ${newTempEffect.turnsRemaining} turns).`
+                                        ));
+                                    }
+                                });
+                            }
                             systemMessagesForTurn.push(createSystemMessage(
-                                `Item Consumed: ${consumedItem.name}. ${e.reason || consumedItem.effectDescription || "No immediate effect described."}`.trim()
+                                `Item Consumed: ${consumedItem.name}. ${effectMsg}`.trim()
                             ));
                             if(consumedItem.isConsumable) { 
                                 draftState.inventory.splice(itemIndex, 1);
@@ -612,7 +644,7 @@ export default function StoryForgePage() {
                                     basePrice: item.basePrice || 0,
                                     rarity: item.rarity,
                                     equipSlot: item.equipSlot,
-                                    activeEffects: item.activeEffects || [],
+                                    activeEffects: item.activeEffects || [], // AI should specify numeric duration here for consumables
                                 }))
                             } : undefined,
                         };
@@ -722,6 +754,9 @@ export default function StoryForgePage() {
                 }
             });
          }
+         // Overwrite base character stats with those explicitly set by AI (if any)
+         // This allows AI to directly set health, mana etc if it calculated something specific.
+         // These are base stats, CalculateEffectiveProfile will add item/temp buffs on top.
          if (result.updatedStoryState.character) {
              const aiChar = result.updatedStoryState.character;
              draftState.character.health = aiChar.health;
@@ -740,6 +775,7 @@ export default function StoryForgePage() {
              if(aiChar.currency !== undefined) draftState.character.currency = aiChar.currency;
              if(aiChar.languageReading !== undefined) draftState.character.languageReading = aiChar.languageReading;
              if(aiChar.languageSpeaking !== undefined) draftState.character.languageSpeaking = aiChar.languageSpeaking;
+             // DO NOT directly copy activeTemporaryEffects from AI here, manage them based on ItemUsedEvents
          }
          if (result.updatedStoryState.currentLocation) draftState.currentLocation = result.updatedStoryState.currentLocation;
          if (result.updatedStoryState.worldFacts) draftState.worldFacts = result.updatedStoryState.worldFacts;
@@ -747,10 +783,25 @@ export default function StoryForgePage() {
          if (result.updatedStoryState.storyArcs) draftState.storyArcs = result.updatedStoryState.storyArcs;
          if (result.updatedStoryState.currentStoryArcId) draftState.currentStoryArcId = result.updatedStoryState.currentStoryArcId;
 
+        // --- Temporary Effect Duration Management (End of Turn) ---
+        if (draftState.character.activeTemporaryEffects && draftState.character.activeTemporaryEffects.length > 0) {
+            const stillActiveEffects: TemporaryEffect[] = [];
+            draftState.character.activeTemporaryEffects.forEach(effect => {
+                effect.turnsRemaining -= 1;
+                if (effect.turnsRemaining > 0) {
+                    stillActiveEffects.push(effect);
+                } else {
+                    systemMessagesForTurn.push(createSystemMessage(
+                        `Effect Expired: ${effect.name} (from ${effect.sourceItemId ? `item ${draftState.inventory.find(i=>i.id === effect.sourceItemId)?.name || effect.sourceItemId}` : 'unknown source'}) has worn off.`
+                    ));
+                }
+            });
+            draftState.character.activeTemporaryEffects = stillActiveEffects;
+        }
       });
 
 
-      const previousStoryArcId = currentStoryState.currentStoryArcId;
+      const previousStoryArcId = currentStoryState.currentStoryArcId; // Use state before this turn's processing
       const currentStoryArcInNewBaseState = finalUpdatedBaseStoryState.storyArcs.find(arc => arc.id === previousStoryArcId);
 
       if (previousStoryArcId && currentStoryArcInNewBaseState?.isCompleted) {
@@ -770,7 +821,7 @@ export default function StoryForgePage() {
         setLoadingType('updatingProfile');
         try {
             const updateDescInput: UpdateCharacterDescriptionInput = {
-                currentProfile: finalUpdatedBaseStoryState.character,
+                currentProfile: finalUpdatedBaseStoryState.character, // Pass the most up-to-date base character
                 completedArc: currentStoryArcInNewBaseState,
                 overallStorySummarySoFar: finalUpdatedBaseStoryState.storySummary || "",
                 seriesName: currentSession.seriesName,
@@ -801,7 +852,7 @@ export default function StoryForgePage() {
                 variant: "destructive",
             });
         }
-        setLoadingType('nextScene'); // Revert loading type
+        setLoadingType('nextScene'); 
         
         const nextStoryArcOrder = currentStoryArcInNewBaseState.order + 1;
         let nextStoryArcToFleshOut = finalUpdatedBaseStoryState.storyArcs.find(
@@ -967,7 +1018,8 @@ export default function StoryForgePage() {
 
       if (isCombatTurn) {
         console.log("CLIENT: Combat detected in turn.");
-        const currentEffectivePlayerProfile = calculateEffectiveCharacterProfile(finalUpdatedBaseStoryState.character, finalUpdatedBaseStoryState.equippedItems);
+        // Calculate effective profile for combat log AFTER all events this turn (including temp buffs)
+        const effectivePlayerProfileForCombatLog = calculateEffectiveCharacterProfile(finalUpdatedBaseStoryState.character, finalUpdatedBaseStoryState.equippedItems);
 
         finalUpdatedBaseStoryState.trackedNPCs.forEach(npc => {
           if (npc.shortTermGoal?.toLowerCase().includes('attack') ||
@@ -984,10 +1036,10 @@ export default function StoryForgePage() {
         });
 
         const combatHelperData: CombatHelperInfo = {
-          playerHealth: currentEffectivePlayerProfile.health,
-          playerMaxHealth: currentEffectivePlayerProfile.maxHealth,
-          playerMana: currentEffectivePlayerProfile.mana,
-          playerMaxMana: currentEffectivePlayerProfile.maxMana,
+          playerHealth: effectivePlayerProfileForCombatLog.health,
+          playerMaxHealth: effectivePlayerProfileForCombatLog.maxHealth,
+          playerMana: effectivePlayerProfileForCombatLog.mana,
+          playerMaxMana: effectivePlayerProfileForCombatLog.maxMana,
           hostileNPCs: hostileNPCsInTurn,
           turnEvents: combatTurnEvents.slice(0, 5),
         };
@@ -1006,7 +1058,7 @@ export default function StoryForgePage() {
       const completedTurn: StoryTurn = {
         id: crypto.randomUUID(),
         messages: turnMessages,
-        storyStateAfterScene: finalUpdatedBaseStoryState,
+        storyStateAfterScene: finalUpdatedBaseStoryState, // This now contains the base state after this turn's described events and buff duration updates
       };
 
       setStoryHistory(prevHistory => {
@@ -1210,8 +1262,8 @@ export default function StoryForgePage() {
               </div>
               <div className="shrink-0">
                 <MinimalCharacterStatus
-                    character={baseCharacterProfile}
-                    storyState={currentStoryState}
+                    character={baseCharacterProfile} // Display base profile here
+                    storyState={currentStoryState} // Pass full state for equipped items, etc.
                     isPremiumSession={currentSession.isPremiumSession}
                 />
               </div>
@@ -1225,7 +1277,10 @@ export default function StoryForgePage() {
             </TabsContent>
 
             <TabsContent value="character" className="overflow-y-auto flex-grow">
-              <CharacterSheet character={baseCharacterProfile} storyState={currentStoryState} />
+              <CharacterSheet 
+                character={effectiveCharacterProfileForAI || baseCharacterProfile} // Show effective stats on sheet
+                storyState={currentStoryState} 
+              />
             </TabsContent>
 
             <TabsContent value="npcs" className="overflow-y-auto flex-grow">
@@ -1266,3 +1321,4 @@ export default function StoryForgePage() {
     </div>
   );
 }
+
