@@ -151,7 +151,7 @@ const NPCProfileSchemaInternal = z.object({
     isMerchant: z.boolean().optional().describe("Set to true if this NPC is a merchant and can buy/sell items."),
     merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If isMerchant, a list of items the merchant has for sale. Each item includes its 'id', 'name', 'description', 'basePrice' (as a number), and a 'price' (as a number) they sell it for. Ensure 'equipSlot' is OMITTED for non-equippable items."),
     buysItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they are interested in buying (e.g., 'Herbs', 'Swords')."),
-    sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, optional list of item categories they typically sell (e.g., 'General Goods', 'Magic Scrolls')."),
+    sellsItemTypes: z.array(z.string()).optional().describe("If isMerchant, list of item categories they typically sell (e.g., 'General Goods', 'Magic Scrolls')."),
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
@@ -184,7 +184,7 @@ const Scenario_RawLoreEntryZodSchema = z.object({
 const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character. If the character has languageReading: 0, the scene should reflect this (e.g., unreadable signs). If languageSpeaking: 0, it should reflect incomprehensible speech.'),
   storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs (with merchant details and optional health/mana for combatants if applicable), starting skills/abilities for the character, starting currency, chapters and main quests. Ensure all numeric fields like prices, stats, currency are numbers.'),
-  initialLoreEntries: z.array(Scenario_RawLoreEntryZodSchema).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
+  initialLoreEntries: z.array(Scenario_RawLoreEntryZodSchema).describe('An array of key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
   seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
   seriesPlotSummary: z.string().optional().describe("A concise summary of the early major plot points or story arcs for the specified series. This is crucial for generating canonical quests and will be stored in the game session."),
 });
@@ -280,6 +280,10 @@ const LoreGenerationInputSchema = z.object({
   characterDescription: z.string(),
 });
 
+const CategorizedLoreOutputSchema = z.object({
+    loreEntries: z.array(Scenario_RawLoreEntryZodSchema).describe("An array of lore entries for the specified category.")
+});
+
 const StyleGuideInputSchema = z.object({
   seriesName: z.string(),
 });
@@ -303,8 +307,8 @@ const generateScenarioFromSeriesFlow = ai.defineFlow(
     const modelConfig = { maxOutputTokens: 8000 };
 
     // --- Step 1: Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary) ---
-    let stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Starting Initial Parallel Batch.`);
+    let step1StartTime = Date.now();
+    console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Starting Initial Parallel Batch.`);
 
     const characterAndScenePrompt = ai.definePrompt({
         name: 'characterAndScenePrompt', model: modelName, input: { schema: CharacterAndSceneInputSchema }, output: { schema: CharacterAndSceneOutputSchema }, config: modelConfig,
@@ -349,12 +353,18 @@ Output ONLY the JSON object.
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the SeriesPlotSummaryOutputSchema definition provided earlier in this prompt.`
     });
 
-    const [charSceneResult, styleGuideResult, seriesPlotSummaryResult] = await Promise.all([
-        characterAndScenePrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput, characterClassInput: mainInput.characterClassInput, usePremiumAI: mainInput.usePremiumAI }),
-        styleGuidePrompt({ seriesName: mainInput.seriesName }),
-        seriesPlotSummaryPrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput })
-    ]);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Initial Parallel Batch completed in ${Date.now() - stepStartTime}ms.`);
+    let charSceneResult, styleGuideResult, seriesPlotSummaryResult;
+    try {
+        [charSceneResult, styleGuideResult, seriesPlotSummaryResult] = await Promise.all([
+            characterAndScenePrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput, characterClassInput: mainInput.characterClassInput, usePremiumAI: mainInput.usePremiumAI }),
+            styleGuidePrompt({ seriesName: mainInput.seriesName }),
+            seriesPlotSummaryPrompt({ seriesName: mainInput.seriesName, characterNameInput: mainInput.characterNameInput })
+        ]);
+    } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 FAILED. Error: ${e.message}`);
+        throw new Error(`AI failed during initial scenario setup (Step 1). Details: ${e.message}`);
+    }
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 1 - Initial Parallel Batch completed in ${Date.now() - step1StartTime}ms.`);
 
     const charSceneOutput = charSceneResult.output;
     const styleGuideRaw = styleGuideResult.output;
@@ -373,8 +383,8 @@ Ensure all field names and values in your JSON response strictly match the types
 
 
     // --- Step 2: Skills Generation (Sequential) ---
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
+    let step2StartTime = Date.now();
+    console.log(`[${new Date(step2StartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - Calling initialCharacterSkillsPrompt.`);
     const initialCharacterSkillsPrompt = ai.definePrompt({
         name: 'initialCharacterSkillsPrompt', model: modelName, input: { schema: InitialCharacterSkillsInputSchema }, output: { schema: InitialCharacterSkillsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'InitialCharacterSkillsOutputSchema'. Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
@@ -395,8 +405,15 @@ Ensure all field names and values in your JSON response strictly match the types
         characterClass: characterCore.class,
         characterDescription: characterCore.description,
     };
-    const { output: skillsOutput } = await initialCharacterSkillsPrompt(skillsInput);
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - initialCharacterSkillsPrompt completed in ${Date.now() - stepStartTime}ms.`);
+    let skillsOutput;
+    try {
+        const { output } = await initialCharacterSkillsPrompt(skillsInput);
+        skillsOutput = output;
+    } catch (e:any) {
+        console.error(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 2 FAILED (Skills Generation). Error: ${e.message}`);
+        throw new Error(`AI failed during skills generation (Step 2). Details: ${e.message}`);
+    }
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 2 - initialCharacterSkillsPrompt completed in ${Date.now() - step2StartTime}ms.`);
     const characterSkills = skillsOutput?.skillsAndAbilities || [];
     const fullCharacterProfile: z.infer<typeof CharacterProfileSchemaInternal> = {
         ...characterCore,
@@ -404,8 +421,8 @@ Ensure all field names and values in your JSON response strictly match the types
     };
 
     // --- Step 3: Main Parallel Batch (Inventory, Gear, Facts, Quests/Chapters, NPCs, Lore) ---
-    stepStartTime = Date.now();
-    console.log(`[${new Date(stepStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Starting Main Parallel Batch.`);
+    let step3StartTime = Date.now();
+    console.log(`[${new Date(step3StartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Starting Main Parallel Batch for Series Items, Facts, Quests, NPCs, and Lore.`);
 
     const minimalContextForItemsFactsInput: z.infer<typeof MinimalContextForItemsFactsInputSchema> = {
         seriesName: mainInput.seriesName,
@@ -424,7 +441,7 @@ Ensure all field names and values in your JSON response strictly match the types
     const npcsInput: z.infer<typeof InitialTrackedNPCsInputSchema> = {
         seriesName: mainInput.seriesName, character: fullCharacterProfile, sceneDescription: sceneDescription, currentLocation: currentLocation, characterNameInput: mainInput.characterNameInput,
     };
-    const loreInput: z.infer<typeof LoreGenerationInputSchema> = {
+    const loreGenerationBaseInput: z.infer<typeof LoreGenerationInputSchema> = {
       seriesName: mainInput.seriesName, characterName: fullCharacterProfile.name, characterClass: fullCharacterProfile.class, sceneDescription: sceneDescription, characterDescription: fullCharacterProfile.description,
     };
 
@@ -546,16 +563,52 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
 Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure all fields are correctly populated and typed, especially numeric ones.
 Ensure all field names and values in your JSON response strictly match the types and requirements described in the InitialTrackedNPCsOutputSchema definition provided earlier in this prompt.`,
     });
-    const loreEntriesPrompt = ai.definePrompt({
-        name: 'generateLoreEntriesPrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: z.array(Scenario_RawLoreEntryZodSchema) }, config: modelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON array conforming to the output schema (an array of Scenario_RawLoreEntryZodSchema objects). Do not include any explanatory text, markdown formatting, or anything outside of the JSON structure.
+
+    // New Lore Generation Prompts
+    const characterLorePrompt = ai.definePrompt({
+        name: 'characterLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CategorizedLoreOutputSchema', containing an array called 'loreEntries'. Do not include any explanatory text.
 You are a lore master for "{{seriesName}}".
-Context: Character "{{characterName}}" ({{characterClass}}).
-Scene: {{sceneDescription}}
-Character Background: {{characterDescription}}
-Generate 6-8 key lore entries. Each entry MUST have a 'keyword' and 'content'. 'category' is optional.
-Output ONLY JSON array.
-Ensure all field names and values in your JSON response strictly match the types and requirements described in the output schema definition provided earlier in this prompt.`,
+Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+Generate 20-25 key lore entries specifically about MAJOR CHARACTERS from the series relevant to the early-to-mid game.
+Each entry MUST have a 'keyword' (the character's name) and 'content' (a 2-3 sentence description). 'category' should be "Character".
+Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Character"}, ...] }.`,
+    });
+    const locationLorePrompt = ai.definePrompt({
+        name: 'locationLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CategorizedLoreOutputSchema', containing an array called 'loreEntries'. Do not include any explanatory text.
+You are a lore master for "{{seriesName}}".
+Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+Generate 20-25 key lore entries specifically about MAJOR LOCATIONS or REGIONS from the series relevant to the early-to-mid game.
+Each entry MUST have a 'keyword' (the location's name) and 'content' (a 2-3 sentence description). 'category' should be "Location".
+Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Location"}, ...] }.`,
+    });
+    const factionLorePrompt = ai.definePrompt({
+        name: 'factionLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CategorizedLoreOutputSchema', containing an array called 'loreEntries'. Do not include any explanatory text.
+You are a lore master for "{{seriesName}}".
+Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+Generate 15-20 key lore entries specifically about IMPORTANT FACTIONS or ORGANIZATIONS from the series relevant to the early-to-mid game.
+Each entry MUST have a 'keyword' (the faction's name) and 'content' (a 2-3 sentence description). 'category' should be "Faction/Organization".
+Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Faction/Organization"}, ...] }.`,
+    });
+    const itemConceptLorePrompt = ai.definePrompt({
+        name: 'itemConceptLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CategorizedLoreOutputSchema', containing an array called 'loreEntries'. Do not include any explanatory text.
+You are a lore master for "{{seriesName}}".
+Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+Generate 15-20 key lore entries specifically about SIGNIFICANT ITEMS, ARTIFACTS, CORE CONCEPTS, or UNIQUE TECHNOLOGIES from the series relevant to the early-to-mid game.
+Each entry MUST have a 'keyword' and 'content' (a 2-3 sentence description). 'category' should be "Item/Concept" or "Technology".
+Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Item/Concept"}, ...] }.`,
+    });
+    const eventHistoryLorePrompt = ai.definePrompt({
+        name: 'eventHistoryLorePrompt', model: modelName, input: { schema: LoreGenerationInputSchema }, output: { schema: CategorizedLoreOutputSchema }, config: modelConfig,
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to the 'CategorizedLoreOutputSchema', containing an array called 'loreEntries'. Do not include any explanatory text.
+You are a lore master for "{{seriesName}}".
+Context: Character "{{characterName}}" ({{characterClass}}). Scene: {{sceneDescription}}. Character Background: {{characterDescription}}.
+Generate 15-20 key lore entries specifically about KEY HISTORICAL EVENTS or BACKGROUND ELEMENTS from the series relevant to the early-to-mid game context.
+Each entry MUST have a 'keyword' and 'content' (a 2-3 sentence description). 'category' should be "Event/History".
+Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"Event/History"}, ...] }.`,
     });
 
 
@@ -567,37 +620,59 @@ Ensure all field names and values in your JSON response strictly match the types
         initialWorldFactsPrompt(minimalContextForItemsFactsInput),
         initialQuestsAndChaptersPrompt(questsAndChaptersInput),
         initialTrackedNPCsPrompt(npcsInput),
-        loreEntriesPrompt(loreInput),
+        characterLorePrompt(loreGenerationBaseInput),
+        locationLorePrompt(loreGenerationBaseInput),
+        factionLorePrompt(loreGenerationBaseInput),
+        itemConceptLorePrompt(loreGenerationBaseInput),
+        eventHistoryLorePrompt(loreGenerationBaseInput),
     ];
 
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Firing ${mainBatchPromises.length} parallel AI calls.`);
-    const [
-        inventoryResult,
-        mainGearResult,
-        secondaryGearResult,
-        accessoryGearResult,
-        worldFactsResult,
-        questsAndChaptersResult,
-        npcsResult,
-        loreResult,
-    ] = await Promise.all(mainBatchPromises.map(async (promise, index) => {
-        const callStartTime = Date.now();
-        const promptName = ['inventory', 'mainGear', 'secondaryGear', 'accessoryGear', 'worldFacts', 'questsChapters', 'npcs', 'lore'][index];
-        console.log(`[${new Date(callStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Calling ${promptName}Prompt.`);
-        const result = await promise;
-        console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - ${promptName}Prompt call completed in ${Date.now() - callStartTime}ms.`);
-        return result;
-    }));
-    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Main Parallel Batch completed in ${Date.now() - stepStartTime}ms.`);
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Firing ${mainBatchPromises.length} parallel AI calls for main batch.`);
+    
+    let mainBatchResults;
+    try {
+      mainBatchResults = await Promise.all(mainBatchPromises.map(async (promise, index) => {
+          const callStartTime = Date.now();
+          const promptName = ['inventory', 'mainGear', 'secondaryGear', 'accessoryGear', 'worldFacts', 'questsChapters', 'npcs', 'characterLore', 'locationLore', 'factionLore', 'itemConceptLore', 'eventHistoryLore'][index];
+          console.log(`[${new Date(callStartTime).toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Calling ${promptName}Prompt.`);
+          const result = await promise;
+          console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - ${promptName}Prompt call completed in ${Date.now() - callStartTime}ms.`);
+          return result.output; // Assuming all prompt calls resolve to an object with an 'output' property
+      }));
+    } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 FAILED (Main Batch). Error: ${e.message}`);
+        throw new Error(`AI failed during main scenario content generation (Step 3). Details: ${e.message}`);
+    }
+    
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: STEP 3 - Main Parallel Batch completed in ${Date.now() - step3StartTime}ms.`);
 
-    const inventoryOutput = inventoryResult.output;
-    const mainGearRaw = mainGearResult.output;
-    const secondaryGearRaw = secondaryGearResult.output;
-    const accessoryGearRaw = accessoryGearResult.output;
-    const worldFactsOutput = worldFactsResult.output;
-    const questsAndChaptersOutput = questsAndChaptersResult.output;
-    const npcsOutput = npcsResult.output;
-    const loreEntries = loreResult.output || [];
+    const [
+        inventoryOutput,
+        mainGearRaw,
+        secondaryGearRaw,
+        accessoryGearRaw,
+        worldFactsOutput,
+        questsAndChaptersOutput,
+        npcsOutput,
+        characterLoreResult,
+        locationLoreResult,
+        factionLoreResult,
+        itemConceptLoreResult,
+        eventHistoryLoreResult,
+    ] = mainBatchResults as [
+        z.infer<typeof InitialInventoryOutputSchema>,
+        z.infer<typeof InitialMainGearOutputSchema>,
+        z.infer<typeof InitialSecondaryGearOutputSchema>,
+        z.infer<typeof InitialAccessoryGearOutputSchema>,
+        z.infer<typeof InitialWorldFactsOutputSchema>,
+        z.infer<typeof InitialQuestsAndChaptersOutputSchema>,
+        z.infer<typeof InitialTrackedNPCsOutputSchema>,
+        z.infer<typeof CategorizedLoreOutputSchema>,
+        z.infer<typeof CategorizedLoreOutputSchema>,
+        z.infer<typeof CategorizedLoreOutputSchema>,
+        z.infer<typeof CategorizedLoreOutputSchema>,
+        z.infer<typeof CategorizedLoreOutputSchema>
+    ];
 
 
     if (!inventoryOutput || !inventoryOutput.inventory) { throw new Error('Failed to generate initial inventory.'); }
@@ -614,6 +689,16 @@ Ensure all field names and values in your JSON response strictly match the types
 
     if (!npcsOutput || !npcsOutput.trackedNPCs) { throw new Error('Failed to generate initial tracked NPCs.'); }
     const trackedNPCs = npcsOutput.trackedNPCs;
+    
+    const allLoreEntries: RawLoreEntry[] = [
+        ...(characterLoreResult?.loreEntries || []),
+        ...(locationLoreResult?.loreEntries || []),
+        ...(factionLoreResult?.loreEntries || []),
+        ...(itemConceptLoreResult?.loreEntries || []),
+        ...(eventHistoryLoreResult?.loreEntries || []),
+    ];
+    console.log(`[${new Date().toISOString()}] generateScenarioFromSeriesFlow: Generated a total of ${allLoreEntries.length} raw lore entries from parallel calls.`);
+
 
     const equippedItemsIntermediate: Partial<Record<EquipmentSlot, ItemType | null>> = {
         weapon: mainGearOutput.weapon ?? null, shield: mainGearOutput.shield ?? null, body: mainGearOutput.body ?? null,
@@ -637,7 +722,7 @@ Ensure all field names and values in your JSON response strictly match the types
     };
 
     let finalOutput: IGenerateScenarioFromSeriesOutput = {
-      sceneDescription: sceneDescription, storyState: storyState, initialLoreEntries: loreEntries, seriesStyleGuide: seriesStyleGuide, seriesPlotSummary: generatedSeriesPlotSummary
+      sceneDescription: sceneDescription, storyState: storyState, initialLoreEntries: allLoreEntries, seriesStyleGuide: seriesStyleGuide, seriesPlotSummary: generatedSeriesPlotSummary
     };
 
     // --- Final Sanitation Pass ---
@@ -826,3 +911,5 @@ Ensure all field names and values in your JSON response strictly match the types
 );
 
     
+
+      
