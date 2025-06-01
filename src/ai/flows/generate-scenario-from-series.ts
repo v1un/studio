@@ -698,7 +698,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
       const defaultEquippedSlots: Record<EquipmentSlot, null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>>; 
+      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>;
       const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots}; 
       const equippedItemIdSet = new Set<string>();
 
@@ -833,3 +833,5 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     return finalOutput;
   }
 );
+
+    
