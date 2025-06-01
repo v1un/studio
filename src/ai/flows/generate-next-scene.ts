@@ -14,6 +14,7 @@ import {z}from 'zod';
 import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
+import { produce } from 'immer'; // For safe deep cloning and merging
 
 const EquipSlotEnumInternal = z.enum(['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring'])
   .describe("The equipment slot type, if the item is equippable (e.g., 'weapon', 'head', 'body', 'ring').");
@@ -255,7 +256,7 @@ const generateNextSceneFlow = ai.defineFlow(
   {
     name: 'generateNextSceneFlow',
     inputSchema: GenerateNextSceneInputSchemaInternal,
-    outputSchema: GenerateNextSceneOutputSchemaInternal,
+    outputSchema: GenerateNextSceneOutputSchemaInternal, // The flow itself will strictly output this
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
@@ -264,7 +265,8 @@ const generateNextSceneFlow = ai.defineFlow(
         name: 'generateNextScenePrompt',
         model: modelName,
         input: {schema: PromptInternalInputSchema},
-        output: {schema: GenerateNextSceneOutputSchemaInternal},
+        // Use .deepPartial() here so the AI doesn't fail Zod validation for missing fields
+        output: {schema: GenerateNextSceneOutputSchemaInternal.deepPartial()}, 
         tools: [lookupLoreTool],
         prompt: `You are a dynamic storyteller, continuing a story based on the player's actions and the current game state.
 This story is set in the universe of: {{seriesName}}.
@@ -340,7 +342,6 @@ If character has such an ability and faces a 'fatal' event:
 
 **NPC Management:** Create/update profiles. Relationship dynamics. NPC memory & proactivity. If merchant: handle wares, buying/selling (deduct/add currency, items from/to inventories).
 **Environmental Interaction & Item Use:** Narrate outcomes. If item found, add to inventory (with unique ID, basePrice). Update worldFacts/quests.
-**Quests & World State:** Describe developments. Branch/update objectives. World reactivity.
 **Character Progression:** Award skills/stats for quests/milestones.
 - **Leveling Up:** When XP >= XPToNextLevel: increment level, subtract old XPToNextLevel from XP, set new higher XPToNextLevel. Grant +1 to a core stat OR one new skill. Narrate level up and reward.
 
@@ -362,28 +363,26 @@ Ensure 'updatedStorySummary' is provided.
       formattedSkillsString: formattedSkillsString,
     };
     
-    let outputFromPrompt;
+    let aiPartialOutput: z.infer<typeof GenerateNextSceneOutputSchemaInternal.deepPartial> | undefined;
     try {
         const response = await prompt(promptPayload);
-        outputFromPrompt = response.output; 
+        aiPartialOutput = response.output; 
     } catch (e: any) {
         console.error(`[${modelName}] Error during prompt execution for generateNextScenePrompt:`, e);
         if (e.details) console.error("Error details:", e.details);
-        // Return a minimal valid output to prevent downstream errors and inform the user.
-        // This is a stop-gap for catastrophic AI failure.
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI model failed to generate a response for the current scene. Details: ${e.message}. Please try a different action, or if this persists, consider restarting the session.)` }],
-            updatedStoryState: input.storyState, // Return original state to prevent data loss
+            updatedStoryState: input.storyState, 
             updatedStorySummary: input.storyState.storySummary || "Error generating summary due to AI failure.",
             activeNPCsInScene: [],
             newLoreEntries: [],
         };
     }
 
-    if (!outputFromPrompt) {
-        console.warn(`[${modelName}] Null or undefined output from prompt for generateNextScenePrompt after successful execution, but no exception was caught. This indicates a potential issue with prompt output structure or model behavior.`);
+    if (!aiPartialOutput) {
+        console.warn(`[${modelName}] Null or undefined output from prompt 'generateNextScenePrompt' after successful execution, but no exception was caught. This indicates a potential issue with prompt output structure or model behavior.`);
         return {
-            generatedMessages: [{ speaker: 'GM', content: "(Critical AI Error: The AI model returned an empty or invalid structure for the scene. Please try again or restart.)" }],
+            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI model returned an empty or malformed structure for the scene. Details: No output received from model. Please try again or restart.)` }],
             updatedStoryState: input.storyState,
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [],
@@ -391,9 +390,67 @@ Ensure 'updatedStorySummary' is provided.
         };
     }
     
-    const output: GenerateNextSceneOutput = outputFromPrompt as GenerateNextSceneOutput;
+    // Start with a deep copy of the input state to ensure all fields are present
+    // and then merge the AI's partial updates.
+    let mergedStoryState = produce(input.storyState, draftState => {
+        if (aiPartialOutput?.updatedStoryState) {
+            const aiChar = aiPartialOutput.updatedStoryState.character;
+            if (aiChar) {
+                // Merge AI character updates, ensuring required fields are preserved or defaulted
+                draftState.character.name = aiChar.name ?? draftState.character.name ?? "Unnamed Character";
+                draftState.character.class = aiChar.class ?? draftState.character.class ?? "Adventurer";
+                draftState.character.description = aiChar.description ?? draftState.character.description ?? "A mysterious adventurer.";
+                draftState.character.health = typeof aiChar.health === 'number' ? aiChar.health : draftState.character.health;
+                draftState.character.maxHealth = typeof aiChar.maxHealth === 'number' ? aiChar.maxHealth : (draftState.character.maxHealth ?? 100);
+                draftState.character.level = typeof aiChar.level === 'number' ? aiChar.level : (draftState.character.level ?? 1);
+                draftState.character.experiencePoints = typeof aiChar.experiencePoints === 'number' ? aiChar.experiencePoints : (draftState.character.experiencePoints ?? 0);
+                draftState.character.experienceToNextLevel = typeof aiChar.experienceToNextLevel === 'number' ? aiChar.experienceToNextLevel : (draftState.character.experienceToNextLevel ?? 100);
+                
+                // Ensure health doesn't exceed maxHealth
+                if (draftState.character.health > draftState.character.maxHealth) {
+                    draftState.character.health = draftState.character.maxHealth;
+                }
+                if (draftState.character.experienceToNextLevel <= 0) draftState.character.experienceToNextLevel = 100;
+                if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints) {
+                     draftState.character.experienceToNextLevel = draftState.character.experiencePoints + 50;
+                }
 
 
+                // Optional fields with defaults
+                draftState.character.mana = aiChar.mana ?? draftState.character.mana ?? 0;
+                draftState.character.maxMana = aiChar.maxMana ?? draftState.character.maxMana ?? 0;
+                draftState.character.strength = aiChar.strength ?? draftState.character.strength ?? 10;
+                draftState.character.dexterity = aiChar.dexterity ?? draftState.character.dexterity ?? 10;
+                draftState.character.constitution = aiChar.constitution ?? draftState.character.constitution ?? 10;
+                draftState.character.intelligence = aiChar.intelligence ?? draftState.character.intelligence ?? 10;
+                draftState.character.wisdom = aiChar.wisdom ?? draftState.character.wisdom ?? 10;
+                draftState.character.charisma = aiChar.charisma ?? draftState.character.charisma ?? 10;
+                draftState.character.currency = aiChar.currency ?? draftState.character.currency ?? 0;
+                draftState.character.languageUnderstanding = aiChar.languageUnderstanding ?? draftState.character.languageUnderstanding ?? 100;
+                draftState.character.skillsAndAbilities = aiChar.skillsAndAbilities ?? draftState.character.skillsAndAbilities ?? [];
+            }
+
+            draftState.currentLocation = aiPartialOutput.updatedStoryState.currentLocation ?? draftState.currentLocation;
+            draftState.inventory = aiPartialOutput.updatedStoryState.inventory ?? draftState.inventory;
+            draftState.equippedItems = aiPartialOutput.updatedStoryState.equippedItems ?? draftState.equippedItems;
+            draftState.quests = aiPartialOutput.updatedStoryState.quests ?? draftState.quests;
+            draftState.worldFacts = aiPartialOutput.updatedStoryState.worldFacts ?? draftState.worldFacts;
+            draftState.trackedNPCs = aiPartialOutput.updatedStoryState.trackedNPCs ?? draftState.trackedNPCs;
+            draftState.storySummary = aiPartialOutput.updatedStoryState.storySummary ?? draftState.storySummary;
+        }
+    });
+
+
+    // Construct the final output object, ensuring all top-level required fields are present
+    const output: GenerateNextSceneOutput = {
+        generatedMessages: aiPartialOutput.generatedMessages ?? [{ speaker: 'GM', content: "(AI response issue: No messages generated.)" }],
+        updatedStoryState: mergedStoryState as StructuredStoryState, // Cast after merging and defaulting
+        activeNPCsInScene: aiPartialOutput.activeNPCsInScene ?? undefined,
+        newLoreEntries: aiPartialOutput.newLoreEntries ?? undefined,
+        updatedStorySummary: aiPartialOutput.updatedStorySummary ?? mergedStoryState.storySummary ?? input.storyState.storySummary ?? "Summary unavailable.",
+    };
+    
+    // Sanitation for generatedMessages
     if (!output.generatedMessages || !Array.isArray(output.generatedMessages) || output.generatedMessages.length === 0) {
       output.generatedMessages = [{ speaker: 'GM', content: "(AI response issue: No messages generated.)" }];
     } else {
@@ -403,6 +460,7 @@ Ensure 'updatedStorySummary' is provided.
         });
     }
 
+    // Sanitation for newLoreEntries (if any)
     if (output.newLoreEntries && Array.isArray(output.newLoreEntries)) {
       for (const lore of output.newLoreEntries) {
         if (lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") {
@@ -411,11 +469,30 @@ Ensure 'updatedStorySummary' is provided.
         }
       }
     }
-
-    if (output.updatedStoryState.character && input.storyState.character) {
+    
+    // Detailed Sanitation for Character Profile
+    if (output.updatedStoryState.character) {
       const updatedChar = output.updatedStoryState.character;
-      const originalChar = input.storyState.character;
+      const originalChar = input.storyState.character; // For fallback
 
+      // Ensure required fields are present, falling back to original state or safe defaults
+      updatedChar.name = updatedChar.name || originalChar.name || "Unnamed Character";
+      updatedChar.class = updatedChar.class || originalChar.class || "Adventurer";
+      updatedChar.description = updatedChar.description || originalChar.description || "A mysterious adventurer.";
+      updatedChar.health = typeof updatedChar.health === 'number' ? updatedChar.health : (originalChar.health || 100);
+      updatedChar.maxHealth = typeof updatedChar.maxHealth === 'number' ? updatedChar.maxHealth : (originalChar.maxHealth || 100);
+      updatedChar.level = typeof updatedChar.level === 'number' ? updatedChar.level : (originalChar.level || 1);
+      updatedChar.experiencePoints = typeof updatedChar.experiencePoints === 'number' ? updatedChar.experiencePoints : (originalChar.experiencePoints || 0);
+      updatedChar.experienceToNextLevel = typeof updatedChar.experienceToNextLevel === 'number' ? updatedChar.experienceToNextLevel : (originalChar.experienceToNextLevel || 100);
+
+      // Cap health at maxHealth
+      if (updatedChar.health > updatedChar.maxHealth) {
+        updatedChar.health = updatedChar.maxHealth;
+      }
+      if (updatedChar.health < 0) updatedChar.health = 0;
+
+
+      // Default optional fields
       updatedChar.mana = updatedChar.mana ?? originalChar.mana ?? 0;
       updatedChar.maxMana = updatedChar.maxMana ?? originalChar.maxMana ?? 0;
       updatedChar.strength = updatedChar.strength ?? originalChar.strength ?? 10;
@@ -434,10 +511,7 @@ Ensure 'updatedStorySummary' is provided.
       let originalXpToNextLevel = originalChar.experienceToNextLevel;
       if (originalXpToNextLevel <=0) originalXpToNextLevel = 100; 
 
-      updatedChar.level = updatedChar.level ?? originalChar.level ?? 1;
-      updatedChar.experiencePoints = updatedChar.experiencePoints ?? originalChar.experiencePoints ?? 0;
-      updatedChar.experienceToNextLevel = updatedChar.experienceToNextLevel ?? originalChar.experienceToNextLevel ?? 100;
-
+      // Leveling logic
       const didLevelUp = updatedChar.level > originalChar.level || 
                          (originalChar.experiencePoints >= originalXpToNextLevel && updatedChar.level === originalChar.level +1);
 
@@ -447,7 +521,10 @@ Ensure 'updatedStorySummary' is provided.
         } else if (updatedChar.experiencePoints < originalXpToNextLevel && originalChar.experiencePoints >= originalXpToNextLevel ) {
             // AI might have already subtracted XP
         } else {
-             updatedChar.experiencePoints = originalChar.experiencePoints; 
+             // If AI didn't handle XP correctly for level up, reset to avoid negative XP due to prior subtractions
+             updatedChar.experiencePoints = originalChar.experiencePoints >= originalXpToNextLevel ? 
+                                             originalChar.experiencePoints - originalXpToNextLevel : 
+                                             originalChar.experiencePoints;
         }
         const expectedNewXpToNextLevel = Math.floor(originalXpToNextLevel * 1.5);
         if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints || updatedChar.experienceToNextLevel < originalXpToNextLevel) {
@@ -456,10 +533,12 @@ Ensure 'updatedStorySummary' is provided.
                                               : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevel * 0.5));
         }
       } else {
-         if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel < updatedChar.experiencePoints) {
+         // Ensure XP to next level is always positive and greater than current XP if not leveling up
+         if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel <= updatedChar.experiencePoints) {
             updatedChar.experienceToNextLevel = originalXpToNextLevel > updatedChar.experiencePoints ? originalXpToNextLevel : updatedChar.experiencePoints + 50;
          }
       }
+      if (updatedChar.experiencePoints < 0) updatedChar.experiencePoints = 0; // Prevent negative XP
       
       updatedChar.skillsAndAbilities = updatedChar.skillsAndAbilities ?? originalChar.skillsAndAbilities ?? [];
       const skillIdSet = new Set<string>();
@@ -477,6 +556,7 @@ Ensure 'updatedStorySummary' is provided.
       });
     }
 
+    // Detailed Sanitation for other parts of storyState
      if (output.updatedStoryState) {
         output.updatedStoryState.inventory = output.updatedStoryState.inventory ?? [];
         const invItemIds = new Set<string>();
@@ -516,10 +596,11 @@ Ensure 'updatedStorySummary' is provided.
           });
           const previousQuestState = input.storyState.quests.find(pq => pq.id === quest.id);
           if (quest.status === 'completed' && previousQuestState?.status === 'active' && quest.rewards && output.updatedStoryState.character) {
-            if (typeof quest.rewards.experiencePoints === 'number') output.updatedStoryState.character.experiencePoints += quest.rewards.experiencePoints;
-            if (typeof quest.rewards.currency === 'number' && output.updatedStoryState.character.currency !== undefined) {
-              output.updatedStoryState.character.currency += quest.rewards.currency;
-              if (output.updatedStoryState.character.currency < 0) output.updatedStoryState.character.currency = 0;
+            const charForRewards = output.updatedStoryState.character; // Already ensured to exist
+            if (typeof quest.rewards.experiencePoints === 'number') charForRewards.experiencePoints += quest.rewards.experiencePoints;
+            if (typeof quest.rewards.currency === 'number' && charForRewards.currency !== undefined) {
+              charForRewards.currency += quest.rewards.currency;
+              if (charForRewards.currency < 0) charForRewards.currency = 0;
             }
             if (quest.rewards.items && Array.isArray(quest.rewards.items)) {
               quest.rewards.items.forEach(rewardItem => {
@@ -577,7 +658,7 @@ Ensure 'updatedStorySummary' is provided.
         output.updatedStoryState.worldFacts = output.updatedStoryState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
         const defaultEquippedItems: Record<EquipmentSlot, ItemType | null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-        const aiEquipped = output.updatedStoryState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>;
+        const aiEquipped = output.updatedStoryState.equippedItems || {} as Partial<Record<EquipmentSlot, ItemType | null>>;
         const newEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedItems};
         const equippedItemIds = new Set<string>();
 
@@ -620,25 +701,21 @@ Ensure 'updatedStorySummary' is provided.
             npc.id = currentNpcId; 
             if (npcIdMap.has(npc.id)) { console.warn(`Duplicate NPC ID ${npc.id} in AI output. Skipping duplicate.`); continue; }
             
-            const processedNpc = { ...npc }; // Create a mutable copy
+            const processedNpc: Partial<NPCProfileType> = { ...npc }; 
 
-            // Delete extraneous fields not in schema
-            delete (processedNpc as any).currentGoal;
+            delete (processedNpc as any).currentGoal; 
 
-
-            // Handle null or empty optional string fields
             if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '') delete processedNpc.classOrRole;
             if (processedNpc.firstEncounteredLocation === null || (processedNpc.firstEncounteredLocation as unknown) === '') delete processedNpc.firstEncounteredLocation;
             if (processedNpc.lastKnownLocation === null || (processedNpc.lastKnownLocation as unknown) === '') delete processedNpc.lastKnownLocation;
             if (processedNpc.seriesContextNotes === null || (processedNpc.seriesContextNotes as unknown) === '') delete processedNpc.seriesContextNotes;
             if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '') delete processedNpc.shortTermGoal;
 
-            // Handle optional array fields if null
             if (processedNpc.buysItemTypes === null) delete processedNpc.buysItemTypes;
-            else processedNpc.buysItemTypes = processedNpc.buysItemTypes ?? undefined; // Ensure it's array or undefined
+            else processedNpc.buysItemTypes = processedNpc.buysItemTypes ?? undefined;
 
             if (processedNpc.sellsItemTypes === null) delete processedNpc.sellsItemTypes;
-            else processedNpc.sellsItemTypes = processedNpc.sellsItemTypes ?? undefined; // Ensure it's array or undefined
+            else processedNpc.sellsItemTypes = processedNpc.sellsItemTypes ?? undefined;
 
 
             processedNpc.name = processedNpc.name || "Unnamed NPC";
@@ -683,7 +760,7 @@ Ensure 'updatedStorySummary' is provided.
                 if (item.price < 0) item.price = 0;
                 if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
             });
-            npcIdMap.set(processedNpc.id, processedNpc as NPCProfileType);
+            npcIdMap.set(processedNpc.id!, processedNpc as NPCProfileType);
         }
         output.updatedStoryState.trackedNPCs = Array.from(npcIdMap.values());
         output.updatedStoryState.storySummary = output.updatedStorySummary || input.storyState.storySummary || "";
@@ -704,6 +781,7 @@ Ensure 'updatedStorySummary' is provided.
         output.newLoreEntries.forEach(lore => { if (lore.category === null || (lore.category as unknown) === '') delete lore.category; });
         if (output.newLoreEntries.length === 0) delete output.newLoreEntries;
     }
-    return output!;
+    return output;
   }
 );
+
