@@ -198,8 +198,8 @@ const foundationFlow = ai.defineFlow(
     const generalModelConfig = { maxOutputTokens: mainInput.usePremiumAI ? 32000 : 8000 };
     // Specific, potentially larger, config for plot summary when premium is used
     const plotSummaryModelConfig = mainInput.usePremiumAI
-        ? { maxOutputTokens: 32000 } // Keep high for premium, as requested for comprehensiveness
-        : { maxOutputTokens: 8000 }; // Standard model token limit for summary
+        ? { maxOutputTokens: 32000 } 
+        : { maxOutputTokens: 8000 }; 
 
     let step1StartTime = Date.now();
     console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
@@ -657,8 +657,16 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'InitialQuestsAndStoryArcsOutputSchema'. ALL REQUIRED fields (quests array, storyArcs array, and nested required fields like quest id/desc/type/status/storyArcId/orderInStoryArc, storyArc id/title/desc/order/mainQuestIds/isCompleted) MUST be present.
 For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Plot: {{{seriesPlotSummary}}}).
 Generate 'storyArcs' & 'quests'.
-'storyArcs': 2-3 initial Story Arcs (major narrative segments from the series). First arc: full details, 'mainQuestIds' list IDs of its quests. Subsequent arcs: OUTLINES (id, title, desc, order, EMPTY mainQuestIds: []).
-'quests': 2-3 'main' quests ONLY for the FIRST story arc, based on 'seriesPlotSummary'. Each quest MUST have 'id', 'description', 'type: "main"', 'status: "active"', 'storyArcId' (first story arc's ID), 'orderInStoryArc'. 'title' is optional. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers)). Include 1-2 'objectives' ('isCompleted: false'). Use 'lookupLoreTool' for accuracy.
+
+'storyArcs': Generate several (e.g., 3-5, or more if the series is long and the plot summary clearly delineates them) initial Story Arcs. These MUST be major narrative segments from the series, presented in chronological order.
+  - For EACH Story Arc:
+    - 'id', 'title', 'order', 'isCompleted: false' are REQUIRED.
+    - 'description' is REQUIRED and MUST be a concise summary of THAT SPECIFIC ARC's main events, key characters involved, and themes, directly derived from the comprehensive 'seriesPlotSummary'. This description is crucial for context.
+  - First story arc: 'mainQuestIds' must list the IDs of its generated quests (see below).
+  - Subsequent story arcs: These are OUTLINES. Their 'mainQuestIds' array MUST be EMPTY initially (e.g., \`[]\`).
+
+'quests': For the FIRST story arc ONLY, generate a suitable number (e.g., 2-4) of 'main' quests directly based on its portion of the 'seriesPlotSummary'. Each quest MUST have 'id', 'description', 'type: "main"', 'status: "active"', 'storyArcId' (first story arc's ID), 'orderInStoryArc'. 'title' is optional. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers)). Include 1-2 'objectives' ('isCompleted: false'). Use 'lookupLoreTool' for accuracy.
+
 Output ONLY JSON { "quests": [...], "storyArcs": [...] }. Ensure 'activeEffects' are structured correctly if included. Ensure all IDs are unique.`,
     });
 
