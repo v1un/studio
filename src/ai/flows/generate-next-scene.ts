@@ -11,7 +11,7 @@
 
 import {ai, STANDARD_MODEL_NAME, PREMIUM_MODEL_NAME} from '@/ai/genkit';
 import {z}from 'zod';
-import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment } from '@/types/story';
+import type { EquipmentSlot, Item as ItemType, Quest as QuestType, ActiveNPCInfo as ActiveNPCInfoType, NPCProfile as NPCProfileType, Skill as SkillType, RawLoreEntry, AIMessageSegment, CharacterProfile } from '@/types/story';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
 import { produce } from 'immer'; // For safe deep cloning and merging
@@ -261,7 +261,7 @@ const generateNextSceneFlow = ai.defineFlow(
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
-    const dataCorrectionWarnings: string[] = [];
+    const localCorrectionWarnings: string[] = [];
 
     const prompt = ai.definePrompt({
         name: 'generateNextScenePrompt',
@@ -393,127 +393,208 @@ Ensure 'updatedStorySummary' is provided.
         };
     }
     
-    const localCorrectionWarnings: string[] = [];
-
     let mergedStoryState = produce(input.storyState, draftState => {
         if (aiPartialOutput?.updatedStoryState) {
             const aiChar = aiPartialOutput.updatedStoryState.character;
             const originalChar = input.storyState.character; 
 
-            if (aiChar) {
-                // Required fields
-                if (typeof aiChar.name === 'string' && aiChar.name.trim() !== "") draftState.character.name = aiChar.name;
-                else if (originalChar.name) draftState.character.name = originalChar.name; 
-                else { draftState.character.name = "Unnamed Character"; localCorrectionWarnings.push("Character 'name' was missing or invalid; applied hardcoded default."); }
+            if (!draftState.character) { // Should not happen if input.storyState is valid
+                draftState.character = { ...originalChar } as CharacterProfile; 
+                if (!draftState.character.name) draftState.character.name = "Fallback Character"; // Ultimate fallback
+                localCorrectionWarnings.push("Critical: draftState.character was initially undefined. Restored from original or defaulted.");
+            }
+            
+            // --- REQUIRED STRING FIELDS ---
+            // Name
+            if (aiChar && typeof aiChar.name === 'string' && aiChar.name.trim() !== "") {
+                draftState.character.name = aiChar.name;
+            } else if (originalChar.name && typeof originalChar.name === 'string' && originalChar.name.trim() !== "") {
+                draftState.character.name = originalChar.name;
+                if (aiChar && aiChar.hasOwnProperty('name')) localCorrectionWarnings.push("AI 'character.name' was invalid; restored from previous state.");
+            } else {
+                draftState.character.name = "Unnamed Character";
+                localCorrectionWarnings.push("Character 'name' was critically missing; applied hardcoded default.");
+            }
 
-                if (typeof aiChar.class === 'string' && aiChar.class.trim() !== "") draftState.character.class = aiChar.class;
-                else if (originalChar.class) draftState.character.class = originalChar.class;
-                else { draftState.character.class = "Adventurer"; localCorrectionWarnings.push("Character 'class' was missing or invalid; applied hardcoded default."); }
-                
-                if (typeof aiChar.description === 'string' && aiChar.description.trim() !== "") draftState.character.description = aiChar.description;
-                else if (originalChar.description) draftState.character.description = originalChar.description;
-                else { draftState.character.description = "A mysterious adventurer."; localCorrectionWarnings.push("Character 'description' was missing or invalid; applied hardcoded default."); }
+            // Class
+            if (aiChar && typeof aiChar.class === 'string' && aiChar.class.trim() !== "") {
+                draftState.character.class = aiChar.class;
+            } else if (originalChar.class && typeof originalChar.class === 'string' && originalChar.class.trim() !== "") {
+                draftState.character.class = originalChar.class;
+                if (aiChar && aiChar.hasOwnProperty('class')) localCorrectionWarnings.push("AI 'character.class' was invalid (e.g., null or empty); restored from previous state.");
+            } else {
+                draftState.character.class = "Adventurer";
+                localCorrectionWarnings.push("Character 'class' was critically missing; applied hardcoded default.");
+            }
 
-                if (typeof aiChar.health === 'number') draftState.character.health = aiChar.health;
-                else if (typeof originalChar.health === 'number') draftState.character.health = originalChar.health;
-                else { draftState.character.health = 100; localCorrectionWarnings.push("Character 'health' was missing or invalid; applied hardcoded default."); }
+            // Description
+            if (aiChar && typeof aiChar.description === 'string' && aiChar.description.trim() !== "") {
+                draftState.character.description = aiChar.description;
+            } else if (originalChar.description && typeof originalChar.description === 'string' && originalChar.description.trim() !== "") {
+                draftState.character.description = originalChar.description;
+                if (aiChar && aiChar.hasOwnProperty('description')) localCorrectionWarnings.push("AI 'character.description' was invalid (e.g., null or empty); restored from previous state.");
+            } else {
+                draftState.character.description = "A mysterious adventurer.";
+                localCorrectionWarnings.push("Character 'description' was critically missing; applied hardcoded default.");
+            }
 
-                if (typeof aiChar.maxHealth === 'number' && aiChar.maxHealth > 0) draftState.character.maxHealth = aiChar.maxHealth;
-                else if (typeof originalChar.maxHealth === 'number' && originalChar.maxHealth > 0) { draftState.character.maxHealth = originalChar.maxHealth; localCorrectionWarnings.push("AI response for 'character.maxHealth' was invalid/missing; restored from previous state."); }
-                else { draftState.character.maxHealth = 100; localCorrectionWarnings.push("AI response for 'character.maxHealth' was invalid/missing; applied hardcoded default.");}
-                
-                if (typeof aiChar.level === 'number') draftState.character.level = aiChar.level;
-                else if (typeof originalChar.level === 'number') draftState.character.level = originalChar.level;
-                else { draftState.character.level = 1; localCorrectionWarnings.push("Character 'level' was missing or invalid; applied hardcoded default."); }
+            // --- REQUIRED NUMBER FIELDS ---
+            // Health
+            if (aiChar && typeof aiChar.health === 'number') {
+                draftState.character.health = aiChar.health;
+            } else if (typeof originalChar.health === 'number') {
+                draftState.character.health = originalChar.health;
+                if (aiChar && aiChar.hasOwnProperty('health')) localCorrectionWarnings.push("AI 'character.health' was invalid; restored from previous state.");
+            } else {
+                draftState.character.health = 100;
+                localCorrectionWarnings.push("Character 'health' was critically missing; applied hardcoded default.");
+            }
 
-                if (typeof aiChar.experiencePoints === 'number') draftState.character.experiencePoints = aiChar.experiencePoints;
-                else if (typeof originalChar.experiencePoints === 'number') draftState.character.experiencePoints = originalChar.experiencePoints;
-                else { draftState.character.experiencePoints = 0; localCorrectionWarnings.push("Character 'experiencePoints' was missing or invalid; applied hardcoded default."); }
+            // MaxHealth
+            if (aiChar && typeof aiChar.maxHealth === 'number' && aiChar.maxHealth > 0) {
+                draftState.character.maxHealth = aiChar.maxHealth;
+            } else if (typeof originalChar.maxHealth === 'number' && originalChar.maxHealth > 0) {
+                draftState.character.maxHealth = originalChar.maxHealth;
+                if (aiChar && aiChar.hasOwnProperty('maxHealth')) localCorrectionWarnings.push("AI 'character.maxHealth' was invalid or zero; restored from previous state.");
+            } else {
+                draftState.character.maxHealth = 100; // Default if original also invalid or missing
+                localCorrectionWarnings.push("Character 'maxHealth' was critically missing or zero; applied hardcoded default.");
+            }
+            if (draftState.character.health > draftState.character.maxHealth) draftState.character.health = draftState.character.maxHealth;
 
-                if (typeof aiChar.experienceToNextLevel === 'number' && aiChar.experienceToNextLevel > 0) draftState.character.experienceToNextLevel = aiChar.experienceToNextLevel;
-                else if (typeof originalChar.experienceToNextLevel === 'number' && originalChar.experienceToNextLevel > 0) { draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel; localCorrectionWarnings.push("AI response for 'character.experienceToNextLevel' was invalid/missing; restored from previous state."); }
-                else { draftState.character.experienceToNextLevel = 100; localCorrectionWarnings.push("AI response for 'character.experienceToNextLevel' was invalid/missing; applied hardcoded default.");}
 
-                // Ensure health doesn't exceed maxHealth
-                if (draftState.character.health > draftState.character.maxHealth) {
-                    draftState.character.health = draftState.character.maxHealth;
-                }
-                // Prevent XPToNextLevel from being less than or equal to current XP unless level changed
-                 if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) { 
-                     draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor(originalChar.experienceToNextLevel * 0.5));
-                     localCorrectionWarnings.push("Corrected 'character.experienceToNextLevel' to be greater than current XP.");
-                 }
+            // Level
+            if (aiChar && typeof aiChar.level === 'number' && aiChar.level >= 1) {
+                draftState.character.level = aiChar.level;
+            } else if (typeof originalChar.level === 'number' && originalChar.level >= 1) {
+                draftState.character.level = originalChar.level;
+                if (aiChar && aiChar.hasOwnProperty('level')) localCorrectionWarnings.push("AI 'character.level' was invalid; restored from previous state.");
+            } else {
+                draftState.character.level = 1;
+                localCorrectionWarnings.push("Character 'level' was critically missing; applied hardcoded default.");
+            }
 
-                // Optional numeric fields
-                const handleOptionalNumber = (fieldName: string, aiValue: any, originalValue: number | undefined, defaultValue: number): number => {
-                    if (typeof aiValue === 'number') return aiValue;
-                    if (typeof originalValue === 'number') {
-                        localCorrectionWarnings.push(`AI response for 'character.${fieldName}' was invalid/missing; restored from previous state.`);
-                        return originalValue;
+            // ExperiencePoints
+            if (aiChar && typeof aiChar.experiencePoints === 'number' && aiChar.experiencePoints >= 0) {
+                draftState.character.experiencePoints = aiChar.experiencePoints;
+            } else if (typeof originalChar.experiencePoints === 'number' && originalChar.experiencePoints >= 0) {
+                draftState.character.experiencePoints = originalChar.experiencePoints;
+                if (aiChar && aiChar.hasOwnProperty('experiencePoints')) localCorrectionWarnings.push("AI 'character.experiencePoints' was invalid; restored from previous state.");
+            } else {
+                draftState.character.experiencePoints = 0;
+                localCorrectionWarnings.push("Character 'experiencePoints' was critically missing; applied hardcoded default.");
+            }
+            
+            // ExperienceToNextLevel
+            if (aiChar && typeof aiChar.experienceToNextLevel === 'number' && aiChar.experienceToNextLevel > 0) {
+                draftState.character.experienceToNextLevel = aiChar.experienceToNextLevel;
+            } else if (typeof originalChar.experienceToNextLevel === 'number' && originalChar.experienceToNextLevel > 0) {
+                draftState.character.experienceToNextLevel = originalChar.experienceToNextLevel;
+                if (aiChar && aiChar.hasOwnProperty('experienceToNextLevel')) localCorrectionWarnings.push("AI 'character.experienceToNextLevel' was invalid or zero; restored from previous state.");
+            } else {
+                draftState.character.experienceToNextLevel = 100;
+                localCorrectionWarnings.push("Character 'experienceToNextLevel' was critically missing or zero; applied hardcoded default.");
+            }
+             if (draftState.character.experienceToNextLevel <= draftState.character.experiencePoints && draftState.character.level === originalChar.level) { 
+                 draftState.character.experienceToNextLevel = draftState.character.experiencePoints + Math.max(50, Math.floor((originalChar.experienceToNextLevel || 100) * 0.5));
+                 localCorrectionWarnings.push("Corrected 'character.experienceToNextLevel' to be greater than current XP.");
+             }
+
+
+            // --- OPTIONAL NUMBER FIELDS ---
+            const ensureOptionalNumber = (fieldName: keyof CharacterProfile, defaultValue: number) => {
+                let valueToSet: number | undefined = undefined;
+                if (aiChar && aiChar.hasOwnProperty(fieldName)) {
+                    if (typeof (aiChar as any)[fieldName] === 'number') {
+                        valueToSet = (aiChar as any)[fieldName] as number;
+                    } else { 
+                        if (typeof (originalChar as any)[fieldName] === 'number') {
+                            valueToSet = (originalChar as any)[fieldName] as number;
+                            localCorrectionWarnings.push(`AI 'character.${String(fieldName)}' was invalid (e.g. null); restored from previous state.`);
+                        } else {
+                            valueToSet = defaultValue;
+                            localCorrectionWarnings.push(`AI 'character.${String(fieldName)}' was invalid and no previous state; defaulted to ${defaultValue}.`);
+                        }
                     }
-                    localCorrectionWarnings.push(`AI response for 'character.${fieldName}' was invalid/missing; applied hardcoded default (${defaultValue}).`);
-                    return defaultValue;
-                };
-
-                draftState.character.mana = handleOptionalNumber('mana', aiChar.mana, originalChar.mana, 0);
-                draftState.character.maxMana = handleOptionalNumber('maxMana', aiChar.maxMana, originalChar.maxMana, 0);
-                draftState.character.strength = handleOptionalNumber('strength', aiChar.strength, originalChar.strength, 10);
-                draftState.character.dexterity = handleOptionalNumber('dexterity', aiChar.dexterity, originalChar.dexterity, 10);
-                draftState.character.constitution = handleOptionalNumber('constitution', aiChar.constitution, originalChar.constitution, 10);
-                draftState.character.intelligence = handleOptionalNumber('intelligence', aiChar.intelligence, originalChar.intelligence, 10);
-                draftState.character.wisdom = handleOptionalNumber('wisdom', aiChar.wisdom, originalChar.wisdom, 10);
-                draftState.character.charisma = handleOptionalNumber('charisma', aiChar.charisma, originalChar.charisma, 10);
-                draftState.character.currency = handleOptionalNumber('currency', aiChar.currency, originalChar.currency, 0);
-                draftState.character.languageUnderstanding = handleOptionalNumber('languageUnderstanding', aiChar.languageUnderstanding, originalChar.languageUnderstanding, 100);
-                
-                draftState.character.skillsAndAbilities = Array.isArray(aiChar.skillsAndAbilities) ? aiChar.skillsAndAbilities : (originalChar.skillsAndAbilities ?? []);
-                if (!Array.isArray(aiChar.skillsAndAbilities) && originalChar.skillsAndAbilities) {
-                    localCorrectionWarnings.push("AI response for 'character.skillsAndAbilities' was invalid/missing; restored from previous state.");
-                } else if (!Array.isArray(aiChar.skillsAndAbilities) && !originalChar.skillsAndAbilities) {
-                    localCorrectionWarnings.push("AI response for 'character.skillsAndAbilities' was invalid/missing; defaulted to empty array.");
+                } else if (typeof (originalChar as any)[fieldName] === 'number') { 
+                    valueToSet = (originalChar as any)[fieldName] as number;
+                } else { 
+                     valueToSet = defaultValue;
                 }
+                (draftState.character as any)[fieldName] = valueToSet;
+            };
 
-            } else { 
-                 // AI provided no character object, use original entirely
-                 draftState.character = {...originalChar}; 
-                 localCorrectionWarnings.push("AI provided no 'character' object in updatedStoryState; using previous state entirely.");
-            }
-
-            draftState.currentLocation = (typeof aiPartialOutput.updatedStoryState.currentLocation === 'string' && aiPartialOutput.updatedStoryState.currentLocation.trim() !== "") 
-                ? aiPartialOutput.updatedStoryState.currentLocation 
-                : draftState.currentLocation;
-            if ((typeof aiPartialOutput.updatedStoryState.currentLocation !== 'string' || aiPartialOutput.updatedStoryState.currentLocation.trim() === "") && input.storyState.currentLocation !== aiPartialOutput.updatedStoryState.currentLocation) {
-                 localCorrectionWarnings.push("AI response for 'currentLocation' was invalid/missing; restored from previous state.");
-            }
+            ensureOptionalNumber('mana', 0);
+            ensureOptionalNumber('maxMana', 0);
+            ensureOptionalNumber('strength', 10);
+            ensureOptionalNumber('dexterity', 10);
+            ensureOptionalNumber('constitution', 10);
+            ensureOptionalNumber('intelligence', 10);
+            ensureOptionalNumber('wisdom', 10);
+            ensureOptionalNumber('charisma', 10);
+            ensureOptionalNumber('currency', 0);
+            ensureOptionalNumber('languageUnderstanding', 100);
             
-            draftState.inventory = Array.isArray(aiPartialOutput.updatedStoryState.inventory) ? aiPartialOutput.updatedStoryState.inventory : draftState.inventory;
-             if (!Array.isArray(aiPartialOutput.updatedStoryState.inventory) && input.storyState.inventory !== aiPartialOutput.updatedStoryState.inventory) {
-                 localCorrectionWarnings.push("AI response for 'inventory' was not an array; restored from previous state.");
-            }
-
-            draftState.equippedItems = (typeof aiPartialOutput.updatedStoryState.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null) 
-                ? aiPartialOutput.updatedStoryState.equippedItems 
-                : draftState.equippedItems;
-            if (!(typeof aiPartialOutput.updatedStoryState.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null) && input.storyState.equippedItems !== aiPartialOutput.updatedStoryState.equippedItems ) {
-                 localCorrectionWarnings.push("AI response for 'equippedItems' was invalid/missing; restored from previous state.");
-            }
+            if (draftState.character.languageUnderstanding < 0) draftState.character.languageUnderstanding = 0;
+            if (draftState.character.languageUnderstanding > 100) draftState.character.languageUnderstanding = 100;
+            if (draftState.character.currency < 0) draftState.character.currency = 0;
 
 
-            draftState.quests = Array.isArray(aiPartialOutput.updatedStoryState.quests) ? aiPartialOutput.updatedStoryState.quests : draftState.quests;
-            if (!Array.isArray(aiPartialOutput.updatedStoryState.quests) && input.storyState.quests !== aiPartialOutput.updatedStoryState.quests ) {
-                 localCorrectionWarnings.push("AI response for 'quests' was not an array; restored from previous state.");
+            // SkillsAndAbilities (Optional Array)
+            if (aiChar && Array.isArray(aiChar.skillsAndAbilities)) {
+                draftState.character.skillsAndAbilities = aiChar.skillsAndAbilities;
+            } else if (Array.isArray(originalChar.skillsAndAbilities)) {
+                draftState.character.skillsAndAbilities = originalChar.skillsAndAbilities;
+                if (aiChar && aiChar.hasOwnProperty('skillsAndAbilities')) localCorrectionWarnings.push("AI 'character.skillsAndAbilities' was not an array; restored from previous state.");
+            } else {
+                draftState.character.skillsAndAbilities = [];
+                localCorrectionWarnings.push("Character 'skillsAndAbilities' was missing; defaulted to empty array.");
             }
 
-            draftState.worldFacts = Array.isArray(aiPartialOutput.updatedStoryState.worldFacts) ? aiPartialOutput.updatedStoryState.worldFacts : draftState.worldFacts;
-            if (!Array.isArray(aiPartialOutput.updatedStoryState.worldFacts) && input.storyState.worldFacts !== aiPartialOutput.updatedStoryState.worldFacts) {
-                 localCorrectionWarnings.push("AI response for 'worldFacts' was not an array; restored from previous state.");
-            }
-            
-            draftState.trackedNPCs = Array.isArray(aiPartialOutput.updatedStoryState.trackedNPCs) ? aiPartialOutput.updatedStoryState.trackedNPCs : draftState.trackedNPCs;
-            if (!Array.isArray(aiPartialOutput.updatedStoryState.trackedNPCs) && input.storyState.trackedNPCs !== aiPartialOutput.updatedStoryState.trackedNPCs) {
-                 localCorrectionWarnings.push("AI response for 'trackedNPCs' was not an array; restored from previous state.");
-            }
+        } else if (aiPartialOutput && !aiPartialOutput.updatedStoryState?.character) { // AI provided updatedStoryState but no character
+             draftState.character = {...input.storyState.character}; 
+             localCorrectionWarnings.push("AI provided no 'character' object in updatedStoryState; using previous state entirely.");
         }
+        // If aiPartialOutput.updatedStoryState itself is missing, draftState remains input.storyState
+
+        // Merge other top-level state properties
+        draftState.currentLocation = (typeof aiPartialOutput?.updatedStoryState?.currentLocation === 'string' && aiPartialOutput.updatedStoryState.currentLocation.trim() !== "") 
+            ? aiPartialOutput.updatedStoryState.currentLocation 
+            : draftState.currentLocation;
+        if ((typeof aiPartialOutput?.updatedStoryState?.currentLocation !== 'string' || aiPartialOutput?.updatedStoryState?.currentLocation.trim() === "") && input.storyState.currentLocation !== aiPartialOutput?.updatedStoryState?.currentLocation) {
+             localCorrectionWarnings.push("AI response for 'currentLocation' was invalid/missing; restored from previous state.");
+        }
+        
+        draftState.inventory = Array.isArray(aiPartialOutput?.updatedStoryState?.inventory) ? aiPartialOutput.updatedStoryState.inventory : draftState.inventory;
+         if (!Array.isArray(aiPartialOutput?.updatedStoryState?.inventory) && input.storyState.inventory !== aiPartialOutput?.updatedStoryState?.inventory) {
+             localCorrectionWarnings.push("AI response for 'inventory' was not an array; restored from previous state.");
+        }
+
+        draftState.equippedItems = (typeof aiPartialOutput?.updatedStoryState?.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null) 
+            ? aiPartialOutput.updatedStoryState.equippedItems 
+            : draftState.equippedItems;
+        if (!(typeof aiPartialOutput?.updatedStoryState?.equippedItems === 'object' && aiPartialOutput.updatedStoryState.equippedItems !== null) && input.storyState.equippedItems !== aiPartialOutput?.updatedStoryState?.equippedItems ) {
+             localCorrectionWarnings.push("AI response for 'equippedItems' was invalid/missing; restored from previous state.");
+        }
+
+        draftState.quests = Array.isArray(aiPartialOutput?.updatedStoryState?.quests) ? aiPartialOutput.updatedStoryState.quests : draftState.quests;
+        if (!Array.isArray(aiPartialOutput?.updatedStoryState?.quests) && input.storyState.quests !== aiPartialOutput?.updatedStoryState?.quests ) {
+             localCorrectionWarnings.push("AI response for 'quests' was not an array; restored from previous state.");
+        }
+
+        draftState.worldFacts = Array.isArray(aiPartialOutput?.updatedStoryState?.worldFacts) ? aiPartialOutput.updatedStoryState.worldFacts : draftState.worldFacts;
+        if (!Array.isArray(aiPartialOutput?.updatedStoryState?.worldFacts) && input.storyState.worldFacts !== aiPartialOutput?.updatedStoryState?.worldFacts) {
+             localCorrectionWarnings.push("AI response for 'worldFacts' was not an array; restored from previous state.");
+        }
+        
+        draftState.trackedNPCs = Array.isArray(aiPartialOutput?.updatedStoryState?.trackedNPCs) ? aiPartialOutput.updatedStoryState.trackedNPCs : draftState.trackedNPCs;
+        if (!Array.isArray(aiPartialOutput?.updatedStoryState?.trackedNPCs) && input.storyState.trackedNPCs !== aiPartialOutput?.updatedStoryState?.trackedNPCs) {
+             localCorrectionWarnings.push("AI response for 'trackedNPCs' was not an array; restored from previous state.");
+        }
+        
+        draftState.storySummary = (typeof aiPartialOutput?.updatedStoryState?.storySummary === 'string')
+            ? aiPartialOutput.updatedStoryState.storySummary
+            : draftState.storySummary;
     });
 
 
@@ -528,10 +609,17 @@ Ensure 'updatedStorySummary' is provided.
     
     if (!output.generatedMessages || !Array.isArray(output.generatedMessages) || output.generatedMessages.length === 0) {
       output.generatedMessages = [{ speaker: 'GM', content: "(AI response issue: No messages generated.)" }];
+      output.dataCorrectionWarnings = [...(output.dataCorrectionWarnings || []), "AI response had no 'generatedMessages'."];
     } else {
         output.generatedMessages.forEach(msg => {
-            if (typeof msg.speaker !== 'string' || msg.speaker.trim() === '') msg.speaker = 'GM';
-            if (typeof msg.content !== 'string') msg.content = '(AI content error)';
+            if (typeof msg.speaker !== 'string' || msg.speaker.trim() === '') {
+                msg.speaker = 'GM';
+                output.dataCorrectionWarnings = [...(output.dataCorrectionWarnings || []), "Corrected empty speaker in AI message to 'GM'."];
+            }
+            if (typeof msg.content !== 'string') {
+                msg.content = '(AI content error)';
+                 output.dataCorrectionWarnings = [...(output.dataCorrectionWarnings || []), "Corrected non-string content in AI message."];
+            }
         });
     }
 
@@ -547,73 +635,73 @@ Ensure 'updatedStorySummary' is provided.
     // Final sanitation pass on the fully merged and defaulted state
     if (output.updatedStoryState.character) {
       const updatedChar = output.updatedStoryState.character;
-      const originalChar = input.storyState.character; // For comparison if needed, though most defaults are now from draftState logic
+      const originalCharFromInput = input.storyState.character; 
 
-      updatedChar.name = (typeof updatedChar.name === 'string' && updatedChar.name.trim() !== "") ? updatedChar.name : (originalChar.name || "Unnamed Character");
-      updatedChar.class = (typeof updatedChar.class === 'string' && updatedChar.class.trim() !== "") ? updatedChar.class : (originalChar.class || "Adventurer");
-      updatedChar.description = (typeof updatedChar.description === 'string' && updatedChar.description.trim() !== "") ? updatedChar.description : (originalChar.description || "A mysterious adventurer.");
-      updatedChar.health = typeof updatedChar.health === 'number' ? updatedChar.health : (originalChar.health || 100);
-      updatedChar.maxHealth = (typeof updatedChar.maxHealth === 'number' && updatedChar.maxHealth > 0) ? updatedChar.maxHealth : (originalChar.maxHealth > 0 ? originalChar.maxHealth : 100);
-      updatedChar.level = typeof updatedChar.level === 'number' ? updatedChar.level : (originalChar.level || 1);
-      updatedChar.experiencePoints = typeof updatedChar.experiencePoints === 'number' ? updatedChar.experiencePoints : (originalChar.experiencePoints || 0);
-      updatedChar.experienceToNextLevel = (typeof updatedChar.experienceToNextLevel === 'number' && updatedChar.experienceToNextLevel > 0) ? updatedChar.experienceToNextLevel : (originalChar.experienceToNextLevel > 0 ? originalChar.experienceToNextLevel : 100);
+      updatedChar.name = (typeof updatedChar.name === 'string' && updatedChar.name.trim() !== "") ? updatedChar.name : (originalCharFromInput.name || "Unnamed Character");
+      updatedChar.class = (typeof updatedChar.class === 'string' && updatedChar.class.trim() !== "") ? updatedChar.class : (originalCharFromInput.class || "Adventurer");
+      updatedChar.description = (typeof updatedChar.description === 'string' && updatedChar.description.trim() !== "") ? updatedChar.description : (originalCharFromInput.description || "A mysterious adventurer.");
+      updatedChar.health = typeof updatedChar.health === 'number' ? updatedChar.health : (originalCharFromInput.health || 100);
+      updatedChar.maxHealth = (typeof updatedChar.maxHealth === 'number' && updatedChar.maxHealth > 0) ? updatedChar.maxHealth : (originalCharFromInput.maxHealth > 0 ? originalCharFromInput.maxHealth : 100);
+      updatedChar.level = (typeof updatedChar.level === 'number' && updatedChar.level >=1) ? updatedChar.level : (originalCharFromInput.level >=1 ? originalCharFromInput.level : 1);
+      updatedChar.experiencePoints = (typeof updatedChar.experiencePoints === 'number' && updatedChar.experiencePoints >=0) ? updatedChar.experiencePoints : (originalCharFromInput.experiencePoints >=0 ? originalCharFromInput.experiencePoints : 0);
+      updatedChar.experienceToNextLevel = (typeof updatedChar.experienceToNextLevel === 'number' && updatedChar.experienceToNextLevel > 0) ? updatedChar.experienceToNextLevel : (originalCharFromInput.experienceToNextLevel > 0 ? originalCharFromInput.experienceToNextLevel : 100);
       
       if (updatedChar.health < 0) updatedChar.health = 0;
       if (updatedChar.health > updatedChar.maxHealth) {
         updatedChar.health = updatedChar.maxHealth;
       }
 
-      const handleOptionalNumberFinalPass = (currentValue: any, originalValue: number | undefined, defaultValue: number): number => {
+      const finalEnsureOptionalNumber = (currentValue: any, originalValue: number | undefined, defaultValue: number): number => {
           if (typeof currentValue === 'number') return currentValue;
-          // originalValue is already incorporated in mergedStoryState, so direct default is fine if currentValue isn't a number.
+          if (typeof originalValue === 'number') return originalValue; // Prefer original from input if current from AI merge is bad
           return defaultValue;
       };
 
-      updatedChar.mana = handleOptionalNumberFinalPass(updatedChar.mana, originalChar.mana, 0);
-      updatedChar.maxMana = handleOptionalNumberFinalPass(updatedChar.maxMana, originalChar.maxMana, 0);
-      updatedChar.strength = handleOptionalNumberFinalPass(updatedChar.strength, originalChar.strength, 10);
-      updatedChar.dexterity = handleOptionalNumberFinalPass(updatedChar.dexterity, originalChar.dexterity, 10);
-      updatedChar.constitution = handleOptionalNumberFinalPass(updatedChar.constitution, originalChar.constitution, 10);
-      updatedChar.intelligence = handleOptionalNumberFinalPass(updatedChar.intelligence, originalChar.intelligence, 10);
-      updatedChar.wisdom = handleOptionalNumberFinalPass(updatedChar.wisdom, originalChar.wisdom, 10);
-      updatedChar.charisma = handleOptionalNumberFinalPass(updatedChar.charisma, originalChar.charisma, 10);
-      updatedChar.currency = handleOptionalNumberFinalPass(updatedChar.currency, originalChar.currency, 0);
+      updatedChar.mana = finalEnsureOptionalNumber(updatedChar.mana, originalCharFromInput.mana, 0);
+      updatedChar.maxMana = finalEnsureOptionalNumber(updatedChar.maxMana, originalCharFromInput.maxMana, 0);
+      updatedChar.strength = finalEnsureOptionalNumber(updatedChar.strength, originalCharFromInput.strength, 10);
+      updatedChar.dexterity = finalEnsureOptionalNumber(updatedChar.dexterity, originalCharFromInput.dexterity, 10);
+      updatedChar.constitution = finalEnsureOptionalNumber(updatedChar.constitution, originalCharFromInput.constitution, 10);
+      updatedChar.intelligence = finalEnsureOptionalNumber(updatedChar.intelligence, originalCharFromInput.intelligence, 10);
+      updatedChar.wisdom = finalEnsureOptionalNumber(updatedChar.wisdom, originalCharFromInput.wisdom, 10);
+      updatedChar.charisma = finalEnsureOptionalNumber(updatedChar.charisma, originalCharFromInput.charisma, 10);
+      updatedChar.currency = finalEnsureOptionalNumber(updatedChar.currency, originalCharFromInput.currency, 0);
       if (updatedChar.currency < 0) updatedChar.currency = 0;
 
-      updatedChar.languageUnderstanding = handleOptionalNumberFinalPass(updatedChar.languageUnderstanding, originalChar.languageUnderstanding, 100);
+      updatedChar.languageUnderstanding = finalEnsureOptionalNumber(updatedChar.languageUnderstanding, originalCharFromInput.languageUnderstanding, 100);
       if (updatedChar.languageUnderstanding < 0) updatedChar.languageUnderstanding = 0;
       if (updatedChar.languageUnderstanding > 100) updatedChar.languageUnderstanding = 100;
       
-      let originalXpToNextLevel = originalChar.experienceToNextLevel;
-      if (!originalXpToNextLevel || originalXpToNextLevel <=0) originalXpToNextLevel = 100; 
+      let originalXpToNextLevelForFinalPass = originalCharFromInput.experienceToNextLevel;
+      if (!originalXpToNextLevelForFinalPass || originalXpToNextLevelForFinalPass <=0) originalXpToNextLevelForFinalPass = 100; 
 
-      const didLevelUp = updatedChar.level > originalChar.level || 
-                         (originalChar.experiencePoints >= originalXpToNextLevel && updatedChar.level === originalChar.level +1);
+      const didLevelUp = updatedChar.level > originalCharFromInput.level || 
+                         (originalCharFromInput.experiencePoints >= originalXpToNextLevelForFinalPass && updatedChar.level === originalCharFromInput.level +1);
 
-      if (didLevelUp && updatedChar.level === originalChar.level + 1) { 
-        if(updatedChar.experiencePoints >= originalXpToNextLevel && originalChar.experiencePoints >= originalXpToNextLevel) {
-            updatedChar.experiencePoints = originalChar.experiencePoints - originalXpToNextLevel;
-        } else if (updatedChar.experiencePoints < originalXpToNextLevel && originalChar.experiencePoints >= originalXpToNextLevel ) {
-            // AI might have already subtracted XP
-        } else {
-             updatedChar.experiencePoints = originalChar.experiencePoints >= originalXpToNextLevel ? 
-                                             originalChar.experiencePoints - originalXpToNextLevel : 
-                                             originalChar.experiencePoints;
+      if (didLevelUp && updatedChar.level === originalCharFromInput.level + 1) { 
+        if(updatedChar.experiencePoints >= originalXpToNextLevelForFinalPass && originalCharFromInput.experiencePoints >= originalXpToNextLevelForFinalPass) {
+            // AI might have already subtracted, or player XP from previous turn was high
+             updatedChar.experiencePoints = updatedChar.experiencePoints - originalXpToNextLevelForFinalPass;
+             if (updatedChar.experiencePoints < 0) updatedChar.experiencePoints = 0;
+        } else if (updatedChar.experiencePoints < originalXpToNextLevelForFinalPass && originalCharFromInput.experiencePoints >= originalXpToNextLevelForFinalPass ) {
+            // AI might have already subtracted XP and set it to a value below the old threshold
+        } else if (originalCharFromInput.experiencePoints >= originalXpToNextLevelForFinalPass) {
+             updatedChar.experiencePoints = originalCharFromInput.experiencePoints - originalXpToNextLevelForFinalPass;
         }
-        const expectedNewXpToNextLevel = Math.floor(originalXpToNextLevel * 1.5);
-        if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints || updatedChar.experienceToNextLevel < originalXpToNextLevel) {
+        const expectedNewXpToNextLevel = Math.floor(originalXpToNextLevelForFinalPass * 1.5);
+        if (updatedChar.experienceToNextLevel <= updatedChar.experiencePoints || updatedChar.experienceToNextLevel < originalXpToNextLevelForFinalPass) {
            updatedChar.experienceToNextLevel = expectedNewXpToNextLevel > updatedChar.experiencePoints 
                                               ? expectedNewXpToNextLevel 
-                                              : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevel * 0.5));
+                                              : updatedChar.experiencePoints + Math.max(50, Math.floor(originalXpToNextLevelForFinalPass * 0.5));
         }
-      } else {
+      } else if (updatedChar.level === originalCharFromInput.level) { // No level up this turn
          if (updatedChar.experienceToNextLevel <= 0 || updatedChar.experienceToNextLevel <= updatedChar.experiencePoints) {
-            updatedChar.experienceToNextLevel = originalXpToNextLevel > updatedChar.experiencePoints ? originalXpToNextLevel : updatedChar.experiencePoints + 50;
+            updatedChar.experienceToNextLevel = originalXpToNextLevelForFinalPass > updatedChar.experiencePoints ? originalXpToNextLevelForFinalPass : updatedChar.experiencePoints + 50;
          }
-      }
+      } // else if level decreased or jumped multiple levels, XP logic might need more specific handling, but current focus is on normal progression or no change
       if (updatedChar.experiencePoints < 0) updatedChar.experiencePoints = 0; 
       
-      updatedChar.skillsAndAbilities = Array.isArray(updatedChar.skillsAndAbilities) ? updatedChar.skillsAndAbilities : (originalChar.skillsAndAbilities ?? []);
+      updatedChar.skillsAndAbilities = Array.isArray(updatedChar.skillsAndAbilities) ? updatedChar.skillsAndAbilities : (originalCharFromInput.skillsAndAbilities ?? []);
       const skillIdSet = new Set<string>();
       updatedChar.skillsAndAbilities.forEach((skill, index) => {
         if (!skill.id || skill.id.trim() === "" || skillIdSet.has(skill.id)) { 
@@ -782,11 +870,8 @@ Ensure 'updatedStorySummary' is provided.
             if (processedNpc.seriesContextNotes === null || (processedNpc.seriesContextNotes as unknown) === '' || typeof processedNpc.seriesContextNotes === 'undefined') delete processedNpc.seriesContextNotes;
             if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '' || typeof processedNpc.shortTermGoal === 'undefined') delete processedNpc.shortTermGoal;
 
-            if (processedNpc.buysItemTypes === null || typeof processedNpc.buysItemTypes === 'undefined') delete processedNpc.buysItemTypes;
-            else if (Array.isArray(processedNpc.buysItemTypes) && processedNpc.buysItemTypes.length === 0) delete processedNpc.buysItemTypes;
-            
-            if (processedNpc.sellsItemTypes === null || typeof processedNpc.sellsItemTypes === 'undefined') delete processedNpc.sellsItemTypes;
-            else if (Array.isArray(processedNpc.sellsItemTypes) && processedNpc.sellsItemTypes.length === 0) delete processedNpc.sellsItemTypes;
+            if (processedNpc.buysItemTypes === null || typeof processedNpc.buysItemTypes === 'undefined' || (Array.isArray(processedNpc.buysItemTypes) && processedNpc.buysItemTypes.length === 0) ) delete processedNpc.buysItemTypes;
+            if (processedNpc.sellsItemTypes === null || typeof processedNpc.sellsItemTypes === 'undefined' || (Array.isArray(processedNpc.sellsItemTypes) && processedNpc.sellsItemTypes.length === 0) ) delete processedNpc.sellsItemTypes;
 
 
             processedNpc.name = processedNpc.name || "Unnamed NPC";
@@ -852,8 +937,14 @@ Ensure 'updatedStorySummary' is provided.
         output.newLoreEntries.forEach(lore => { if (lore.category === null || (lore.category as unknown) === '' || typeof lore.category === 'undefined') delete lore.category; });
         if (output.newLoreEntries.length === 0) delete output.newLoreEntries;
     }
+    
+    // Consolidate localCorrectionWarnings into output.dataCorrectionWarnings
     if (localCorrectionWarnings.length > 0) {
-        output.dataCorrectionWarnings = [...(output.dataCorrectionWarnings || []), ...localCorrectionWarnings];
+      output.dataCorrectionWarnings = [...(output.dataCorrectionWarnings || []), ...localCorrectionWarnings];
+    }
+    // Remove duplicates from warnings if any
+    if(output.dataCorrectionWarnings) {
+        output.dataCorrectionWarnings = Array.from(new Set(output.dataCorrectionWarnings));
     }
 
 
