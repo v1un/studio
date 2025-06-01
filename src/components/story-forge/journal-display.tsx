@@ -11,13 +11,13 @@ import { Label } from "@/components/ui/label";
 import {
     ScrollTextIcon, BookOpenIcon, CheckCircle2Icon, ListChecksIcon, TagIcon,
     TargetIcon, GiftIcon, StarIcon, ShieldPlusIcon, PackageIcon, TrophyIcon,
-    MapIcon, BookmarkIcon, ChevronRightIcon, MilestonesIcon // Using MilestonesIcon for Arcs
+    MapIcon, BookmarkIcon, ChevronRightIcon, MilestoneIcon // Using MilestoneIcon for Arcs
 } from "lucide-react";
 
 interface JournalDisplayProps {
   quests: Quest[];
-  storyArcs: StoryArc[]; // Renamed from chapters
-  currentStoryArcId?: string; // Renamed from currentChapterId
+  storyArcs: StoryArc[];
+  currentStoryArcId?: string;
   worldFacts: string[];
 }
 
@@ -126,8 +126,8 @@ export default function JournalDisplay({ quests, storyArcs, currentStoryArcId, w
   const completedMainQuests = quests.filter(q => q.type === 'main' && q.status === 'completed');
   const completedOtherQuests = quests.filter(q => (q.type === 'side' || q.type === 'dynamic' || q.type === 'arc_goal') && q.status === 'completed');
 
-  const currentStoryArc = storyArcs.find(arc => arc.id === currentStoryArcId); // Renamed
-  const completedStoryArcs = storyArcs.filter(arc => arc.isCompleted).sort((a,b) => b.order - a.order); // Renamed
+  const currentStoryArc = storyArcs.find(arc => arc.id === currentStoryArcId);
+  const completedStoryArcs = storyArcs.filter(arc => arc.isCompleted).sort((a,b) => b.order - a.order);
 
   return (
     <Card className="w-full shadow-lg animate-fade-in">
@@ -141,13 +141,13 @@ export default function JournalDisplay({ quests, storyArcs, currentStoryArcId, w
         {currentStoryArc && (
           <div>
             <h3 className="font-semibold mb-1 flex items-center text-xl text-primary">
-                <MilestonesIcon className="w-5 h-5 mr-2" /> Current Story Arc: {currentStoryArc.title} {/* Renamed */}
+                <MilestoneIcon className="w-5 h-5 mr-2" /> Current Story Arc: {currentStoryArc.title}
             </h3>
             <p className="text-sm text-muted-foreground italic mb-3">{currentStoryArc.description}</p>
             {activeMainQuests.length > 0 ? (
               <ScrollArea className="h-auto max-h-60 rounded-md border p-3 bg-background/50">
                 <ul className="space-y-1">
-                  {activeMainQuests.sort((a,b) => (a.orderInStoryArc || 0) - (b.orderInStoryArc || 0)).map((quest) => ( // Renamed orderInStoryArc
+                  {activeMainQuests.sort((a,b) => (a.orderInStoryArc || 0) - (b.orderInStoryArc || 0)).map((quest) => (
                     <QuestItem key={quest.id} quest={quest} isMain={true} />
                   ))}
                 </ul>
@@ -178,7 +178,7 @@ export default function JournalDisplay({ quests, storyArcs, currentStoryArcId, w
           )}
         </div>
 
-        {(completedMainQuests.length > 0 || completedOtherQuests.length > 0 || completedStoryArcs.length > 0) && ( // Renamed
+        {(completedMainQuests.length > 0 || completedOtherQuests.length > 0 || completedStoryArcs.length > 0) && (
           <>
             <Separator />
             <div>
@@ -187,13 +187,13 @@ export default function JournalDisplay({ quests, storyArcs, currentStoryArcId, w
                 Completed Entries
               </h4>
               <ScrollArea className="h-48 rounded-md border p-3 bg-background/50">
-                {completedStoryArcs.map(arc => ( // Renamed
+                {completedStoryArcs.map(arc => (
                      <div key={arc.id} className="mb-3 pb-2 border-b border-border/30 last:border-b-0">
                         <h5 className="font-medium text-md text-green-600 flex items-center">
-                            <ChevronRightIcon className="w-4 h-4 mr-1"/> Story Arc {arc.order}: {arc.title} (Completed) {/* Renamed */}
+                            <ChevronRightIcon className="w-4 h-4 mr-1"/> Story Arc {arc.order}: {arc.title} (Completed)
                         </h5>
                         <ul className="pl-4 mt-1 space-y-1">
-                        {quests.filter(q => q.storyArcId === arc.id && q.status === 'completed').sort((a,b) => (a.orderInStoryArc || 0) - (b.orderInStoryArc || 0)).map(quest => ( // Renamed storyArcId, orderInStoryArc
+                        {quests.filter(q => q.storyArcId === arc.id && q.status === 'completed').sort((a,b) => (a.orderInStoryArc || 0) - (b.orderInStoryArc || 0)).map(quest => (
                             <QuestItem key={quest.id} quest={quest} />
                         ))}
                         </ul>
@@ -201,7 +201,7 @@ export default function JournalDisplay({ quests, storyArcs, currentStoryArcId, w
                 ))}
                 {completedOtherQuests.length > 0 && (
                   <>
-                    {completedStoryArcs.length > 0 && <Separator className="my-3" />} {/* Renamed */}
+                    {completedStoryArcs.length > 0 && <Separator className="my-3" />}
                     <h5 className="font-medium text-md text-green-600 mb-1">Other Completed Quests:</h5>
                     <ul className="space-y-1">
                       {completedOtherQuests.map((quest) => (
@@ -240,3 +240,5 @@ export default function JournalDisplay({ quests, storyArcs, currentStoryArcId, w
     </Card>
   );
 }
+
+    
