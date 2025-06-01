@@ -402,10 +402,11 @@ Location: {{currentLocation}}
 -   If 'character.languageUnderstanding' is very low (e.g., < 10, common for characters new to a world), initial quests MUST relate to this barrier or basic orientation, e.g., "Try to understand what's happening", "Find a way to communicate", "Seek immediate shelter or safety." Avoid quests requiring complex interaction or understanding tasks from unknown entities unless that is a core part of the canonical start.
 -   For other characters, quests should feel like natural next steps from the 'sceneDescription' and 'currentLocation', and align with the series' initial plot if applicable.
 
-Generate ONLY 'quests': 1-2 initial quests.
+Generate ONLY 'quests': 1-2 initial quests that provide clear direction and feel rewarding.
     - Each quest: 'id' (unique), 'description', 'status' ('active'). These fields are required.
     - Optional: 'category', 'objectives' (each objective: 'description', 'isCompleted: false').
-    - MUST include 'rewards' if appropriate (experiencePoints (MUST BE a number), currency (MUST BE a number), items (each item: unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), optional 'equipSlot' - OMIT 'equipSlot' if not equippable gear)). All fields within 'rewards' and reward items are required if that structure is present.
+    - **It is highly recommended to include a 'rewards' block for these initial quests.** If 'rewards' are included, they MUST specify at least some 'experiencePoints' (MUST BE a number) or 'currency' (MUST BE a number). 'items' are optional but good; if included, each item MUST have a unique 'id', 'name', 'description', 'basePrice' (MUST BE a number), and optional 'equipSlot' (OMIT 'equipSlot' if not equippable gear). All fields within 'rewards' and reward items are required if that structure is present.
+    Example reward: { "experiencePoints": 50, "currency": 10, "items": [{ "id": "item_simple_potion_reward_01", "name": "Minor Healing Draught", "description": "A weak potion that restores a small bit of health.", "basePrice": 5, "isConsumable": true, "effectDescription": "Heals 10 HP" }] }
 Adhere to JSON schema. Output ONLY { "quests": [...] }. Ensure all fields are correctly populated and typed.`,
     });
 
