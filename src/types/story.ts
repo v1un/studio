@@ -43,7 +43,7 @@ export interface Item {
   basePrice?: number;
   price?: number;
   rarity?: ItemRarity;
-  activeEffects?: ActiveEffect[]; // New: Array of structured active effects
+  activeEffects?: ActiveEffect[];
 }
 
 export interface CharacterProfile {
@@ -297,14 +297,14 @@ export interface ItemFoundEvent extends DescribedEventBase {
   suggestedBasePrice?: number;
   equipSlot?: Item['equipSlot'];
   isConsumable?: boolean;
-  effectDescription?: string; // Keep for simple effects, especially consumables
+  effectDescription?: string;
   isQuestItem?: boolean;
   relevantQuestId?: string;
   rarity?: ItemRarity;
-  activeEffects?: ActiveEffect[]; // New: For more complex, structured effects
+  activeEffects?: ActiveEffect[];
 }
 export interface ItemLostEvent extends DescribedEventBase { type: 'itemLost'; itemIdOrName: string; quantity?: number; }
-export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; } // Consider adding effect details if used item has active effects
+export interface ItemUsedEvent extends DescribedEventBase { type: 'itemUsed'; itemIdOrName: string; }
 export interface ItemEquippedEvent extends DescribedEventBase { type: 'itemEquipped'; itemIdOrName: string; slot: EquipmentSlot; }
 export interface ItemUnequippedEvent extends DescribedEventBase { type: 'itemUnequipped'; itemIdOrName: string; slot: EquipmentSlot; }
 
@@ -318,7 +318,6 @@ export interface QuestAcceptedEvent extends DescribedEventBase {
   orderInChapter?: number;
   category?: string;
   objectives?: { description: string }[];
-  // Ensure items in rewards can also have activeEffects
   rewards?: { experiencePoints?: number; currency?: number; items?: Array<Partial<Item> & { activeEffects?: ActiveEffect[] }> };
 }
 export interface QuestObjectiveUpdateEvent extends DescribedEventBase { type: 'questObjectiveUpdate'; questIdOrDescription: string; objectiveDescription: string; objectiveCompleted: boolean; }
@@ -372,7 +371,7 @@ export interface NarrativeAndEventsOutput {
 export interface GenerateNextSceneInput {
   currentScene: string;
   userInput: string;
-  storyState: StructuredStoryState;
+  storyState: StructuredStoryState; // This will be the one with base character stats for AI
   seriesName: string;
   seriesStyleGuide?: string;
   currentTurnId: string;
@@ -381,7 +380,7 @@ export interface GenerateNextSceneInput {
 
 export interface GenerateNextSceneOutput {
   generatedMessages: AIMessageSegment[];
-  updatedStoryState: StructuredStoryState;
+  updatedStoryState: StructuredStoryState; // This is the state AFTER AI processing, with base stats updated by events
   activeNPCsInScene?: ActiveNPCInfo[];
   newLoreEntries?: RawLoreEntry[];
   updatedStorySummary: string;
@@ -462,18 +461,3 @@ export interface CraftingRecipe {
   requiredSkill?: { skillId: string; level: number }; // e.g., Alchemy Lvl 5
   discovered?: boolean; // If the player has learned this recipe
 }
-
-// Add to CharacterProfile (example for placeholders)
-// export interface CharacterProfile {
-//   // ... existing fields
-//   reputation?: PlayerReputation;
-//   knownRecipes?: string[]; // IDs of CraftingRecipe
-//   specializations?: SkillSpecialization[];
-// }
-
-// Add to StructuredStoryState (example for placeholders)
-// export interface StructuredStoryState {
-//   // ... existing fields
-//   worldFactions?: Faction[];
-//   availableRecipes?: CraftingRecipe[]; // Globally known or discoverable recipes
-// }

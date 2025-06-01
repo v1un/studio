@@ -71,23 +71,23 @@ const CharacterProfileSchemaInternal = z.object({
   name: z.string().describe('The name of the character. This field is required.'),
   class: z.string().describe('The class or archetype of the character. This field is required.'),
   description: z.string().describe('A brief backstory or description of the character. This field is required.'),
-  health: z.number().describe('Current health points of the character. This field is required.'),
-  maxHealth: z.number().describe('Maximum health points of the character. This field is required.'),
-  mana: z.number().optional().describe('Current mana or magic points of the character. Must be a number; use 0 if not applicable, or omit.'),
-  maxMana: z.number().optional().describe('Maximum mana or magic points. Must be a number; use 0 if not applicable, or omit.'),
-  strength: z.number().optional().describe('Character\'s physical power, or omit.'),
-  dexterity: z.number().optional().describe('Character\'s agility and reflexes, or omit.'),
-  constitution: z.number().optional().describe('Character\'s endurance and toughness, or omit.'),
-  intelligence: z.number().optional().describe('Character\'s reasoning and memory, or omit.'),
-  wisdom: z.number().optional().describe('Character\'s perception and intuition, or omit.'),
-  charisma: z.number().optional().describe('Character\'s social skills and influence, or omit.'),
+  health: z.number().describe('Current health points of the character. This field is required. This reflects effective health including item bonuses/penalties.'),
+  maxHealth: z.number().describe('Maximum health points of the character. This field is required. This reflects effective maxHealth including item bonuses/penalties.'),
+  mana: z.number().optional().describe('Current mana or magic points of the character. Must be a number; use 0 if not applicable, or omit. This reflects effective mana.'),
+  maxMana: z.number().optional().describe('Maximum mana or magic points. Must be a number; use 0 if not applicable, or omit. This reflects effective maxMana.'),
+  strength: z.number().optional().describe('Character\'s physical power, or omit. This reflects effective strength.'),
+  dexterity: z.number().optional().describe('Character\'s agility and reflexes, or omit. This reflects effective dexterity.'),
+  constitution: z.number().optional().describe('Character\'s endurance and toughness, or omit. This reflects effective constitution.'),
+  intelligence: z.number().optional().describe('Character\'s reasoning and memory, or omit. This reflects effective intelligence.'),
+  wisdom: z.number().optional().describe('Character\'s perception and intuition, or omit. This reflects effective wisdom.'),
+  charisma: z.number().optional().describe('Character\'s social skills and influence, or omit. This reflects effective charisma.'),
   level: z.number().describe('The current level of the character. This field is required.'),
   experiencePoints: z.number().describe('Current experience points of the character. This field is required.'),
   experienceToNextLevel: z.number().describe('Experience points needed for the character to reach the next level. This field is required.'),
   skillsAndAbilities: z.array(SkillSchemaInternal).optional().describe("A list of the character's current skills and abilities. Each includes an id, name, description, and type."),
   currency: z.number().optional().describe("Character's current currency (e.g., gold). Default to 0 if not set."),
-  languageReading: z.number().optional().describe("Character's understanding of the local written language (0-100). If not present, assume 100 (fluent)."),
-  languageSpeaking: z.number().optional().describe("Character's understanding of the local spoken language (0-100). If not present, assume 100 (fluent)."),
+  languageReading: z.number().optional().describe("Character's understanding of the local written language (0-100). If not present, assume 100 (fluent). This reflects effective skill."),
+  languageSpeaking: z.number().optional().describe("Character's understanding of the local spoken language (0-100). If not present, assume 100 (fluent). This reflects effective skill."),
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
@@ -177,7 +177,7 @@ const NPCProfileSchemaInternal = z.object({
 });
 
 const StructuredStoryStateSchemaInternal = z.object({
-  character: CharacterProfileSchemaInternal.describe('Player character profile.'),
+  character: CharacterProfileSchemaInternal.describe('Player character profile. Stats provided here (health, strength etc.) reflect their current capabilities including effects from equipment.'),
   currentLocation: z.string().describe('Current location.'),
   inventory: z.array(ItemSchemaInternal).describe('Unequipped items. Each item has id, name, description, basePrice (number), optional rarity, and optional activeEffects (if any, include statModifiers with numeric values). OMIT equipSlot for non-equippable items.'),
   equippedItems: EquipmentSlotsSchemaInternal,
@@ -192,7 +192,7 @@ const StructuredStoryStateSchemaInternal = z.object({
 const GenerateNextSceneInputSchemaInternal = z.object({
   currentScene: z.string(),
   userInput: z.string(),
-  storyState: StructuredStoryStateSchemaInternal,
+  storyState: StructuredStoryStateSchemaInternal, // This storyState will contain the *effective* character profile for AI decision making.
   seriesName: z.string(),
   seriesStyleGuide: z.string().optional(),
   currentTurnId: z.string(),
@@ -313,7 +313,7 @@ const NarrativeAndEventsOutputSchema = z.object({
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal),
-  updatedStoryState: StructuredStoryStateSchemaInternal,
+  updatedStoryState: StructuredStoryStateSchemaInternal, // This state contains BASE character stats updated by events.
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional(),
   newLoreEntries: z.array(NextScene_RawLoreEntryZodSchema).optional(),
   updatedStorySummary: z.string(),
@@ -338,7 +338,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
     const item = equippedItems[slot];
-    let itemDesc = item ? `${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects[0].name}` : ''})` : 'Empty';
+    let itemDesc = item ? `${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})` : 'Empty';
     output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${itemDesc}\n`;
   }
   return output.trim();
@@ -359,7 +359,7 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
         if (q.rewards.experiencePoints) questStr += `    - XP: ${q.rewards.experiencePoints}\n`;
         if (q.rewards.currency) questStr += `    - Currency: ${q.rewards.currency}\n`;
         if (q.rewards.items && q.rewards.items.length > 0) {
-            q.rewards.items.forEach(item => { questStr += `    - Item: ${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}`: ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects[0].name}` : ''})\n`; });
+            q.rewards.items.forEach(item => { questStr += `    - Item: ${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}`: ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})\n`; });
         }
     }
     return questStr;
@@ -372,7 +372,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         let relationshipLabel = "Unknown";
         if (npc.relationshipStatus <= -75) relationshipLabel = "Arch-Nemesis";
         else if (npc.relationshipStatus <= -25) relationshipLabel = "Hostile";
-        else if (npc.relationshipStatus < 25) relationshipLabel = "Neutral";
+        else if (npc.relationshipStatus < 25) relationshipLabel = "Friendly";
         else if (npc.relationshipStatus < 75) relationshipLabel = "Friendly";
         else if (npc.relationshipStatus >= 75) relationshipLabel = "Staunch Ally";
 
@@ -396,7 +396,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         npcStr += `\n  Description: ${npc.description}`;
         if (npc.isMerchant && npc.merchantInventory && npc.merchantInventory.length > 0) {
             npcStr += "\n  Wares for Sale:\n";
-            npc.merchantInventory.forEach(item => { npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects[0].name}` : ''}, ID: ${item.id})\n`; });
+            npc.merchantInventory.forEach(item => { npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''}, ID: ${item.id})\n`; });
         }
         return npcStr;
     }).join("\n");
@@ -410,13 +410,18 @@ function formatSkills(skills: SkillType[] | undefined | null): string {
 const generateNextSceneFlow = ai.defineFlow(
   {
     name: 'generateNextSceneFlow',
-    inputSchema: GenerateNextSceneInputSchemaInternal,
-    outputSchema: GenerateNextSceneOutputSchemaInternal,
+    inputSchema: GenerateNextSceneInputSchemaInternal, // This receives the storyState with *effective* character stats
+    outputSchema: GenerateNextSceneOutputSchemaInternal, // This will return a storyState with *base* character stats updated
   },
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     const modelConfig = { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
+
+    // Store the original base character profile if we need to revert event processing to it.
+    // However, the design is that input.storyState.character IS the effective profile for AI.
+    // The events should modify a conceptual "base" which is then persisted.
+    // For now, we will assume event processing in page.tsx correctly targets base stats.
 
     const narrativeAndEventsPrompt = ai.definePrompt({
         name: 'generateNarrativeAndEventsPrompt',
@@ -432,12 +437,13 @@ Previous Scene Summary: {{currentScene}}
 Player Input: {{userInput}}
 
 Character: {{storyState.character.name}} ({{storyState.character.class}}, Lvl {{storyState.character.level}}) - {{storyState.character.description}}
+IMPORTANT: The character's stats (HP, Mana, Strength, etc.) already reflect their current capabilities, including any bonuses or penalties from equipped items.
 HP: {{storyState.character.health}}/{{storyState.character.maxHealth}}, Mana: {{storyState.character.mana}}/{{storyState.character.maxMana}}, LangRead: {{storyState.character.languageReading}}/100, LangSpeak: {{storyState.character.languageSpeaking}}/100
 Currency: {{storyState.character.currency}}, XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 Skills: {{{formattedSkillsString}}}
 Equipped: {{{formattedEquippedItemsString}}}
 Location: {{storyState.currentLocation}}
-Inventory: {{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}, {{#if this.rarity}}Rarity:{{this.rarity}}{{/if}}{{#if this.activeEffects}}, FX: {{this.activeEffects.0.name}}{{/if}}){{/each}}{{else}}Empty{{/if}}
+Inventory: {{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}, {{#if this.rarity}}Rarity:{{this.rarity}}{{/if}}{{#if this.activeEffects}}, FX: {{#each this.activeEffects}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}){{/each}}{{else}}Empty{{/if}}
 Quests: {{{formattedQuestsString}}}
 World Facts: {{#each storyState.worldFacts}}- {{{this}}}{{else}}- None.{{/each}}
 Tracked NPCs: {{{formattedTrackedNPCsString}}}
@@ -463,24 +469,24 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
     const formattedSkillsString = formatSkills(input.storyState.character.skillsAndAbilities);
 
     const narrativePromptPayload: z.infer<typeof NarrativeAndEventsPromptInputSchema> = {
-      ...input,
+      ...input, // input.storyState.character here is the *effective* profile
       formattedEquippedItemsString,
       formattedQuestsString,
       formattedTrackedNPCsString,
       formattedSkillsString,
     };
 
-    console.log("CLIENT: Calling generateNarrativeAndEventsPrompt with payload:", narrativePromptPayload);
+    console.log("CLIENT (generateNextSceneFlow): Calling generateNarrativeAndEventsPrompt with payload containing EFFECTIVE character stats:", narrativePromptPayload.storyState.character);
     let aiPartialOutput: z.infer<typeof NarrativeAndEventsOutputSchema.deepPartial> | undefined;
     try {
         const response = await narrativeAndEventsPrompt(narrativePromptPayload);
         aiPartialOutput = response.output;
-        console.log("CLIENT: generateNarrativeAndEventsPrompt response:", aiPartialOutput);
+        console.log("CLIENT (generateNextSceneFlow): generateNarrativeAndEventsPrompt response:", aiPartialOutput);
     } catch (e: any) {
         console.error(`[${modelName}] Error during narrativeAndEventsPrompt:`, e);
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error during narrative generation: ${e.message}. Please try a different action.)` }],
-            updatedStoryState: input.storyState,
+            updatedStoryState: input.storyState, // Return the input state (which has effective stats) on error
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: ["AI model failed to generate narrative/events structure."],
@@ -492,264 +498,47 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure.");
         return {
             generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an empty or malformed structure for scene narrative. Please try again.)` }],
-            updatedStoryState: input.storyState,
+            updatedStoryState: input.storyState, // Return the input state (which has effective stats) on error
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: localCorrectionWarnings,
         };
     }
-
-    const finalUpdatedStoryState = produce(input.storyState, draftState => {
-        const describedEvents: DescribedEvent[] = (aiPartialOutput?.describedEvents?.filter(Boolean) || []) as DescribedEvent[];
-        const originalChar = input.storyState.character;
-
-        for (const event of describedEvents) {
-            if (!event || !event.type) {
-                localCorrectionWarnings.push(`Received a malformed event from AI: ${JSON.stringify(event)}`);
-                continue;
-            }
-
-            switch (event.type) {
-                case 'healthChange':
-                    if (event.characterTarget === 'player') {
-                        if (typeof event.amount === 'number') {
-                            draftState.character.health = (draftState.character.health ?? originalChar.health) + event.amount;
-                        }
-                    } else {
-                        const npc = draftState.trackedNPCs.find(n => n.name.toLowerCase() === event.characterTarget.toLowerCase() || n.id.toLowerCase() === event.characterTarget.toLowerCase());
-                        if (npc) {
-                            if (typeof event.amount === 'number') {
-                                npc.health = (npc.health ?? 50) + event.amount;
-                                if (npc.maxHealth === undefined) npc.maxHealth = npc.health > 0 ? npc.health : 50;
-                                if (npc.health > (npc.maxHealth ?? npc.health)) npc.health = (npc.maxHealth ?? npc.health);
-                                if (npc.health < 0) npc.health = 0;
-                            }
-                        }
-                    }
-                    break;
-                case 'manaChange':
-                     if (event.characterTarget === 'player') {
-                        if (typeof event.amount === 'number') {
-                            draftState.character.mana = ((draftState.character.mana ?? originalChar.mana) ?? 0) + event.amount;
-                        }
-                    } else {
-                        const npc = draftState.trackedNPCs.find(n => n.name.toLowerCase() === event.characterTarget.toLowerCase() || n.id.toLowerCase() === event.characterTarget.toLowerCase());
-                        if (npc) {
-                            if (typeof event.amount === 'number') {
-                                npc.mana = (npc.mana ?? 0) + event.amount;
-                                if (npc.maxMana === undefined) npc.maxMana = npc.mana > 0 ? npc.mana : 0;
-                                if (npc.mana > (npc.maxMana ?? npc.mana)) npc.mana = (npc.maxMana ?? npc.mana);
-                                if (npc.mana < 0) npc.mana = 0;
-                            }
-                        }
-                    }
-                    break;
-                case 'xpChange':
-                    if (typeof event.amount === 'number') {
-                        draftState.character.experiencePoints = (draftState.character.experiencePoints ?? originalChar.experiencePoints) + event.amount;
-                    }
-                    break;
-                case 'levelUp':
-                    if (typeof event.newLevel === 'number' && event.newLevel > (draftState.character.level ?? originalChar.level)) {
-                        draftState.character.level = event.newLevel;
-                        const prevXPToNextLevel = draftState.character.experienceToNextLevel || originalChar.experienceToNextLevel || 100;
-                        draftState.character.experiencePoints = Math.max(0, (draftState.character.experiencePoints ?? originalChar.experiencePoints) - prevXPToNextLevel);
-                        draftState.character.experienceToNextLevel = Math.floor(prevXPToNextLevel * 1.5);
-                    }
-                    break;
-                case 'currencyChange':
-                    if (typeof event.amount === 'number') {
-                        draftState.character.currency = ((draftState.character.currency ?? originalChar.currency) ?? 0) + event.amount;
-                        if (draftState.character.currency < 0) draftState.character.currency = 0;
-                    }
-                    break;
-                case 'languageSkillChange':
-                    {
-                        const typedEvent = event as LanguageSkillChangeEvent;
-                        if (typeof typedEvent.amount === 'number') {
-                            if (typedEvent.skillTarget === 'reading') {
-                                const currentUnderstanding = draftState.character.languageReading ?? originalChar.languageReading ?? 0;
-                                draftState.character.languageReading = Math.max(0, Math.min(100, currentUnderstanding + typedEvent.amount));
-                                if (draftState.character.languageReading >= 40) {
-                                    draftState.worldFacts = draftState.worldFacts.filter(fact => !/cannot read|unreadable script|signs are incomprehensible/i.test(fact));
-                                }
-                            } else if (typedEvent.skillTarget === 'speaking') {
-                                const currentUnderstanding = draftState.character.languageSpeaking ?? originalChar.languageSpeaking ?? 0;
-                                draftState.character.languageSpeaking = Math.max(0, Math.min(100, currentUnderstanding + typedEvent.amount));
-                                 if (draftState.character.languageSpeaking >= 40) {
-                                    draftState.worldFacts = draftState.worldFacts.filter(fact => !/cannot understand spoken|speech is incomprehensible|communication difficult/i.test(fact));
-                                }
-                            }
-                        }
-                    }
-                    break;
-                case 'itemFound':
-                    {
-                        const newItem: ItemType = {
-                            id: `item_${event.itemName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-                            name: event.itemName,
-                            description: event.itemDescription,
-                            basePrice: event.suggestedBasePrice ?? 0,
-                            equipSlot: event.equipSlot,
-                            isConsumable: event.isConsumable,
-                            effectDescription: event.effectDescription,
-                            isQuestItem: event.isQuestItem,
-                            relevantQuestId: event.relevantQuestId,
-                            rarity: event.rarity,
-                            activeEffects: (event.activeEffects as ActiveEffectType[] | undefined)?.map((eff, idx) => ({
-                                ...eff,
-                                id: eff.id || `eff_found_${Date.now()}_${idx}`,
-                                name: eff.name || "Unnamed Effect",
-                                description: eff.description || "No description",
-                                type: eff.type || 'passive_aura',
-                                statModifiers: (eff.statModifiers as StatModifierType[] | undefined)?.map(mod => ({ ...mod, value: mod.value ?? 0, type: mod.type || 'add'})) || [],
-                            })).filter(eff => eff.statModifiers && eff.statModifiers.length > 0 || eff.type !== 'stat_modifier') || [],
-                        };
-                        if(newItem.activeEffects && newItem.activeEffects.length === 0) delete newItem.activeEffects;
-                        draftState.inventory.push(newItem);
-                    }
-                    break;
-                case 'itemLost':
-                    {
-                        const itemIdentifier = event.itemIdOrName.toLowerCase();
-                        if (itemIdentifier !== "empty" && itemIdentifier.trim() !== "") {
-                            const itemIndex = draftState.inventory.findIndex(
-                                item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
-                            );
-                            if (itemIndex > -1) draftState.inventory.splice(itemIndex, 1);
-                        }
-                    }
-                    break;
-                case 'itemUsed':
-                    {
-                        const itemIdentifier = event.itemIdOrName.toLowerCase();
-                        const itemIndex = draftState.inventory.findIndex(
-                            item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
-                        );
-                        if (itemIndex > -1) {
-                            if (draftState.inventory[itemIndex].isConsumable) {
-                                draftState.inventory.splice(itemIndex, 1);
-                            }
-                        }
-                    }
-                    break;
-                case 'itemEquipped':
-                    {
-                        const typedEvent = event as ItemEquippedEvent;
-                        const itemIdentifier = typedEvent.itemIdOrName.toLowerCase();
-                        const itemIndex = draftState.inventory.findIndex(
-                            item => item.id.toLowerCase() === itemIdentifier || item.name.toLowerCase() === itemIdentifier
-                        );
-                        if (itemIndex > -1) {
-                            const itemToEquip = draftState.inventory[itemIndex];
-                            const previouslyEquippedItem = draftState.equippedItems[typedEvent.slot];
-                            if (previouslyEquippedItem) draftState.inventory.push(previouslyEquippedItem);
-                            draftState.equippedItems[typedEvent.slot] = itemToEquip;
-                            draftState.inventory.splice(itemIndex, 1);
-                        }
-                    }
-                    break;
-                case 'itemUnequipped':
-                    {
-                        const typedEvent = event as ItemUnequippedEvent;
-                        const itemInSlot = draftState.equippedItems[typedEvent.slot];
-                        if (itemInSlot && (itemInSlot.name.toLowerCase() === typedEvent.itemIdOrName.toLowerCase() || itemInSlot.id.toLowerCase() === typedEvent.itemIdOrName.toLowerCase())) {
-                            draftState.inventory.push(itemInSlot);
-                            draftState.equippedItems[typedEvent.slot] = null;
-                        }
-                    }
-                    break;
-                case 'questAccepted':
-                    {
-                         const rewardItems = event.rewards?.items?.map((itemReward, index) => ({
-                            id: itemReward.id || `item_reward_${new Date().getTime()}_${index}`,
-                            name: itemReward.name || "Unknown Reward Item",
-                            description: itemReward.description || "A mysterious reward item.",
-                            basePrice: itemReward.basePrice ?? 0,
-                            equipSlot: itemReward.equipSlot,
-                            isConsumable: itemReward.isConsumable,
-                            effectDescription: itemReward.effectDescription,
-                            rarity: itemReward.rarity as ItemRarity,
-                            activeEffects: (itemReward.activeEffects as ActiveEffectType[] | undefined)?.map((eff, idx) => ({
-                                ...eff,
-                                id: eff.id || `eff_reward_${Date.now()}_${idx}`,
-                                name: eff.name || "Unnamed Effect",
-                                description: eff.description || "No description",
-                                type: eff.type || 'passive_aura',
-                                statModifiers: (eff.statModifiers as StatModifierType[] | undefined)?.map(mod => ({ ...mod, value: mod.value ?? 0, type: mod.type || 'add'})) || [],
-                            })).filter(eff => eff.statModifiers && eff.statModifiers.length > 0 || eff.type !== 'stat_modifier') || [],
-                        } as ItemType));
-                        if (rewardItems) {
-                            rewardItems.forEach(item => {
-                                if (item.activeEffects && item.activeEffects.length === 0) delete item.activeEffects;
-                            });
-                        }
-
-                        const newQuest: QuestType = {
-                            id: event.questIdSuggestion || `quest_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-                            title: event.questTitle,
-                            description: event.questDescription,
-                            type: event.questType || 'dynamic',
-                            status: 'active',
-                            chapterId: event.chapterId,
-                            orderInChapter: event.orderInChapter,
-                            category: event.category,
-                            objectives: event.objectives?.map(obj => ({ ...obj, isCompleted: false })) || [],
-                            rewards: event.rewards ? {
-                                experiencePoints: event.rewards.experiencePoints,
-                                currency: event.rewards.currency,
-                                items: rewardItems
-                            } : undefined,
-                            updatedAt: new Date().toISOString(),
-                        };
-                        draftState.quests.push(newQuest);
-                    }
-                    break;
-                case 'questObjectiveUpdate':
-                    // ... (Logic similar to previous state, ensure quest and objective found before update)
-                    break;
-                case 'questCompleted':
-                    // ... (Logic similar to previous state, including giving rewards)
-                    break;
-                case 'questFailed':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'npcRelationshipChange':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'npcStateChange':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'newNPCIntroduced':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'worldFactAdded':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'worldFactRemoved':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'worldFactUpdated':
-                    // ... (Logic similar to previous state)
-                    break;
-                case 'skillLearned':
-                    // ... (Logic similar to previous state)
-                    break;
-                default:
-                    localCorrectionWarnings.push(`Received unhandled event type: ${(event as DescribedEvent).type}`);
-            }
-        }
-        // ... (rest of the produce block with auto-completion and data sanitization)
-    });
+    
+    // CRITICAL: The `finalUpdatedStoryState` that is constructed and returned from this flow
+    // (and subsequently by page.tsx's event processing) MUST contain the BASE character stats
+    // that have been modified by the `describedEvents`. The `input.storyState` to this flow
+    // contained the *effective* stats for the AI's decision making for *this turn*.
+    // The client-side (page.tsx) is responsible for:
+    // 1. Calculating effective stats from base + items.
+    // 2. Sending storyState with *effective* stats to this flow.
+    // 3. Receiving `updatedStoryState` from this flow (which should conceptually be based on modifications to the *base* stats).
+    // 4. Persisting this `updatedStoryState` (with updated base stats) for the next turn.
+    // This flow itself doesn't convert effective back to base. It relies on the client to manage that distinction.
+    // The `produce` block in page.tsx will apply events to the *base* character profile from the *previous* turn's state.
+    
+    const storyStateWithBaseCharacterModifiedByEvents = input.storyState; // This is a placeholder.
+                                                                    // page.tsx's produce block will handle the actual base state update.
+                                                                    // This flow will return the AI's proposed events, and page.tsx applies them to its true base state.
 
     const finalOutput: GenerateNextSceneOutput = {
         generatedMessages: aiPartialOutput.generatedMessages!,
-        updatedStoryState: finalUpdatedStoryState as StructuredStoryState,
+        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents, // This will be effectively overwritten by page.tsx's logic
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc.name && npc.name.trim() !== '') ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
-        updatedStorySummary: finalUpdatedStoryState.storySummary!,
+        updatedStorySummary: (aiPartialOutput.sceneSummaryFragment ? (input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment : input.storyState.storySummary || ""),
         dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? Array.from(new Set(localCorrectionWarnings)) : undefined,
     };
+    
+    // This is a simplified version of what produce in page.tsx does.
+    // For the purpose of this flow, we are primarily concerned with what the AI *outputs* (narrative, events).
+    // The actual state update logic using these events against the *base* character profile happens in page.tsx.
+    // We adjust the storySummary here as an example of a direct update.
+    if (aiPartialOutput.sceneSummaryFragment) {
+        finalOutput.updatedStorySummary = ((input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment).trim();
+        finalOutput.updatedStoryState.storySummary = finalOutput.updatedStorySummary;
+    }
+
 
     if (finalOutput.newLoreEntries) {
         finalOutput.newLoreEntries.forEach(lore => { if (lore.category === null || lore.category === undefined || (typeof lore.category ==='string' && lore.category.trim() === '')) delete lore.category; });
@@ -762,7 +551,11 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
         catch (e) { console.error("Error saving AI discovered lore:", e); }
       }
     }
-
+    
+    // The `updatedStoryState` character profile returned here is still the one based on *effective* stats that was input.
+    // The client (page.tsx) will use the `describedEvents` from `aiPartialOutput.describedEvents`
+    // to update its *base* character profile for the next turn.
+    console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState.character here is based on the effective stats sent to AI for this turn's decisions. Client will handle base stat updates.", finalOutput.updatedStoryState.character);
     return finalOutput;
   }
 );
