@@ -57,7 +57,7 @@ const ItemSchemaInternal = z.object({
   relevantQuestId: z.string().optional().describe("If isQuestItem is true, the ID of the quest this item is for."),
   basePrice: z.number().optional().describe("The base value or estimated worth of the item. Used for trading. Should be a positive number or zero. MUST BE a number if provided."),
   rarity: ItemRarityEnumInternal.optional().describe("The rarity of the item. Most common items found can omit this or be 'common'."),
-  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("An array of structured active effects this item provides. If the item is gear and has stat modifiers, define them here under 'stat_modifier' type with 'duration: permanent_while_equipped'. If the item is a consumable that grants a temporary buff, define its 'stat_modifier' effects here and provide a numeric 'duration' (e.g., 3 for 3 turns, should be positive). Each effect needs a unique id, name, description, type. If 'stat_modifier', include 'statModifiers' array detailing changes."),
+  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("An array of structured active effects this item provides. If the item is gear and has stat modifiers, define them here under 'stat_modifier' type with 'duration: permanent_while_equipped'. If the item is a consumable that grants a temporary buff, define its 'stat_modifier' effects here and provide a numeric 'duration' (e.g., 3 for 3 turns). Each effect needs a unique id, name, description, type. If 'stat_modifier', include 'statModifiers' array detailing changes."),
 });
 
 const SkillSchemaInternal = z.object({
@@ -117,7 +117,7 @@ const QuestObjectiveSchemaInternal = z.object({
 
 const QuestRewardsSchemaInternal = z.object({
   experiencePoints: z.number().optional().describe("Amount of experience points awarded. MUST BE a number if provided."),
-  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' (should be positive) for consumables). 'equipSlot' should be OMITTED for non-equippable items."),
+  items: z.array(ItemSchemaInternal).optional().describe("An array of item objects awarded. Each item must have a unique ID, name, description, 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' for consumables). 'equipSlot' should be OMITTED for non-equippable items."),
   currency: z.number().optional().describe("Amount of currency awarded. MUST BE a number if provided."),
 }).describe("Rewards defined when the quest is created, to be given upon quest completion. Omit if no specific material rewards.");
 
@@ -177,7 +177,7 @@ const NPCProfileSchemaInternal = z.object({
     shortTermGoal: z.string().optional(),
     updatedAt: z.string().optional(),
     isMerchant: z.boolean().optional(),
-    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If merchant, list items. Each needs id, name, desc, basePrice (number), price (number), optional rarity, and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier' and numeric 'duration' (should be positive) for consumables)."),
+    merchantInventory: z.array(MerchantItemSchemaInternal).optional().describe("If merchant, list items. Each needs id, name, desc, basePrice (number), price (number), optional rarity, and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier' and numeric 'duration' for consumables)."),
     buysItemTypes: z.array(z.string()).optional(),
     sellsItemTypes: z.array(z.string()).optional(),
 });
@@ -185,13 +185,13 @@ const NPCProfileSchemaInternal = z.object({
 const StructuredStoryStateSchemaInternal = z.object({
   character: CharacterProfileSchemaInternal.describe('Player character profile. Stats provided here (health, strength etc.) reflect their current capabilities including effects from equipment AND temporary buffs. REQUIRED.'),
   currentLocation: z.string().describe('Current location. REQUIRED.'),
-  inventory: z.array(ItemSchemaInternal).describe('Unequipped items. Each item has id, name, description, basePrice (number), optional rarity, and optional activeEffects (if any, include statModifiers with numeric values, and numeric duration (should be positive) for consumables). OMIT equipSlot for non-equippable items. REQUIRED (can be empty array).'),
+  inventory: z.array(ItemSchemaInternal).describe('Unequipped items. Each item has id, name, description, basePrice (number), optional rarity, and optional activeEffects (if any, include statModifiers with numeric values, and numeric duration for consumables). OMIT equipSlot for non-equippable items. REQUIRED (can be empty array).'),
   equippedItems: EquipmentSlotsSchemaInternal.describe("REQUIRED."),
-  quests: z.array(QuestSchemaInternal).describe("All quests. Rewards items should also include optional 'activeEffects' (numeric duration (should be positive) for consumables) and 'rarity'. REQUIRED (can be empty array)."),
+  quests: z.array(QuestSchemaInternal).describe("All quests. Rewards items should also include optional 'activeEffects' (numeric duration for consumables) and 'rarity'. REQUIRED (can be empty array)."),
   storyArcs: z.array(StoryArcSchemaInternal).describe("Story arcs. REQUIRED (can be empty array)."), // Renamed
   currentStoryArcId: z.string().optional().describe("Active story arc ID."), // Renamed
   worldFacts: z.array(z.string()).describe('Key world facts. REQUIRED (can be empty array).'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs. Merchant items also need optional 'activeEffects' (numeric duration (should be positive) for consumables) and 'rarity'. REQUIRED (can be empty array)."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs. Merchant items also need optional 'activeEffects' (numeric duration for consumables) and 'rarity'. REQUIRED (can be empty array)."),
   storySummary: z.string().optional().describe("Running story summary."),
 });
 
@@ -229,7 +229,7 @@ const ItemFoundEventSchema = DescribedEventBaseSchema.extend({
   isQuestItem: z.boolean().optional(),
   relevantQuestId: z.string().optional(),
   rarity: ItemRarityEnumInternal.optional(),
-  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("Structured active effects, esp. for gear (duration: 'permanent_while_equipped') or consumables providing mechanical buffs (numeric duration in turns, should be positive). If 'stat_modifier', include 'statModifiers' array."),
+  activeEffects: z.array(ActiveEffectSchemaInternal).optional().describe("Structured active effects, esp. for gear (duration: 'permanent_while_equipped') or consumables providing mechanical buffs (numeric duration in turns). If 'stat_modifier', include 'statModifiers' array."),
 });
 const ItemLostEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemLost'), itemIdOrName: z.string(), quantity: z.number().optional().default(1) });
 const ItemUsedEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('itemUsed'), itemIdOrName: z.string().describe("The ID or name of the item consumed. REQUIRED.") });
@@ -249,7 +249,7 @@ const QuestAcceptedEventSchema = DescribedEventBaseSchema.extend({
   rewards: z.object({
     experiencePoints: z.number().optional().describe("MUST BE a number if provided."),
     currency: z.number().optional().describe("Currency amount (number). MUST BE a number if provided."),
-    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true, rarity: true, activeEffects: true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be number if provided.")})).optional().describe("Reward items with properties, 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' (should be positive) for consumables).")
+    items: z.array(ItemSchemaInternal.pick({id:true, name:true, description:true, equipSlot:true, isConsumable:true, effectDescription:true, isQuestItem:true, relevantQuestId:true, basePrice:true, rarity: true, activeEffects: true }).deepPartial().extend({basePrice: z.number().optional().describe("Must be number if provided.")})).optional().describe("Reward items with properties, 'basePrice' (number), optional 'rarity', and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' for consumables).")
   }).optional(),
 });
 const QuestObjectiveUpdateEventSchema = DescribedEventBaseSchema.extend({ type: z.literal('questObjectiveUpdate'), questIdOrDescription: z.string(), objectiveDescription: z.string(), objectiveCompleted: z.boolean() });
@@ -290,7 +290,7 @@ const DescribedEventSchema = z.discriminatedUnion("type", [
   NPCRelationshipChangeEventSchema, NPCStateChangeEventSchema, NewNPCIntroducedEventSchemaInternal,
   WorldFactAddedEventSchema, WorldFactRemovedEventSchema, WorldFactUpdatedEventSchema,
   SkillLearnedEventSchema
-]).describe("A described game event. Numeric fields (prices, amounts, stats) MUST be numbers. Items involved (found, reward) should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' in turns (should be positive) for consumables).");
+]).describe("A described game event. Numeric fields (prices, amounts, stats) MUST be numbers. Items involved (found, reward) should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' in turns for consumables).");
 
 const AIMessageSegmentSchemaInternal = z.object({
     speaker: z.string().describe("Required. The speaker of the message, e.g., 'GM', or an NPC's name."),
@@ -311,7 +311,7 @@ const NextScene_RawLoreEntryZodSchema = z.object({
 
 const NarrativeAndEventsOutputSchema = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("Each message MUST include 'speaker' and 'content' fields. REQUIRED."),
-  describedEvents: z.array(DescribedEventSchema).optional().describe("Events that occurred. Ensure numeric fields are numbers. Items should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' in turns (should be positive) for consumables)."),
+  describedEvents: z.array(DescribedEventSchema).optional().describe("Events that occurred. Ensure numeric fields are numbers. Items should include optional 'rarity' and optional 'activeEffects' (with structured 'statModifiers' if type is 'stat_modifier', and numeric 'duration' in turns for consumables)."),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("Each entry MUST have a 'name' if array is provided."),
   newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional().describe("Each entry MUST have 'keyword' and 'content' if array is provided."),
   sceneSummaryFragment: z.string().describe("REQUIRED. A brief summary of this scene's events."),
@@ -456,7 +456,7 @@ Active Temporary Effects: {{{formattedActiveTemporaryEffectsString}}}
 Skills: {{{formattedSkillsString}}}
 Equipped: {{{formattedEquippedItemsString}}}
 Location: {{storyState.currentLocation}}
-Inventory: {{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}, {{#if this.rarity}}Rarity:{{this.rarity}}{{/if}}{{#if this.activeEffects}}, FX: {{#each this.activeEffects}}{{this.name}}{{#if this.duration}} ({{#if (eq this.duration "permanent_while_equipped")}}Permanent{{else}}{{this.duration}} turns{{/if}}){{/if}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}){{/each}}{{else}}Empty{{/if}}
+Inventory: {{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}{{#if this.rarity}}, Rarity:{{this.rarity}}{{/if}}{{#if this.activeEffects}}, FX: {{#each this.activeEffects}}{{this.name}}{{#if this.duration}} (Duration: {{this.duration}}){{/if}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}){{/each}}{{else}}Empty{{/if}}
 Quests: {{{formattedQuestsString}}}
 World Facts: {{#each storyState.worldFacts}}- {{{this}}}{{else}}- None.{{/each}}
 Tracked NPCs: {{{formattedTrackedNPCsString}}}
@@ -464,11 +464,11 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
 **Your Task (Strictly Adhere to NarrativeAndEventsOutputSchema - deepPartial):**
 1.  **Generate Narrative (generatedMessages):** Continue the story. Each message in this array MUST have a 'speaker' (e.g., "GM", or an NPC name from 'Tracked NPCs') and 'content'. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification. (REQUIRED)
 2.  **Describe Events (describedEvents):** Identify key game events. Use 'DescribedEvent' structure. ALL numeric fields MUST be numbers.
-    - 'itemFound': Include 'itemName' (REQUIRED), 'itemDescription' (REQUIRED), 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). For consumables granting temporary buffs, 'activeEffects' should specify a numeric 'duration' (e.g., 3 for 3 turns, should be positive).
+    - 'itemFound': Include 'itemName' (REQUIRED), 'itemDescription' (REQUIRED), 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). For consumables granting temporary buffs, 'activeEffects' should specify a numeric 'duration' (e.g., 3 for 3 turns).
     - 'itemUsed': If the player consumes or uses an item from their inventory, generate this event. Include 'itemIdOrName' (REQUIRED), which should be the ID or name of the item consumed from the player's inventory.
     - 'itemEquipped': If the player equips an item from inventory, generate this event. Include 'itemIdOrName' (REQUIRED) of the item from inventory and 'slot' (REQUIRED) it's equipped to.
     - 'itemUnequipped': If the player unequips an item, generate this event. Include 'itemIdOrName' (REQUIRED) of the equipped item and the 'slot' (REQUIRED) it was in.
-    - 'questAccepted': 'questDescription' is REQUIRED. If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers' and numeric 'duration' (should be positive) for consumables). 'objectives' MUST have 'description' (REQUIRED) and 'isCompleted: false' (REQUIRED).
+    - 'questAccepted': 'questDescription' is REQUIRED. If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers' and numeric 'duration' for consumables). 'objectives' MUST have 'description' (REQUIRED) and 'isCompleted: false' (REQUIRED).
     - 'newNPCIntroduced': 'npcName' and 'npcDescription' are REQUIRED. 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
     Examples: HealthChange, LanguageSkillChange (amount integer, target 'reading' or 'speaking', typically 1-20), QuestObjectiveUpdate, NPCRelationshipChange.
 3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name' if array is provided.
