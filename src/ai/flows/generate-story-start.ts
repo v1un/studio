@@ -59,16 +59,16 @@ const CharacterProfileSchemaInternal = z.object({
 });
 
 const EquipmentSlotsSchemaInternal = z.object({
-  weapon: ItemSchemaInternal.nullable().describe("Weapon slot. An item object or null if empty."),
-  shield: ItemSchemaInternal.nullable().describe("Shield slot. An item object or null if empty."),
-  head: ItemSchemaInternal.nullable().describe("Head slot. An item object or null if empty."),
-  body: ItemSchemaInternal.nullable().describe("Body slot. An item object or null if empty."),
-  legs: ItemSchemaInternal.nullable().describe("Legs slot. An item object or null if empty."),
-  feet: ItemSchemaInternal.nullable().describe("Feet slot. An item object or null if empty."),
-  hands: ItemSchemaInternal.nullable().describe("Hands slot. An item object or null if empty."),
-  neck: ItemSchemaInternal.nullable().describe("Neck slot. An item object or null if empty."),
-  ring1: ItemSchemaInternal.nullable().describe("Ring 1 slot. An item object or null if empty."),
-  ring2: ItemSchemaInternal.nullable().describe("Ring 2 slot. An item object or null if empty."),
+  weapon: ItemSchemaInternal.nullable(),
+  shield: ItemSchemaInternal.nullable(),
+  head: ItemSchemaInternal.nullable(),
+  body: ItemSchemaInternal.nullable(),
+  legs: ItemSchemaInternal.nullable(),
+  feet: ItemSchemaInternal.nullable(),
+  hands: ItemSchemaInternal.nullable(),
+  neck: ItemSchemaInternal.nullable(),
+  ring1: ItemSchemaInternal.nullable(),
+  ring2: ItemSchemaInternal.nullable(),
 }).describe("A record of the character's equipped items. All 10 slots MUST be present, with an item object or 'null' if the slot is empty.");
 
 const QuestStatusEnumInternal = z.enum(['active', 'completed']);
@@ -207,7 +207,6 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
       char.currency = char.currency ?? 0;
       if (char.currency < 0) char.currency = 0;
       
-      // Prioritize AI's output for languageUnderstanding. If missing, default to 100.
       char.languageUnderstanding = char.languageUnderstanding ?? 100;
       if (char.languageUnderstanding < 0) char.languageUnderstanding = 0;
       if (char.languageUnderstanding > 100) char.languageUnderstanding = 100;
@@ -295,35 +294,46 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
         output.storyState.trackedNPCs = output.storyState.trackedNPCs ?? [];
         const npcIdSet = new Set<string>();
         output.storyState.trackedNPCs.forEach((npc, index) => {
-            if (!npc.id) {
-                let baseId = `npc_start_${npc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
+            const processedNpc = {...npc} as Partial<NPCProfileType>;
+
+            // Delete extraneous fields
+            delete (processedNpc as any).currentGoal;
+
+            if (!processedNpc.id) {
+                let baseId = `npc_start_${processedNpc.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown'}_${Date.now()}_${index}`;
                 let newId = baseId; let counter = 0;
                 while(npcIdSet.has(newId)) { newId = `${baseId}_u${counter++}`; }
-                npc.id = newId;
+                processedNpc.id = newId;
+            } else {
+                 let currentId = processedNpc.id;
+                 if(npcIdSet.has(currentId)){
+                    let baseId = currentId; let counter = 0;
+                    while(npcIdSet.has(currentId)) { currentId = `${baseId}_u${counter++}`; }
+                    processedNpc.id = currentId;
+                 }
             }
-            while(npcIdSet.has(npc.id)){ 
-                 let baseId = npc.id; let counter = 0; let tempNewId = npc.id;
-                 while(npcIdSet.has(tempNewId)) { tempNewId = `${baseId}_u${counter++}`; }
-                 npc.id = tempNewId;
-            }
-            npcIdSet.add(npc.id);
-            npc.name = npc.name || "Unnamed NPC";
-            npc.description = npc.description || "No description provided.";
-            npc.relationshipStatus = typeof npc.relationshipStatus === 'number' ? npc.relationshipStatus : 0; 
-            npc.knownFacts = npc.knownFacts ?? [];
-            npc.dialogueHistory = npc.dialogueHistory ?? [];
-            npc.firstEncounteredTurnId = npc.firstEncounteredTurnId || "initial_turn_0";
-            npc.updatedAt = new Date().toISOString(); 
-            npc.lastKnownLocation = npc.lastKnownLocation || npc.firstEncounteredLocation;
-            npc.lastSeenTurnId = npc.lastSeenTurnId || npc.firstEncounteredTurnId;
-            if (npc.classOrRole === null || (npc.classOrRole as unknown) === '') delete npc.classOrRole;
-            if (npc.firstEncounteredLocation === null || (npc.firstEncounteredLocation as unknown) === '') delete npc.firstEncounteredLocation;
-            if (npc.lastKnownLocation === null || (npc.lastKnownLocation as unknown) === '') delete npc.lastKnownLocation;
-            if (npc.seriesContextNotes === null || (npc.seriesContextNotes as unknown) === '') delete npc.seriesContextNotes;
-            if (npc.shortTermGoal === null || (npc.shortTermGoal as unknown) === '') delete npc.shortTermGoal;
-            npc.isMerchant = npc.isMerchant ?? false;
-            npc.merchantInventory = npc.merchantInventory ?? [];
-            npc.merchantInventory.forEach(item => {
+            npcIdSet.add(processedNpc.id!);
+            
+            processedNpc.name = processedNpc.name || "Unnamed NPC";
+            processedNpc.description = processedNpc.description || "No description provided.";
+            processedNpc.relationshipStatus = typeof processedNpc.relationshipStatus === 'number' ? processedNpc.relationshipStatus : 0; 
+            
+            if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '') delete processedNpc.classOrRole;
+            if (processedNpc.firstEncounteredLocation === null || (processedNpc.firstEncounteredLocation as unknown) === '') delete processedNpc.firstEncounteredLocation;
+            if (processedNpc.lastKnownLocation === null || (processedNpc.lastKnownLocation as unknown) === '') delete processedNpc.lastKnownLocation;
+            if (processedNpc.seriesContextNotes === null || (processedNpc.seriesContextNotes as unknown) === '') delete processedNpc.seriesContextNotes;
+            if (processedNpc.shortTermGoal === null || (processedNpc.shortTermGoal as unknown) === '') delete processedNpc.shortTermGoal;
+            
+            processedNpc.knownFacts = processedNpc.knownFacts ?? [];
+            processedNpc.dialogueHistory = processedNpc.dialogueHistory ?? [];
+            processedNpc.firstEncounteredTurnId = processedNpc.firstEncounteredTurnId || "initial_turn_0";
+            processedNpc.updatedAt = new Date().toISOString(); 
+            processedNpc.lastKnownLocation = processedNpc.lastKnownLocation || processedNpc.firstEncounteredLocation;
+            processedNpc.lastSeenTurnId = processedNpc.lastSeenTurnId || processedNpc.firstEncounteredTurnId;
+            
+            processedNpc.isMerchant = processedNpc.isMerchant ?? false;
+            processedNpc.merchantInventory = processedNpc.merchantInventory ?? [];
+            processedNpc.merchantInventory.forEach(item => {
                 if (!item.id) item.id = `item_merchant_start_${Date.now()}_${Math.random().toString(36).substring(7)}`;
                 item.basePrice = item.basePrice ?? 0;
                 if (item.basePrice < 0) item.basePrice = 0;
@@ -331,8 +341,14 @@ Strictly follow JSON output schema. All IDs unique. Item 'basePrice' and merchan
                 if ((item as any).price < 0) (item as any).price = 0;
                 if (item.equipSlot === null || (item.equipSlot as unknown) === '') delete (item as Partial<ItemType>).equipSlot;
             });
-            npc.buysItemTypes = npc.buysItemTypes ?? undefined;
-            npc.sellsItemTypes = npc.sellsItemTypes ?? undefined;
+
+            if (processedNpc.buysItemTypes === null) delete processedNpc.buysItemTypes;
+            else processedNpc.buysItemTypes = processedNpc.buysItemTypes ?? undefined;
+
+            if (processedNpc.sellsItemTypes === null) delete processedNpc.sellsItemTypes;
+            else processedNpc.sellsItemTypes = processedNpc.sellsItemTypes ?? undefined;
+
+            output.storyState.trackedNPCs[index] = processedNpc as NPCProfileType;
         });
         output.storyState.storySummary = output.storyState.storySummary ?? "";
     }
