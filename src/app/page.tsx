@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { generateScenarioFromSeries } from "@/ai/flows/generate-scenario-from-series";
 import type { GenerateScenarioFromSeriesInput, GenerateScenarioFromSeriesOutput, AIMessageSegment } from "@/types/story";
-import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile } from "@/types/story"; // Removed RawLoreEntry as it's not directly used here
+import type { StoryTurn, GameSession, StructuredStoryState, Quest, NPCProfile } from "@/types/story";
 
 import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
@@ -17,10 +17,11 @@ import LorebookDisplay from "@/components/story-forge/lorebook-display";
 import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-log-display";
 
+import { simpleTestAction } from '@/ai/actions/simple-test-action'; // Import the test action
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon } from "lucide-react";
-import { initializeLorebook, clearLorebook } from "@/lib/lore-manager"; // Removed getLorebook as not directly used
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon } from "lucide-react";
+import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -183,7 +184,7 @@ export default function StoryForgePage() {
         seriesName: data.seriesName,
         seriesStyleGuide: result.seriesStyleGuide,
         isPremiumSession: data.usePremiumAI,
-        allDataCorrectionWarnings: [], // Initialize warnings
+        allDataCorrectionWarnings: [],
       };
 
       localStorage.setItem(`${SESSION_KEY_PREFIX}${newSession.id}`, JSON.stringify(newSession));
@@ -302,7 +303,6 @@ export default function StoryForgePage() {
         });
       }
       
-      // Accumulate data correction warnings
       if (result.dataCorrectionWarnings && result.dataCorrectionWarnings.length > 0) {
         const newWarningsEntry = {
           timestamp: new Date().toISOString(),
@@ -313,7 +313,6 @@ export default function StoryForgePage() {
           const updatedWarnings = [...(prevSession.allDataCorrectionWarnings || []), newWarningsEntry];
           return { ...prevSession, allDataCorrectionWarnings: updatedWarnings };
         });
-        // Display toasts for immediate feedback
         result.dataCorrectionWarnings.forEach(warning => {
           toast({
             title: "AI Data Correction",
@@ -378,6 +377,27 @@ export default function StoryForgePage() {
         toast({ title: "Correction logs cleared for this session." });
     }
   };
+
+  const handleTestSimpleAction = async () => {
+    console.log("CLIENT: Calling simpleTestAction..."); // Client-side log
+    setIsLoadingInteraction(true); // Optional: show loading state
+    try {
+      const result = await simpleTestAction({ name: "StoryForge User" });
+      console.log("CLIENT: simpleTestAction result:", result); // Client-side log
+      toast({
+        title: "Simple Test Action Successful",
+        description: `Greeting: ${result.greeting} (Server Time: ${new Date(result.timestamp).toLocaleTimeString()})`,
+      });
+    } catch (error: any) {
+      console.error("CLIENT: Error calling simpleTestAction:", error); // Client-side log
+      toast({
+        title: "Simple Test Action Failed",
+        description: error.message || "Unknown error",
+        variant: "destructive",
+      });
+    }
+    setIsLoadingInteraction(false); // Optional: hide loading state
+  };
   
   if (isLoadingPage) {
     return (
@@ -419,7 +439,7 @@ export default function StoryForgePage() {
         
         {currentSession && character && currentStoryState && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
-            <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0"> {/* Updated grid-cols */}
+            <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
               <TabsTrigger value="story" className="text-xs sm:text-sm">
                 <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
               </TabsTrigger>
@@ -435,19 +455,29 @@ export default function StoryForgePage() {
               <TabsTrigger value="lorebook" className="text-xs sm:text-sm">
                 <Library className="w-4 h-4 mr-1 sm:mr-2" /> Lorebook
               </TabsTrigger>
-              <TabsTrigger value="dev-logs" className="text-xs sm:text-sm"> {/* New Tab */}
+              <TabsTrigger value="dev-logs" className="text-xs sm:text-sm">
                 <ClipboardListIcon className="w-4 h-4 mr-1 sm:mr-2" /> Dev Logs
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden">
-              <div className="shrink-0">
+              <div className="shrink-0 flex justify-between items-center">
                 <StoryControls
                     onUndo={handleUndo}
                     onRestart={handleRestart}
                     canUndo={storyHistory.length > 0}
                     isLoading={isLoadingInteraction}
                 />
+                <Button
+                  variant="outline"
+                  onClick={handleTestSimpleAction}
+                  disabled={isLoadingInteraction}
+                  className="ml-2"
+                  size="sm"
+                >
+                  <TestTubeIcon className="mr-2 h-4 w-4 text-purple-500" />
+                  Test Action
+                </Button>
               </div>
               <div className="shrink-0">
                 <MinimalCharacterStatus 
@@ -484,7 +514,7 @@ export default function StoryForgePage() {
               <LorebookDisplay />
             </TabsContent>
 
-            <TabsContent value="dev-logs" className="overflow-y-auto flex-grow"> {/* New Tab Content */}
+            <TabsContent value="dev-logs" className="overflow-y-auto flex-grow">
               <DataCorrectionLogDisplay 
                 warnings={currentSession?.allDataCorrectionWarnings || []}
                 onClearLogs={handleClearCorrectionLogs}
