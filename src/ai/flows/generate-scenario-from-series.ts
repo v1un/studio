@@ -6,7 +6,7 @@
  * This includes the starting scene, character state (potentially based on user input for name/class, including languageUnderstanding),
  * initial inventory, quests (with objectives, categories, and pre-defined rewards including currency), world facts,
  * a set of pre-populated lorebook entries relevant to the series, a brief series style guide,
- * initial profiles for any NPCs introduced in the starting scene or known major characters from the series (including merchant data),
+ * initial profiles for any NPCs introduced in the starting scene or known major characters from the series (including merchant data, and optional health/mana for combatants),
  * and starting skills/abilities for the character.
  * This flow uses a multi-step generation process and supports model selection.
  *
@@ -116,6 +116,10 @@ const NPCProfileSchemaInternal = z.object({
     name: z.string().describe("NPC's name."),
     description: z.string().describe("Physical appearance, general demeanor, key characteristics, fitting the series."),
     classOrRole: z.string().optional().describe("e.g., 'Hokage', 'Soul Reaper Captain', 'Keyblade Master'."),
+    health: z.number().optional().describe("Current health points if applicable (e.g., for a known combatant). Default to a reasonable value like 50-100 if setting."),
+    maxHealth: z.number().optional().describe("Maximum health points if applicable."),
+    mana: z.number().optional().describe("Current mana/energy if applicable (e.g., for a magic user). Default to a reasonable value like 20-50 if setting."),
+    maxMana: z.number().optional().describe("Maximum mana/energy if applicable."),
     firstEncounteredLocation: z.string().optional().describe("Location from the series where NPC is introduced, their typical location if pre-populated, or a general description like 'Known from series lore' if not a specific place."),
     firstEncounteredTurnId: z.string().optional().describe("ID of the story turn when first met (use 'initial_turn_0' for all NPCs known at game start)."),
     relationshipStatus: z.number().describe("Numerical score representing relationship (e.g., -100 Hostile, 0 Neutral, 100 Allied). Set an initial appropriate value based on series context or 0 for Neutral for OCs."),
@@ -139,7 +143,7 @@ const StructuredStoryStateSchemaInternal = z.object({
   equippedItems: EquipmentSlotsSchemaInternal,
   quests: z.array(QuestSchemaInternal).describe("One or two initial quests that fit the series and starting scenario. Each quest is an object with id, description, status set to 'active', and optionally 'category', 'objectives' (with 'isCompleted: false'), and 'rewards' (which specify what the player will get on completion, including items with 'basePrice' and currency). These quests should be compelling and provide clear direction."),
   worldFacts: z.array(z.string()).describe('A few (3-5) key world facts from the series relevant to the start of the story, particularly those that impact the character or the immediate situation. If character.languageUnderstanding is 0, one fact should describe the effects (e.g., "Signs are unreadable, speech is incomprehensible").'),
-  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, for the '{{seriesName}}' universe, you SHOULD prioritize pre-populating profiles for 2-4 other major, well-known characters who are canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series. If an NPC is a merchant, set 'isMerchant' to true and populate 'merchantInventory' with items including 'price' and 'basePrice'. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts', an optional 'shortTermGoal', and optionally 'seriesContextNotes'. Dialogue history should be empty."),
+  trackedNPCs: z.array(NPCProfileSchemaInternal).describe("A list of significant NPCs. This MUST include profiles for any NPCs directly introduced in the 'sceneDescription'. Additionally, for the '{{seriesName}}' universe, you SHOULD prioritize pre-populating profiles for 2-4 other major, well-known characters who are canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series. If an NPC is a merchant, set 'isMerchant' to true and populate 'merchantInventory' with items including 'price' and 'basePrice'. For all NPCs, ensure each profile has a unique 'id', 'name', 'description', numerical 'relationshipStatus', 'firstEncounteredLocation', 'firstEncounteredTurnId' (use 'initial_turn_0' for all NPCs known at game start), 'knownFacts', an optional 'shortTermGoal', and optionally 'seriesContextNotes'. Dialogue history should be empty. Include 'health'/'maxHealth' for combat-oriented NPCs if known from series context."),
   storySummary: z.string().optional().describe("A brief, running summary of key story events and character developments. Initialize as empty or a very short intro for the series context."),
 });
 
@@ -159,7 +163,7 @@ export type GenerateScenarioFromSeriesInput = z.infer<typeof GenerateScenarioFro
 
 const GenerateScenarioFromSeriesOutputSchemaInternal = z.object({
   sceneDescription: z.string().describe('The engaging and detailed initial scene description that sets up the story in the chosen series, taking into account any specified character. If the character has languageUnderstanding: 0, the scene should reflect this (e.g., unreadable signs, indecipherable speech).'),
-  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs (with merchant details if applicable), starting skills/abilities for the character, and starting currency.'),
+  storyState: StructuredStoryStateSchemaInternal.describe('The complete initial structured state of the story, meticulously tailored to the series and specified character (if any). Includes initial NPC profiles in trackedNPCs (with merchant details and optional health/mana for combatants if applicable), starting skills/abilities for the character, and starting currency.'),
   initialLoreEntries: z.array(RawLoreEntrySchemaInternal).describe('An array of 6-8 key lore entries (characters, locations, concepts, items, etc.) from the series to pre-populate the lorebook. Ensure content is accurate to the series and relevant to the starting scenario and character.'),
   seriesStyleGuide: z.string().optional().describe("A very brief (2-3 sentences) summary of the key themes, tone, or unique aspects of the series (e.g., 'magical high school, friendship, fighting demons' or 'gritty cyberpunk, corporate espionage, body modification') to help guide future scene generation. If no strong, distinct style is easily summarized, this can be omitted."),
 });
@@ -419,11 +423,13 @@ Generate ONLY 'trackedNPCs': A list of NPC profiles.
     - NPCs IN THE SCENE: For any NPC directly mentioned or interacting in the 'Initial Scene':
         - Details: 'firstEncounteredLocation' ('{{currentLocation}}'), 'relationshipStatus', 'knownFacts', 'lastKnownLocation' ('{{currentLocation}}').
         - If merchant: \`isMerchant: true\`, populate \`merchantInventory\` with items (each with unique \`id\`, \`name\`, \`description\`, \`basePrice\`, and merchant \`price\`).
+        - If NPC is a combatant/has notable stats: optionally include 'health', 'maxHealth', 'mana', 'maxMana'.
     - PRE-POPULATED MAJOR NPCs (NOT in scene): For '{{seriesName}}', **prioritize** pre-populating profiles for 2-4 other major, well-known characters canonically crucial to the player character's ({{characterNameInput}}) very early experiences or the immediate starting context of the series (e.g., for a character who is known to meet certain key individuals immediately upon starting their journey in the series, those individuals should be included).
         - Details: 'firstEncounteredLocation' (canonical), 'relationshipStatus', 'knownFacts', 'lastKnownLocation'.
         - If merchant: include merchant data.
+        - If NPC is a combatant/has notable stats: optionally include 'health', 'maxHealth', 'mana', 'maxMana'.
     - For ALL NPCs: Unique 'id', 'name', 'description'. 'firstEncounteredTurnId' & 'lastSeenTurnId' = "initial_turn_0". Empty dialogue history. Optional 'seriesContextNotes', 'shortTermGoal'.
-Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure item basePrices and merchant prices are set.`,
+Adhere strictly to JSON schema. Output ONLY { "trackedNPCs": [...] }. Ensure item basePrices and merchant prices are set. Ensure NPC health/mana are numbers if provided.`,
     });
 
     const loreEntriesPrompt = ai.definePrompt({
@@ -692,7 +698,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
       finalOutput.storyState.worldFacts = finalOutput.storyState.worldFacts.filter(fact => typeof fact === 'string' && fact.trim() !== '');
 
       const defaultEquippedSlots: Record<EquipmentSlot, null> = { weapon: null, shield: null, head: null, body: null, legs: null, feet: null, hands: null, neck: null, ring1: null, ring2: null };
-      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>; 
+      const currentEquipped = finalOutput.storyState.equippedItems || {} as Record<EquipmentSlot, ItemType | null>>; 
       const processedEquippedItems: Record<EquipmentSlot, ItemType | null> = {...defaultEquippedSlots}; 
       const equippedItemIdSet = new Set<string>();
 
@@ -751,6 +757,31 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
           processedNpc.description = processedNpc.description || "No description provided.";
           processedNpc.relationshipStatus = typeof processedNpc.relationshipStatus === 'number' ? Math.max(-100, Math.min(100, processedNpc.relationshipStatus)) : 0;
           
+          // Ensure NPC health/mana are numbers and sane, or undefined
+          if (processedNpc.hasOwnProperty('health')) {
+            processedNpc.health = typeof processedNpc.health === 'number' ? Math.max(0, processedNpc.health) : undefined;
+          }
+          if (processedNpc.hasOwnProperty('maxHealth')) {
+            processedNpc.maxHealth = typeof processedNpc.maxHealth === 'number' ? Math.max(0, processedNpc.maxHealth) : undefined;
+          }
+          if (processedNpc.health !== undefined && processedNpc.maxHealth !== undefined && processedNpc.health > processedNpc.maxHealth) {
+            processedNpc.health = processedNpc.maxHealth;
+          }
+          if (processedNpc.maxHealth === undefined && processedNpc.health !== undefined) processedNpc.maxHealth = processedNpc.health;
+
+
+          if (processedNpc.hasOwnProperty('mana')) {
+            processedNpc.mana = typeof processedNpc.mana === 'number' ? Math.max(0, processedNpc.mana) : undefined;
+          }
+          if (processedNpc.hasOwnProperty('maxMana')) {
+            processedNpc.maxMana = typeof processedNpc.maxMana === 'number' ? Math.max(0, processedNpc.maxMana) : undefined;
+          }
+          if (processedNpc.mana !== undefined && processedNpc.maxMana !== undefined && processedNpc.mana > processedNpc.maxMana) {
+            processedNpc.mana = processedNpc.maxMana;
+          }
+          if (processedNpc.maxMana === undefined && processedNpc.mana !== undefined) processedNpc.maxMana = processedNpc.mana;
+
+
           if (processedNpc.classOrRole === null || (processedNpc.classOrRole as unknown) === '') delete processedNpc.classOrRole;
           if (processedNpc.firstEncounteredLocation === null || (processedNpc.firstEncounteredLocation as unknown) === '') delete processedNpc.firstEncounteredLocation;
           if (processedNpc.lastKnownLocation === null || (processedNpc.lastKnownLocation as unknown) === '') delete processedNpc.lastKnownLocation;
@@ -772,7 +803,7 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
             let newMId = baseMId; let mCounter = 0;
             while(merchantItemInvIdSet.has(newMId) || itemInvIdSet.has(newMId) || equippedItemIdSet.has(newMId)){ newMId = `${baseMId}_u${mCounter++}`; }
             item.id = newMId;
-            merchantItemInvIdSet.add(newMId);
+            merchantItemInvIdSet.add(item.id);
             item.basePrice = item.basePrice ?? 0;
             if (item.basePrice < 0) item.basePrice = 0;
             (item as any).price = (item as any).price ?? item.basePrice;
@@ -802,4 +833,3 @@ Output ONLY the summary string or empty string. DO NOT output 'null'.`,
     return finalOutput;
   }
 );
-

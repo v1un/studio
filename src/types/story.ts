@@ -85,6 +85,10 @@ export interface NPCProfile {
   name: string;
   description: string; // Physical appearance, general demeanor, key characteristics
   classOrRole?: string; // e.g., "Merchant", "Guard Captain"
+  health?: number; // Current health, if applicable (e.g., for combat)
+  maxHealth?: number; // Maximum health, if applicable
+  mana?: number; // Current mana/energy, if applicable
+  maxMana?: number; // Maximum mana/energy, if applicable
   firstEncounteredLocation?: string;
   firstEncounteredTurnId?: string; // ID of the StoryTurn when first met
   relationshipStatus: number; // Numerical score, e.g., -100 (Hostile) to 100 (Allied), 0 is Neutral.
@@ -251,7 +255,7 @@ export interface QuestCompletedEvent extends DescribedEventBase { type: 'questCo
 // export interface QuestFailedEvent extends DescribedEventBase { type: 'questFailed'; questIdOrDescription: string; }
 
 export interface NPCRelationshipChangeEvent extends DescribedEventBase { type: 'npcRelationshipChange'; npcName: string; changeAmount: number; newStatus?: number; } // changeAmount e.g. +10, -20
-export interface NPCStateChangeEvent extends DescribedEventBase { type: 'npcStateChange'; npcName: string; newState: string; } // e.g. "hostile", "friendly", "following"
+export interface NPCStateChangeEvent extends DescribedEventBase { type: 'npcStateChange'; npcName: string; newState: string; } // e.g. "hostile", "friendly", "following", "fled"
 export interface NewNPCIntroducedEvent extends DescribedEventBase {
   type: 'newNPCIntroduced';
   npcName: string;
@@ -259,6 +263,8 @@ export interface NewNPCIntroducedEvent extends DescribedEventBase {
   classOrRole?: string;
   initialRelationship?: number;
   isMerchant?: boolean;
+  initialHealth?: number; // Suggestion for initial health
+  initialMana?: number;   // Suggestion for initial mana
 }
 
 export interface WorldFactAddedEvent extends DescribedEventBase { type: 'worldFactAdded'; fact: string; }
