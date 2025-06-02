@@ -203,8 +203,8 @@ const foundationFlow = ai.defineFlow(
     const generalModelConfig = { maxOutputTokens: mainInput.usePremiumAI ? 32000 : 8000 };
     // Specific, potentially larger, config for plot summary when premium is used
     const plotSummaryModelConfig = mainInput.usePremiumAI
-        ? { maxOutputTokens: 32000 } 
-        : { maxOutputTokens: 8000 }; 
+        ? { maxOutputTokens: 32000 }
+        : { maxOutputTokens: 8000 };
 
     let step1StartTime = Date.now();
     console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
@@ -220,6 +220,7 @@ Generate 'sceneDescription', 'characterCore', 'currentLocation'.
   - IF seriesName is "Re:Zero" or contains "Re:Zero - Starting Life in Another World" or "Re:Zero", set 'languageSpeaking' to 100 and 'languageReading' to 0. The character description MUST clearly state that the character can understand spoken language but is illiterate.
   - ELSE, set to 0 for other known canonical language barriers, or 100 for both if no specific barrier applies, or make a series-appropriate choice. The character description MUST reflect any language barriers.
 'currentLocation': Specific series starting location.
+The 'sceneDescription' should be vivid and set the stage. CRUCIALLY, it MUST conclude with a clear, immediate hook to prompt the player's first action. This could be a question directed at the player (e.g., 'What is the first thing you do?', 'You notice X, what's your reaction?'), a minor event they witness (e.g., 'Suddenly, a figure bumps into you.'), or an interaction initiated by a nearby element (e.g., 'A nearby vendor calls out to you, "New in town, eh?"').
 Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchema and all its REQUIRED fields.`,
     });
     const foundation_styleGuidePrompt = ai.definePrompt({
@@ -308,6 +309,7 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialInventoryOutputSchema'. The 'inventory' array is REQUIRED (can be empty). Each item MUST have 'id', 'name', 'description'. 'basePrice' (number) is optional.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'inventory': 0-3 unequipped items. Include optional 'rarity'. For consumables, 'activeEffects' may define temporary buffs with numeric 'duration' (turns, must be positive). 'equipSlot' if equippable, OMITTED otherwise.
+For characters like Natsuki Subaru in Re:Zero arriving from modern Earth, initial inventory should be very sparse or empty, reflecting what he had on him from a convenience store (e.g., a cell phone with dead battery, a bag of chips, a wallet with unusable currency). Avoid giving fantasy items unless it's something he explicitly just picked up in the scene.
 Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are present. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
@@ -315,6 +317,7 @@ Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are pre
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialMainGearOutputSchema'. Each item ('weapon', 'shield', 'body') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot'. 'activeEffects' should have 'duration: "permanent_while_equipped"'.
+For certain characters or series starts (e.g., Natsuki Subaru in Re:Zero arriving from modern Earth), all main gear slots ('weapon', 'shield', 'body') MUST be \`null\`.
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
@@ -322,6 +325,7 @@ Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED f
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialSecondaryGearOutputSchema'. Each item ('head', 'legs', 'feet', 'hands') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot'. 'activeEffects' should have 'duration: "permanent_while_equipped"'.
+For characters like Natsuki Subaru in Re:Zero, 'head', 'hands', 'legs', 'feet' slots should likely be \`null\` unless the series canonically gives them immediate, specific non-combat gear.
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
@@ -329,6 +333,7 @@ Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all 
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialAccessoryGearOutputSchema'. Each item ('neck', 'ring1', 'ring2') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot'. 'activeEffects' should have 'duration: "permanent_while_equipped"'.
+For characters like Natsuki Subaru in Re:Zero, these slots MUST be \`null\`.
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
@@ -464,7 +469,7 @@ const Narrative_ActiveEffectSchemaInternal = z.object({
   name: z.string().describe("REQUIRED."),
   description: z.string().describe("REQUIRED."),
   type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
-  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().describe("Number of turns effect lasts (for consumables, must be positive).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
+  duration: z.union([z.string().describe("Use 'permanent_while_equipped' for ongoing effects from gear."), z.number().int().describe("Number of turns effect lasts (for consumables, should be positive).")]).optional().describe("Duration of the effect. Use 'permanent_while_equipped' for ongoing effects from gear. Use a positive integer (representing turns) for temporary effects from consumables."),
   statModifiers: z.array(Narrative_StatModifierSchemaInternal).optional(),
   sourceItemId: z.string().optional(),
 });
@@ -693,7 +698,8 @@ Generate ONLY 'trackedNPCs':
 - NPCs IN SCENE: Must include. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts' (can be empty array). 'firstEncounteredLocation'/'lastKnownLocation' = '{{currentLocation}}'.
 - PRE-POPULATED MAJOR NPCs (NOT in scene): 2-4 crucial early-series NPCs. Each MUST have 'id', 'name', 'description', 'relationshipStatus' (number), 'knownFacts' (can be empty array). Their canonical locations for 'firstEncounteredLocation'/'lastKnownLocation'.
 - ALL NPCs:
-    - 'relationshipStatus' (number) MUST be set according to the Player Character's ({{characterProfile.name}}) canonical relationship within the series (e.g., -100 for a major antagonist like Princess Leia if player is Darth Vader, 75 for a close ally). Use values like: -100 (Arch-Nemesis), -50 (Hostile), 0 (Neutral), 50 (Friendly), 100 (Staunch Ally).
+    - "relationshipStatus" (number) MUST be set according to the Player Character's ({{characterProfile.name}}) canonical relationship within the series (e.g., -100 for a major antagonist like Princess Leia if player is Darth Vader, 75 for a close ally). Use values like: -100 (Arch-Nemesis), -50 (Hostile), 0 (Neutral), 50 (Friendly), 100 (Staunch Ally).
+    - Consider the player character's exact starting point in the series. If {{characterProfile.name}} would not have canonically met an NPC immediately upon arrival/start of the series, their initial 'relationshipStatus' with that NPC should be 0 (Neutral), unless their very first canonical encounter is inherently hostile. For example, for 'Re:Zero' if the player is Natsuki Subaru, his initial relationship with characters like Emilia or Felt upon immediate arrival to Lugunica should be 0, as he hasn't met them yet.
     - 'firstEncounteredTurnId'/'lastSeenTurnId' = "initial_turn_0".
     - Optional 'classOrRole', 'health' (number), 'maxHealth' (number), 'mana' (number), 'maxMana' (number).
     - If merchant: 'isMerchant: true', 'merchantInventory' (items with id, name, desc, basePrice (number), price (number), optional rarity, optional activeEffects with statModifiers and numeric 'duration' (must be positive) for consumables), 'buysItemTypes', 'sellsItemTypes'.
@@ -863,3 +869,4 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     
 
     
+
