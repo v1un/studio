@@ -40,6 +40,7 @@ import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, 
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 
 const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
@@ -1194,136 +1195,136 @@ export default function StoryForgePage() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background selection:bg-primary/20 selection:text-primary">
-      <header className="mb-2 text-center pt-4 sm:pt-6 shrink-0">
-        <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
-          <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
-          Story Forge
-        </h1>
-        <p className="text-muted-foreground text-lg mt-1">
-          Forge your legend in worlds you know, or discover new ones.
-        </p>
-      </header>
+    <TooltipProvider>
+      <div className="flex flex-col h-screen bg-background selection:bg-primary/20 selection:text-primary">
+        <header className="mb-2 text-center pt-4 sm:pt-6 shrink-0">
+          <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
+            <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
+            Story Forge
+          </h1>
+          <p className="text-muted-foreground text-lg mt-1">
+            Forge your legend in worlds you know, or discover new ones.
+          </p>
+        </header>
 
-      <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto overflow-hidden px-4 sm:px-6">
-        {isLoadingInteraction && (
-          <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-3 text-lg text-foreground">{loadingMessage || "AI is working..."}</p>
-          </div>
-        )}
-
-        {!currentSession && !isLoadingInteraction && (
-          <div className="flex-grow flex items-center justify-center">
-            <InitialPromptForm
-              onSubmitSeries={handleStartStoryFromSeries}
-              isLoading={isLoadingInteraction}
-            />
-          </div>
-        )}
-
-        {currentSession && baseCharacterProfile && currentStoryState && (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
-            <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
-              <TabsTrigger value="story" className="text-xs sm:text-sm">
-                <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
-              </TabsTrigger>
-              <TabsTrigger value="character" className="text-xs sm:text-sm">
-                <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
-              </TabsTrigger>
-               <TabsTrigger value="npcs" className="text-xs sm:text-sm">
-                <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
-              </TabsTrigger>
-              <TabsTrigger value="journal" className="text-xs sm:text-sm">
-                <StickyNote className="w-4 h-4 mr-1 sm:mr-2" /> Journal
-              </TabsTrigger>
-              <TabsTrigger value="lorebook" className="text-xs sm:text-sm">
-                <Library className="w-4 h-4 mr-1 sm:mr-2" /> Lorebook
-              </TabsTrigger>
-              <TabsTrigger value="dev-logs" className="text-xs sm:text-sm">
-                <ClipboardListIcon className="w-4 h-4 mr-1 sm:mr-2" /> Dev Logs
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden">
-              <div className="shrink-0 flex justify-between items-center">
-                <StoryControls
-                    onUndo={handleUndo}
-                    onRestart={handleRestart}
-                    canUndo={storyHistory.length > 0}
-                    isLoading={isLoadingInteraction}
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleTestSimpleAction}
-                  disabled={isLoadingInteraction}
-                  className="ml-2"
-                  size="sm"
-                >
-                  <TestTubeIcon className="mr-2 h-4 w-4 text-purple-500" />
-                  Test Action
-                </Button>
-              </div>
-              <div className="shrink-0">
-                <MinimalCharacterStatus
-                    character={effectiveCharacterProfileForAI || baseCharacterProfile} 
-                    storyState={currentStoryState} 
-                    isPremiumSession={currentSession.isPremiumSession}
-                />
-              </div>
-              <StoryDisplay
-                storyHistory={storyHistory}
-                isLoadingInteraction={isLoadingInteraction}
-              />
-              <div className="shrink-0 pt-2">
-                <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="character" className="overflow-y-auto flex-grow">
-              <CharacterSheet 
-                character={effectiveCharacterProfileForAI || baseCharacterProfile} 
-                storyState={currentStoryState} 
-              />
-            </TabsContent>
-
-            <TabsContent value="npcs" className="overflow-y-auto flex-grow">
-              <NPCTrackerDisplay trackedNPCs={currentStoryState.trackedNPCs as NPCProfile[]} currentTurnId={storyHistory[storyHistory.length-1]?.id || 'initial'} />
-            </TabsContent>
-
-            <TabsContent value="journal" className="overflow-y-auto flex-grow">
-              <JournalDisplay
-                quests={currentStoryState.quests as Quest[]}
-                storyArcs={currentStoryState.storyArcs as StoryArc[]}
-                currentStoryArcId={currentStoryState.currentStoryArcId}
-                worldFacts={currentStoryState.worldFacts}
-              />
-            </TabsContent>
-
-            <TabsContent value="lorebook" className="overflow-y-auto flex-grow">
-              <LorebookDisplay />
-            </TabsContent>
-
-            <TabsContent value="dev-logs" className="overflow-y-auto flex-grow">
-              <DataCorrectionLogDisplay
-                warnings={currentSession?.allDataCorrectionWarnings || []}
-                onClearLogs={handleClearCorrectionLogs}
-              />
-            </TabsContent>
-          </Tabs>
-        )}
-         {currentSession && (!baseCharacterProfile || !currentStoryState) && !isLoadingInteraction && (
-            <div className="text-center p-6 bg-card rounded-lg shadow-md flex-grow flex flex-col items-center justify-center">
-                <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
-                <Button onClick={handleRestart}>Start a New Adventure</Button>
+        <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto px-4 sm:px-6">
+          {isLoadingInteraction && (
+            <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="ml-3 text-lg text-foreground">{loadingMessage || "AI is working..."}</p>
             </div>
-        )}
-      </main>
-      <footer className="mt-4 text-center text-sm text-muted-foreground pb-4 sm:pb-6 shrink-0">
-        <p>&copy; {new Date().getFullYear()} Story Forge. Powered by GenAI.</p>
-      </footer>
-    </div>
+          )}
+
+          {!currentSession && !isLoadingInteraction && (
+            <div className="flex-grow flex items-center justify-center">
+              <InitialPromptForm
+                onSubmitSeries={handleStartStoryFromSeries}
+                isLoading={isLoadingInteraction}
+              />
+            </div>
+          )}
+
+          {currentSession && baseCharacterProfile && currentStoryState && (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
+              <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
+                <TabsTrigger value="story" className="text-xs sm:text-sm">
+                  <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
+                </TabsTrigger>
+                <TabsTrigger value="character" className="text-xs sm:text-sm">
+                  <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
+                </TabsTrigger>
+                 <TabsTrigger value="npcs" className="text-xs sm:text-sm">
+                  <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
+                </TabsTrigger>
+                <TabsTrigger value="journal" className="text-xs sm:text-sm">
+                  <StickyNote className="w-4 h-4 mr-1 sm:mr-2" /> Journal
+                </TabsTrigger>
+                <TabsTrigger value="lorebook" className="text-xs sm:text-sm">
+                  <Library className="w-4 h-4 mr-1 sm:mr-2" /> Lorebook
+                </TabsTrigger>
+                <TabsTrigger value="dev-logs" className="text-xs sm:text-sm">
+                  <ClipboardListIcon className="w-4 h-4 mr-1 sm:mr-2" /> Dev Logs
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden">
+                <div className="shrink-0 flex justify-between items-center">
+                  <StoryControls
+                      onUndo={handleUndo}
+                      onRestart={handleRestart}
+                      canUndo={storyHistory.length > 0}
+                      isLoading={isLoadingInteraction}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={handleTestSimpleAction}
+                    disabled={isLoadingInteraction}
+                    className="ml-2"
+                    size="sm"
+                  >
+                    <TestTubeIcon className="mr-2 h-4 w-4 text-purple-500" />
+                    Test Action
+                  </Button>
+                </div>
+                <div className="shrink-0">
+                  <MinimalCharacterStatus
+                      character={effectiveCharacterProfileForAI || baseCharacterProfile} 
+                      storyState={currentStoryState} 
+                      isPremiumSession={currentSession.isPremiumSession}
+                  />
+                </div>
+                <StoryDisplay
+                  storyHistory={storyHistory}
+                  isLoadingInteraction={isLoadingInteraction}
+                />
+                <div className="shrink-0 pt-2">
+                  <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="character" className="overflow-y-auto flex-grow">
+                <CharacterSheet 
+                  character={effectiveCharacterProfileForAI || baseCharacterProfile} 
+                  storyState={currentStoryState} 
+                />
+              </TabsContent>
+
+              <TabsContent value="npcs" className="overflow-y-auto flex-grow">
+                <NPCTrackerDisplay trackedNPCs={currentStoryState.trackedNPCs as NPCProfile[]} currentTurnId={storyHistory[storyHistory.length-1]?.id || 'initial'} />
+              </TabsContent>
+
+              <TabsContent value="journal" className="overflow-y-auto flex-grow">
+                <JournalDisplay
+                  quests={currentStoryState.quests as Quest[]}
+                  storyArcs={currentStoryState.storyArcs as StoryArc[]}
+                  currentStoryArcId={currentStoryState.currentStoryArcId}
+                  worldFacts={currentStoryState.worldFacts}
+                />
+              </TabsContent>
+
+              <TabsContent value="lorebook" className="overflow-y-auto flex-grow">
+                <LorebookDisplay />
+              </TabsContent>
+
+              <TabsContent value="dev-logs" className="overflow-y-auto flex-grow">
+                <DataCorrectionLogDisplay
+                  warnings={currentSession?.allDataCorrectionWarnings || []}
+                  onClearLogs={handleClearCorrectionLogs}
+                />
+              </TabsContent>
+            </Tabs>
+          )}
+           {currentSession && (!baseCharacterProfile || !currentStoryState) && !isLoadingInteraction && (
+              <div className="text-center p-6 bg-card rounded-lg shadow-md flex-grow flex flex-col items-center justify-center">
+                  <p className="text-lg text-muted-foreground mb-4">Your current session is empty or could not be fully loaded.</p>
+                  <Button onClick={handleRestart}>Start a New Adventure</Button>
+              </div>
+          )}
+        </main>
+        <footer className="mt-4 text-center text-sm text-muted-foreground pb-4 sm:pb-6 shrink-0">
+          <p>&copy; {new Date().getFullYear()} Story Forge. Powered by GenAI.</p>
+        </footer>
+      </div>
+    </TooltipProvider>
   );
 }
-
-
