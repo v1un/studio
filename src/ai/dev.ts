@@ -9,4 +9,5 @@ import '@/ai/flows/generate-scenario-from-series.ts'; // Contains both foundatio
 import '@/ai/flows/flesh-out-chapter-quests.ts'; // Contains fleshOutStoryArcQuests
 import '@/ai/flows/discover-next-story-arc-flow.ts'; // Contains discoverNextStoryArc
 import '@/ai/flows/update-character-description-flow.ts'; // Contains updateCharacterDescription
+import '@/ai/flows/generate-bridging-quest-flow.ts'; // Contains generateBridgingQuest
 import '@/ai/actions/simple-test-action.ts';

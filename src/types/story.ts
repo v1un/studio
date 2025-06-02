@@ -99,7 +99,7 @@ export interface Quest {
   description: string;
   type: 'main' | 'side' | 'dynamic' | 'arc_goal';
   status: 'active' | 'completed' | 'failed';
-  storyArcId?: string;
+  storyArcId?: string | null; // Allow null for bridging quests
   orderInStoryArc?: number;
   category?: string;
   objectives?: QuestObjective[];
@@ -157,7 +157,7 @@ export interface StructuredStoryState {
   equippedItems: Partial<Record<EquipmentSlot, Item | null>>;
   quests: Quest[];
   storyArcs: StoryArc[];
-  currentStoryArcId?: string;
+  currentStoryArcId?: string | null; // Allow null
   worldFacts: string[];
   trackedNPCs: NPCProfile[];
   storySummary?: string;
@@ -443,7 +443,7 @@ export interface DiscoverNextStoryArcInput {
   seriesPlotSummary: string;
   completedOrGeneratedArcTitles: string[];
   lastCompletedArcOrder: number;
-  lastCompletedArcSummary?: string; // Added for context to suggest unlockCondition
+  lastCompletedArcSummary?: string;
   usePremiumAI?: boolean;
 }
 
@@ -453,7 +453,7 @@ export interface DiscoverNextStoryArcOutput {
 
 export interface UpdateCharacterDescriptionInput {
     currentProfile: CharacterProfile;
-    completedArc: StoryArc; // Or just completedArcDescription: string;
+    completedArc: StoryArc;
     overallStorySummarySoFar: string;
     seriesName: string;
     usePremiumAI?: boolean;
@@ -463,6 +463,19 @@ export interface UpdateCharacterDescriptionOutput {
     updatedCharacterDescription: string;
 }
 
+export interface GenerateBridgingQuestInput {
+  seriesName: string;
+  currentLocation: string;
+  characterProfile: { name: string; class: string; level: number; };
+  overallStorySummarySoFar: string;
+  previousArcCompletionSummary: string;
+  usePremiumAI?: boolean;
+}
+
+export interface GenerateBridgingQuestOutput {
+  bridgingQuest: Quest | null;
+  bridgingNarrativeHook?: string;
+}
 
 export interface Faction {
   id: string;

@@ -6,6 +6,7 @@ import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@
 import { fleshOutStoryArcQuests as callFleshOutStoryArcQuests } from "@/ai/flows/flesh-out-chapter-quests";
 import { discoverNextStoryArc as callDiscoverNextStoryArc } from "@/ai/flows/discover-next-story-arc-flow";
 import { updateCharacterDescription as callUpdateCharacterDescription } from "@/ai/flows/update-character-description-flow";
+import { generateBridgingQuest as callGenerateBridgingQuest } from "@/ai/flows/generate-bridging-quest-flow";
 
 import type {
     GenerateScenarioFoundationInput, GenerateScenarioFoundationOutput,
@@ -14,6 +15,7 @@ import type {
     FleshOutStoryArcQuestsInput, FleshOutStoryArcQuestsOutput,
     DiscoverNextStoryArcInput, DiscoverNextStoryArcOutput,
     UpdateCharacterDescriptionInput, UpdateCharacterDescriptionOutput,
+    GenerateBridgingQuestInput, GenerateBridgingQuestOutput,
     CombatHelperInfo, CombatEventLogEntry,
     DescribedEvent, // Generic DescribedEvent
     HealthChangeEvent, ManaChangeEvent, XPChangeEvent, LevelUpEvent, CurrencyChangeEvent, LanguageSkillChangeEvent, ItemFoundEvent, ItemLostEvent, ItemUsedEvent, ItemEquippedEvent, ItemUnequippedEvent, QuestAcceptedEvent, QuestObjectiveUpdateEvent, QuestCompletedEvent, QuestFailedEvent, NPCRelationshipChangeEvent, NPCStateChangeEvent, NewNPCIntroducedEvent, WorldFactAddedEvent, WorldFactRemovedEvent, WorldFactUpdatedEvent, SkillLearnedEvent, // Specific event types
@@ -36,7 +38,7 @@ import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-l
 import { simpleTestAction } from '@/ai/actions/simple-test-action';
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon, CompassIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -155,7 +157,7 @@ export default function StoryForgePage() {
   const [isLoadingInteraction, setIsLoadingInteraction] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | 'updatingProfile' | null>(null);
+  const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | 'updatingProfile' | 'bridgingContent' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const { toast } = useToast();
 
@@ -172,6 +174,8 @@ export default function StoryForgePage() {
         setLoadingMessage("AI is searching for the next chapter in your destiny...");
     } else if (isLoadingInteraction && loadingType === 'updatingProfile') {
         setLoadingMessage("Reflecting on your journey to update your character profile...");
+    } else if (isLoadingInteraction && loadingType === 'bridgingContent') {
+        setLoadingMessage("The story continues, exploring new possibilities...");
     } else {
       setLoadingMessage(null);
     }
@@ -677,7 +681,7 @@ export default function StoryForgePage() {
                     seriesPlotSummary: currentSession.seriesPlotSummary,
                     completedOrGeneratedArcTitles: finalUpdatedBaseStoryState.storyArcs.map(arc => arc.title),
                     lastCompletedArcOrder: arcJustCompleted.order,
-                    lastCompletedArcSummary: arcJustCompleted.completionSummary,
+                    lastCompletedArcSummary: arcJustCompleted.completionSummary || undefined,
                     usePremiumAI: currentSession.isPremiumSession,
                 };
                 const discoveryResult: DiscoverNextStoryArcOutput = await callDiscoverNextStoryArc(discoverInput);
@@ -686,18 +690,66 @@ export default function StoryForgePage() {
                     const newArcOutline = discoveryResult.nextStoryArcOutline;
                     finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
                         draftState.storyArcs.push(newArcOutline);
-                        draftState.currentStoryArcId = newArcOutline.id; 
+                        // Do not set currentStoryArcId yet, wait for fleshing
                     });
                     nextStoryArcToFleshOut = newArcOutline; 
-                    systemMessagesForTurn.push(createSystemMessage(`NEW CHAPTER BEGINS: ${newArcOutline.title}!\n\n${newArcOutline.description}`, 'ArcNotification', 'ARC INITIATED'));
+                    systemMessagesForTurn.push(createSystemMessage(`A new chapter beckons: ${newArcOutline.title}.\n\n${newArcOutline.description}`, 'ArcNotification', 'NEW ARC DISCOVERED'));
                      toast({
-                        title: "New Chapter Begins!",
-                        description: ( <div className="flex items-start"> <BookmarkIcon className="w-5 h-5 mr-2 mt-0.5 text-primary shrink-0" /> <span>The saga continues with: {newArcOutline.title}</span> </div> ),
+                        title: "New Chapter Discovered!",
+                        description: ( <div className="flex items-start"> <SearchIcon className="w-5 h-5 mr-2 mt-0.5 text-primary shrink-0" /> <span>The saga continues with: {newArcOutline.title}</span> </div> ),
                         duration: 7000,
                     });
                 } else {
-                    systemMessagesForTurn.push(createSystemMessage("You've explored all major story arcs currently identifiable from the series plot.", 'ArcNotification', 'SAGA CONCLUSION?'));
-                    toast({ title: "End of Known Saga", description: `You've explored all major story arcs currently identifiable for ${currentSession.seriesName}!` });
+                     // No more major arcs found by discoverNextStoryArc
+                    console.log("CLIENT: No more major story arcs found. Attempting to generate bridging content.");
+                    setLoadingType('bridgingContent');
+                    try {
+                        const bridgingInput: GenerateBridgingQuestInput = {
+                            seriesName: currentSession.seriesName,
+                            currentLocation: finalUpdatedBaseStoryState.currentLocation,
+                            characterProfile: { 
+                                name: finalUpdatedBaseStoryState.character.name,
+                                class: finalUpdatedBaseStoryState.character.class,
+                                level: finalUpdatedBaseStoryState.character.level,
+                            },
+                            overallStorySummarySoFar: finalUpdatedBaseStoryState.storySummary || "",
+                            previousArcCompletionSummary: arcJustCompleted.completionSummary || "The previous arc concluded.",
+                            usePremiumAI: currentSession.isPremiumSession,
+                        };
+                        const bridgingResult = await callGenerateBridgingQuest(bridgingInput);
+                        if (bridgingResult.bridgingQuest) {
+                            finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                                draftState.quests.push(bridgingResult.bridgingQuest!);
+                                draftState.currentStoryArcId = null; // Or a special "bridging_mode" ID
+                            });
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `A new opportunity arises: "${bridgingResult.bridgingQuest.title || bridgingResult.bridgingQuest.description.substring(0,40)+"..."}" has been added to your journal.`,
+                                'SystemHelper', 'NEW SIDE QUEST'
+                            ));
+                            toast({ title: "New Side Quest", description: `"${bridgingResult.bridgingQuest.title || "A new task"}" received.`});
+                        } else if (bridgingResult.bridgingNarrativeHook) {
+                            systemMessagesForTurn.push(createSystemMessage(
+                                `As the dust settles, you notice: ${bridgingResult.bridgingNarrativeHook}`,
+                                'SystemHelper', 'NEW EVENT'
+                            ));
+                             finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                                draftState.currentStoryArcId = null;
+                            });
+                            toast({ title: "A New Event", description: "The story takes an unexpected turn..."});
+                        } else {
+                             finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                                draftState.currentStoryArcId = null;
+                            });
+                            systemMessagesForTurn.push(createSystemMessage("The main story seems to have reached a pause. The world is open for exploration.", 'ArcNotification', 'SAGA PAUSED'));
+                            toast({ title: "End of Known Saga", description: `You've explored all major story arcs currently identifiable for ${currentSession.seriesName}! The adventure continues in a more open-ended way.` });
+                        }
+                    } catch (bridgingError: any) {
+                        console.error("CLIENT: Failed to generate bridging content:", bridgingError);
+                        toast({ title: "Error Generating New Content", description: `Could not generate bridging content. ${bridgingError.message || ""}`, variant: "destructive" });
+                         finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                            draftState.currentStoryArcId = null;
+                        });
+                    }
                 }
             } catch (discoveryError: any) {
                 console.error("CLIENT: Failed to discover next story arc:", discoveryError);
@@ -732,14 +784,24 @@ export default function StoryForgePage() {
               if (arcIndex !== -1) {
                 draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
               }
+              // Only set currentStoryArcId if it's not already set (e.g. by discovery flow)
+              // or if it's different from the one being fleshed
               if (draftState.currentStoryArcId !== nextStoryArcToFleshOut!.id) {
-                  draftState.currentStoryArcId = nextStoryArcToFleshOut!.id;
+                  draftState.currentStoryArcId = nextStoryArcToFleshOut!.id; 
                   systemMessagesForTurn.push(createSystemMessage(`NEW CHAPTER BEGINS: ${nextStoryArcToFleshOut.title}!\n\n${nextStoryArcToFleshOut.description}`, 'ArcNotification', 'ARC INITIATED'));
-                  toast({
-                    title: `New Chapter: ${nextStoryArcToFleshOut.title}`,
-                    description: ( <div className="flex items-start"> <BookmarkIcon className="w-5 h-5 mr-2 mt-0.5 text-primary shrink-0" /> <span>New main quests available.</span> </div> ),
-                    duration: 7000,
-                  });
+                   toast({
+                        title: `New Chapter: ${nextStoryArcToFleshOut.title}`,
+                        description: ( <div className="flex items-start"> <BookmarkIcon className="w-5 h-5 mr-2 mt-0.5 text-primary shrink-0" /> <span>New main quests available.</span> </div> ),
+                        duration: 7000,
+                    });
+              } else if (draftState.currentStoryArcId === nextStoryArcToFleshOut!.id && draftState.storyArcs[arcIndex].mainQuestIds.length > 0) {
+                  // If it was already current and now has quests, it's officially "started"
+                   systemMessagesForTurn.push(createSystemMessage(`The story arc "${nextStoryArcToFleshOut.title}" has begun, with new objectives available.`, 'ArcNotification', 'ARC INITIATED'));
+                   toast({
+                        title: `Chapter Unfolds: ${nextStoryArcToFleshOut.title}`,
+                        description: ( <div className="flex items-start"> <CompassIcon className="w-5 h-5 mr-2 mt-0.5 text-accent shrink-0" /> <span>Main quests are now active for this arc.</span> </div> ),
+                        duration: 7000,
+                    });
               }
             });
           } catch (fleshOutError: any) {
@@ -750,7 +812,8 @@ export default function StoryForgePage() {
         } else if (nextStoryArcToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next story arc is outlined, but no seriesPlotSummary found in session to flesh it out.");
         } else if (!nextStoryArcToFleshOut && arcJustCompleted) { 
-            console.log("CLIENT: All pre-defined/discoverable story arcs seem to be completed.");
+            console.log("CLIENT: All pre-defined/discoverable story arcs seem to be completed and no bridging content was generated.");
+            // This case is now handled by the bridging content logic above. If bridging also returns nothing, the saga is paused.
         }
       }
 
@@ -1077,7 +1140,7 @@ export default function StoryForgePage() {
                 <JournalDisplay
                   quests={currentStoryState.quests as Quest[]}
                   storyArcs={currentStoryState.storyArcs as StoryArc[]}
-                  currentStoryArcId={currentStoryState.currentStoryArcId}
+                  currentStoryArcId={currentStoryState.currentStoryArcId || undefined}
                   worldFacts={currentStoryState.worldFacts}
                 />
               </TabsContent>
