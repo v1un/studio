@@ -115,6 +115,7 @@ export interface StoryArc {
   mainQuestIds: string[];
   isCompleted: boolean;
   unlockCondition?: string;
+  completionSummary?: string; // New field for AI summary of arc resolution
 }
 
 
@@ -181,7 +182,7 @@ export interface CombatHelperInfo {
 
 export interface DisplayMessage {
   id: string;
-  speakerType: 'Player' | 'GM' | 'NPC' | 'SystemHelper';
+  speakerType: 'Player' | 'GM' | 'NPC' | 'SystemHelper' | 'ArcNotification'; // Added ArcNotification
   speakerNameLabel: string;
   speakerDisplayName?: string;
   content?: string;

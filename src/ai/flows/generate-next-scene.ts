@@ -144,6 +144,7 @@ const StoryArcSchemaInternal = z.object({
     mainQuestIds: z.array(z.string()).describe("REQUIRED (can be empty array)."),
     isCompleted: z.boolean().describe("REQUIRED."),
     unlockCondition: z.string().optional(),
+    completionSummary: z.string().optional().describe("If the arc is being marked as completed in this turn, a brief summary of how it concluded."),
 });
 
 
@@ -188,8 +189,8 @@ const StructuredStoryStateSchemaInternal = z.object({
   inventory: z.array(ItemSchemaInternal).describe('Unequipped items. Each item has id, name, description, basePrice (number), optional rarity, and optional activeEffects (if any, include statModifiers with numeric values, and numeric duration for consumables). OMIT equipSlot for non-equippable items. REQUIRED (can be empty array).'),
   equippedItems: EquipmentSlotsSchemaInternal.describe("REQUIRED."),
   quests: z.array(QuestSchemaInternal).describe("All quests. Rewards items should also include optional 'activeEffects' (numeric duration for consumables) and 'rarity'. REQUIRED (can be empty array)."),
-  storyArcs: z.array(StoryArcSchemaInternal).describe("Story arcs. REQUIRED (can be empty array)."), // Renamed
-  currentStoryArcId: z.string().optional().describe("Active story arc ID."), // Renamed
+  storyArcs: z.array(StoryArcSchemaInternal).describe("Story arcs. REQUIRED (can be empty array). Each arc includes 'isCompleted' and optionally 'completionSummary' if being completed. AI should directly update these fields in the storyArcs array it receives."),
+  currentStoryArcId: z.string().optional().describe("Active story arc ID."),
   worldFacts: z.array(z.string()).describe('Key world facts. REQUIRED (can be empty array).'),
   trackedNPCs: z.array(NPCProfileSchemaInternal).describe("NPCs. Merchant items also need optional 'activeEffects' (numeric duration for consumables) and 'rarity'. REQUIRED (can be empty array)."),
   storySummary: z.string().optional().describe("Running story summary."),
@@ -315,16 +316,18 @@ const NarrativeAndEventsOutputSchema = z.object({
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional().describe("Each entry MUST have a 'name' if array is provided."),
   newLoreProposals: z.array(NextScene_RawLoreEntryZodSchema).optional().describe("Each entry MUST have 'keyword' and 'content' if array is provided."),
   sceneSummaryFragment: z.string().describe("REQUIRED. A brief summary of this scene's events."),
+  // AI should now directly update the storyState it returns, including storyArcs.
+  // No longer outputting storyState directly from this sub-prompt.
 });
 
 const GenerateNextSceneOutputSchemaInternal = z.object({
   generatedMessages: z.array(AIMessageSegmentSchemaInternal).describe("REQUIRED."),
-  updatedStoryState: StructuredStoryStateSchemaInternal.describe("REQUIRED."),
+  updatedStoryState: StructuredStoryStateSchemaInternal.describe("REQUIRED. The AI should return the full, updated story state here, including any changes to storyArcs (like marking one completed and adding a completionSummary)."),
   activeNPCsInScene: z.array(ActiveNPCInfoSchemaInternal).optional(),
   newLoreEntries: z.array(NextScene_RawLoreEntryZodSchema).optional(),
   updatedStorySummary: z.string().describe("REQUIRED."),
   dataCorrectionWarnings: z.array(z.string()).optional(),
-  describedEvents: z.array(DescribedEventSchema).optional(),
+  describedEvents: z.array(DescribedEventSchema).optional(), // Still useful for client-side event-specific logic
 });
 
 const NarrativeAndEventsPromptInputSchema = GenerateNextSceneInputSchemaInternal.extend({
@@ -333,6 +336,7 @@ const NarrativeAndEventsPromptInputSchema = GenerateNextSceneInputSchemaInternal
   formattedTrackedNPCsString: z.string(),
   formattedSkillsString: z.string(),
   formattedActiveTemporaryEffectsString: z.string(),
+  formattedStoryArcsString: z.string(),
 });
 
 
@@ -346,7 +350,7 @@ function formatEquippedItems(equippedItems: Partial<Record<EquipmentSlot, ItemTy
   const slots: EquipmentSlot[] = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
   for (const slot of slots) {
     const item = equippedItems[slot as EquipmentSlot];
-    let itemDesc = item ? `${item.name} (ID: ${item.id}, Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})` : 'Empty';
+    let itemDesc = item ? `${item.name} (ID: ${item.id}, Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => `${e.name}${e.duration ? ` (Duration: ${e.duration})` : ''}`).join(', ')}` : ''})` : 'Empty';
     output += `- ${slot.charAt(0).toUpperCase() + slot.slice(1)}: ${itemDesc}\n`;
   }
   return output.trim();
@@ -368,7 +372,7 @@ function formatQuests(quests: QuestType[] | undefined | null): string {
         if (q.rewards.experiencePoints) questStr += `    - XP: ${q.rewards.experiencePoints}\n`;
         if (q.rewards.currency) questStr += `    - Currency: ${q.rewards.currency}\n`;
         if (q.rewards.items && q.rewards.items.length > 0) {
-            q.rewards.items.forEach(item => { questStr += `    - Item: ${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}`: ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''})\n`; });
+            q.rewards.items.forEach(item => { questStr += `    - Item: ${item.name} (Val: ${item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}`: ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => `${e.name}${e.duration ? ` (Duration: ${e.duration})` : ''}`).join(', ')}` : ''})\n`; });
         }
     }
     return questStr;
@@ -405,7 +409,7 @@ function formatTrackedNPCs(npcs: NPCProfileType[] | undefined | null): string {
         npcStr += `\n  Description: ${npc.description}`;
         if (npc.isMerchant && npc.merchantInventory && npc.merchantInventory.length > 0) {
             npcStr += "\n  Wares for Sale:\n";
-            npc.merchantInventory.forEach(item => { npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => e.name).join(', ')}` : ''}, ID: ${item.id})\n`; });
+            npc.merchantInventory.forEach(item => { npcStr += `    - ${item.name} (Price: ${item.price ?? item.basePrice ?? 0}${item.rarity ? `, ${item.rarity}` : ''}${item.activeEffects && item.activeEffects.length > 0 ? `, FX: ${item.activeEffects.map(e => `${e.name}${e.duration ? ` (Duration: ${e.duration})` : ''}`).join(', ')}` : ''}, ID: ${item.id})\n`; });
         }
         return npcStr;
     }).join("\n");
@@ -419,6 +423,18 @@ function formatSkills(skills: SkillType[] | undefined | null): string {
 function formatActiveTemporaryEffects(effects: TemporaryEffect[] | undefined | null): string {
     if (!effects || !Array.isArray(effects) || effects.length === 0) return "None.";
     return effects.map(eff => `- ${eff.name} (ID: ${eff.id}, Turns Left: ${eff.turnsRemaining}, Source: ${eff.sourceItemId || 'Unknown'}): ${eff.description}`).join("\n");
+}
+
+function formatStoryArcs(storyArcs: StoryArcType[] | undefined | null, currentStoryArcId?: string): string {
+  if (!storyArcs || !Array.isArray(storyArcs) || storyArcs.length === 0) return "No story arcs defined.";
+  return storyArcs.map(arc => {
+    let arcStr = `- ${arc.title} (ID: ${arc.id}, Order: ${arc.order}, ${arc.isCompleted ? 'Completed' : 'Ongoing'})`;
+    if (arc.id === currentStoryArcId) arcStr += " [CURRENT ARC]";
+    arcStr += `\n  Description: ${arc.description}`;
+    if(arc.isCompleted && arc.completionSummary) arcStr += `\n  Completion Summary: ${arc.completionSummary}`;
+    if(arc.mainQuestIds && arc.mainQuestIds.length > 0) arcStr += `\n  Main Quest IDs: ${arc.mainQuestIds.join(', ')}`;
+    return arcStr;
+  }).join("\n");
 }
 
 
@@ -435,21 +451,23 @@ const generateNextSceneFlow = ai.defineFlow(
         : { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
 
-    const narrativeAndEventsPrompt = ai.definePrompt({
-        name: 'generateNarrativeAndEventsPrompt',
+    // This prompt now focuses on generating the narrative, events, and THE FULL UPDATED STORY STATE
+    const narrativeAndStateUpdatePrompt = ai.definePrompt({
+        name: 'narrativeAndStateUpdatePrompt',
         model: modelName,
-        input: {schema: NarrativeAndEventsPromptInputSchema},
-        output: {schema: NarrativeAndEventsOutputSchema.deepPartial()},
+        input: {schema: NarrativeAndEventsPromptInputSchema}, // Using extended input schema
+        // The output is now the full GenerateNextSceneOutputSchemaInternal, as AI updates the state
+        output: {schema: GenerateNextSceneOutputSchemaInternal.deepPartial()}, 
         tools: [lookupLoreTool],
         config: modelConfig,
-        prompt: `You are a dynamic storyteller. Your entire response MUST be a single, valid JSON object that partially adheres to the 'NarrativeAndEventsOutputSchema' (it's deepPartial). Focus on clear narrative and accurate event descriptions. DO NOT return a full 'updatedStoryState' object.
+        prompt: `You are a dynamic storyteller. Your entire response MUST be a single, valid JSON object that adheres to the 'GenerateNextSceneOutputSchemaInternal' (deepPartial).
+You MUST return the 'updatedStoryState' object reflecting ALL changes.
 Series: {{seriesName}}. {{#if seriesStyleGuide}}Style: {{seriesStyleGuide}}{{/if}}
 Story Summary: {{#if storyState.storySummary}}{{{storyState.storySummary}}}{{else}}The story has just begun.{{/if}}
 Previous Scene Summary: {{currentScene}}
 Player Input: {{userInput}}
 
 Character: {{storyState.character.name}} ({{storyState.character.class}}, Lvl {{storyState.character.level}}) - {{storyState.character.description}}
-IMPORTANT: The character's stats (HP, Mana, Strength, etc.) already reflect their current capabilities, including any bonuses or penalties from equipped items AND any active temporary effects.
 HP: {{storyState.character.health}}/{{storyState.character.maxHealth}}, Mana: {{storyState.character.mana}}/{{storyState.character.maxMana}}, LangRead: {{storyState.character.languageReading}}/100, LangSpeak: {{storyState.character.languageSpeaking}}/100
 Currency: {{storyState.character.currency}}, XP: {{storyState.character.experiencePoints}}/{{storyState.character.experienceToNextLevel}}
 Active Temporary Effects: {{{formattedActiveTemporaryEffectsString}}}
@@ -458,25 +476,25 @@ Equipped: {{{formattedEquippedItemsString}}}
 Location: {{storyState.currentLocation}}
 Inventory: {{#if storyState.inventory.length}}{{#each storyState.inventory}}- {{this.name}} (ID:{{this.id}}, Val:{{this.basePrice}}{{#if this.rarity}}, Rarity:{{this.rarity}}{{/if}}{{#if this.activeEffects}}, FX: {{#each this.activeEffects}}{{this.name}}{{#if this.duration}} (Duration: {{this.duration}}){{/if}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}){{/each}}{{else}}Empty{{/if}}
 Quests: {{{formattedQuestsString}}}
+Story Arcs: {{{formattedStoryArcsString}}}
 World Facts: {{#each storyState.worldFacts}}- {{{this}}}{{else}}- None.{{/each}}
 Tracked NPCs: {{{formattedTrackedNPCsString}}}
 
-**Your Task (Strictly Adhere to NarrativeAndEventsOutputSchema - deepPartial):**
-1.  **Generate Narrative (generatedMessages):** Continue the story. Each message in this array MUST have a 'speaker' (e.g., "GM", or an NPC name from 'Tracked NPCs') and 'content'. NPC speaker names MUST match 'Tracked NPCs' if they speak. Justify NPC presence (previous scene, this turn's intro, or player input/location). No spontaneous NPC appearances without narrative justification. (REQUIRED)
-2.  **Describe Events (describedEvents):** Identify key game events. Use 'DescribedEvent' structure. ALL numeric fields MUST be numbers.
-    - 'itemFound': Include 'itemName' (REQUIRED), 'itemDescription' (REQUIRED), 'suggestedBasePrice' (number), optional 'rarity'. 'equipSlot' ONLY for equippable gear. OMIT 'equipSlot' for potions/keys. For gear (esp. uncommon+), MAY include 'activeEffects'. If 'activeEffects' of type 'stat_modifier', include 'statModifiers' (array of {stat, value(number), type('add')}). For consumables granting temporary buffs, 'activeEffects' should specify a numeric 'duration' (e.g., 3 for 3 turns).
-    - 'itemUsed': If the player consumes or uses an item from their inventory, generate this event. Include 'itemIdOrName' (REQUIRED), which should be the ID or name of the item consumed from the player's inventory.
-    - 'itemEquipped': If the player equips an item from inventory, generate this event. Include 'itemIdOrName' (REQUIRED) of the item from inventory and 'slot' (REQUIRED) it's equipped to.
-    - 'itemUnequipped': If the player unequips an item, generate this event. Include 'itemIdOrName' (REQUIRED) of the equipped item and the 'slot' (REQUIRED) it was in.
-    - 'questAccepted': 'questDescription' is REQUIRED. If 'rewards', 'experiencePoints'/'currency' (numbers). Reward 'items' MUST have 'basePrice' (number), optional 'rarity', and MAY have 'activeEffects' (with structured 'statModifiers' and numeric 'duration' for consumables). 'objectives' MUST have 'description' (REQUIRED) and 'isCompleted: false' (REQUIRED).
-    - 'newNPCIntroduced': 'npcName' and 'npcDescription' are REQUIRED. 'initialRelationship' (number), 'initialHealth' (number), 'initialMana' (number) are optional but MUST be numbers if provided.
-    Examples: HealthChange, LanguageSkillChange (amount integer, target 'reading' or 'speaking', typically 1-20), QuestObjectiveUpdate, NPCRelationshipChange.
-3.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. Each MUST have a 'name' if array is provided.
-4.  **New Lore (newLoreProposals):** If relevant new "{{seriesName}}" lore, propose entries. Each MUST have 'keyword' and 'content' if array is provided. Use 'lookupLoreTool' for context.
-5.  **Scene Summary Fragment (sceneSummaryFragment):** Required. VERY brief (1-2 sentences) summary of ONLY events in THIS scene. (REQUIRED)
+**Your Task (Strictly Adhere to GenerateNextSceneOutputSchemaInternal - deepPartial):**
+1.  **Generate Narrative (generatedMessages):** Continue the story. Each message MUST have 'speaker' and 'content'. (REQUIRED)
+2.  **Describe Events (describedEvents):** Identify key game events that occurred due to player action or narrative progression. Use 'DescribedEvent' structure. (Optional, but recommended for mechanical changes)
+3.  **Update Story State (updatedStoryState):** This is CRITICAL. You MUST return the complete 'storyState' object, reflecting ALL changes from this turn.
+    a.  **Story Arcs:** If the narrative signifies the conclusion of the 'currentStoryArcId', update its 'isCompleted' field to \`true\` in the 'storyArcs' array. You MUST also provide a concise 'completionSummary' (1-2 sentences) for that arc, describing how it resolved (e.g., "The artifact was recovered, but the city was alerted to the player's actions.").
+    b.  **Other State:** Update character stats, inventory, quests, NPC states, world facts, etc., AS NEEDED based on the narrative and events.
+4.  **Active NPCs (activeNPCsInScene):** List NPCs who spoke or took significant action. (Optional)
+5.  **New Lore (newLoreProposals):** Propose new lore entries if relevant. (Optional)
+6.  **Updated Story Summary (updatedStorySummary):** Append a brief (1-2 sentences) summary of THIS scene's events to the existing story summary. (REQUIRED)
 
-**Language Skills:** Low 'languageReading' (0-40) = unreadable text in narration. Low 'languageSpeaking' (0-40) = indecipherable speech in narration. If actions improve language, describe as 'languageSkillChange' event (target 'reading' or 'speaking', amount (integer, typically 1-20)).
-Ensure your ENTIRE output is a single JSON object.
+**Important Considerations for Story Arcs:**
+-   An arc's completion is now primarily a NARRATIVE decision. You, the AI, decide if the current arc's story has resolved. This might happen before all its main quests are done, or after.
+-   If you mark an arc as completed, fill its 'completionSummary' to reflect the outcome. The client application will handle triggering subsequent arc logic based on this completion.
+
+Ensure your ENTIRE output is a single JSON object. ALL numeric fields (prices, stats etc.) must be numbers.
 `,
     });
 
@@ -485,54 +503,62 @@ Ensure your ENTIRE output is a single JSON object.
     const formattedTrackedNPCsString = formatTrackedNPCs(input.storyState.trackedNPCs);
     const formattedSkillsString = formatSkills(input.storyState.character.skillsAndAbilities);
     const formattedActiveTemporaryEffectsString = formatActiveTemporaryEffects(input.storyState.character.activeTemporaryEffects);
+    const formattedStoryArcsString = formatStoryArcs(input.storyState.storyArcs, input.storyState.currentStoryArcId);
 
 
-    const narrativePromptPayload: z.infer<typeof NarrativeAndEventsPromptInputSchema> = {
+    const promptPayload: z.infer<typeof NarrativeAndEventsPromptInputSchema> = {
       ...input,
       formattedEquippedItemsString,
       formattedQuestsString,
       formattedTrackedNPCsString,
       formattedSkillsString,
       formattedActiveTemporaryEffectsString,
+      formattedStoryArcsString,
     };
 
-    console.log("CLIENT (generateNextSceneFlow): Calling generateNarrativeAndEventsPrompt with payload containing EFFECTIVE character stats:", narrativePromptPayload.storyState.character);
-    let aiPartialOutput: z.infer<typeof NarrativeAndEventsOutputSchema.deepPartial> | undefined;
+    console.log("CLIENT (generateNextSceneFlow): Calling narrativeAndStateUpdatePrompt with payload containing EFFECTIVE character stats:", promptPayload.storyState.character);
+    let aiPartialOutput: z.infer<typeof GenerateNextSceneOutputSchemaInternal.deepPartial> | undefined;
     try {
-        const response = await narrativeAndEventsPrompt(narrativePromptPayload);
+        const response = await narrativeAndStateUpdatePrompt(promptPayload);
         aiPartialOutput = response.output;
-        console.log("CLIENT (generateNextSceneFlow): generateNarrativeAndEventsPrompt response:", aiPartialOutput);
+        console.log("CLIENT (generateNextSceneFlow): narrativeAndStateUpdatePrompt response:", aiPartialOutput);
     } catch (e: any) {
-        console.error(`[${modelName}] Error during narrativeAndEventsPrompt:`, e);
+        console.error(`[${modelName}] Error during narrativeAndStateUpdatePrompt:`, e);
         return {
-            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error during narrative generation: ${e.message}. Please try a different action.)` }],
+            generatedMessages: [{ speaker: 'GM', content: `(Critical AI Error during narrative/state update: ${e.message}. Please try a different action.)` }],
             updatedStoryState: input.storyState,
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
-            dataCorrectionWarnings: ["AI model failed to generate narrative/events structure."],
+            dataCorrectionWarnings: ["AI model failed to generate narrative/events/state structure."],
             describedEvents: [],
         };
     }
 
-    if (!aiPartialOutput || !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0 || !aiPartialOutput.generatedMessages.every(msg => msg && msg.speaker && msg.content) || !aiPartialOutput.sceneSummaryFragment) {
-        console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndEventsPrompt'. Missing generatedMessages, speaker/content in messages, or sceneSummaryFragment. Output:`, aiPartialOutput);
-        localCorrectionWarnings.push("AI model returned empty or malformed narrative/events structure (missing messages, speaker, content, or summary).");
-        const errorMessages: AIMessageSegment[] = (aiPartialOutput?.generatedMessages && Array.isArray(aiPartialOutput.generatedMessages) && aiPartialOutput.generatedMessages.length > 0)
-            ? aiPartialOutput.generatedMessages.map(msg => ({ speaker: msg?.speaker || 'GM', content: msg?.content || '(AI error: missing content)' })) as AIMessageSegment[]
-            : [{ speaker: 'GM', content: `(Critical AI Error: The AI returned an incomplete structure for scene narrative. Messages, speaker/content, or scene summary might be missing. Please try again.)` }];
-
+    if (!aiPartialOutput || 
+        !aiPartialOutput.generatedMessages || aiPartialOutput.generatedMessages.length === 0 || 
+        !aiPartialOutput.generatedMessages.every(msg => msg && msg.speaker && msg.content) || 
+        !aiPartialOutput.updatedStorySummary ||
+        !aiPartialOutput.updatedStoryState // Crucially check for updatedStoryState
+    ) {
+        console.warn(`[${modelName}] Null or insufficient output from 'narrativeAndStateUpdatePrompt'. Missing generatedMessages, summary, or updatedStoryState. Output:`, aiPartialOutput);
+        localCorrectionWarnings.push("AI model returned empty or malformed structure (missing messages, summary, or full story state).");
+        
         return {
-            generatedMessages: errorMessages,
-            updatedStoryState: input.storyState,
+            generatedMessages: (aiPartialOutput?.generatedMessages?.map(msg => ({ speaker: msg?.speaker || 'GM', content: msg?.content || '(AI error: missing content)' })) as AIMessageSegment[]) || [{ speaker: 'GM', content: `(Critical AI Error: Incomplete structure from AI. Please try again.)` }],
+            updatedStoryState: input.storyState, // Fallback to original state
             updatedStorySummary: input.storyState.storySummary || "Error generating summary.",
             activeNPCsInScene: [], newLoreEntries: [],
             dataCorrectionWarnings: localCorrectionWarnings,
             describedEvents: [],
         };
     }
-
-
-    const storyStateWithBaseCharacterModifiedByEvents = input.storyState;
+    
+    // Ensure the AI returned a character object within the updated state
+    if (!aiPartialOutput.updatedStoryState.character) {
+        console.warn(`[${modelName}] AI output's updatedStoryState is missing the character object. Reverting to original character state for safety.`, aiPartialOutput.updatedStoryState);
+        localCorrectionWarnings.push("AI's updatedStoryState was missing the character profile. Some character changes might not be reflected.");
+        aiPartialOutput.updatedStoryState.character = input.storyState.character; // Fallback
+    }
 
 
     const finalOutput: GenerateNextSceneOutput = {
@@ -540,18 +566,13 @@ Ensure your ENTIRE output is a single JSON object.
             speaker: msg.speaker || "GM",
             content: msg.content || "(AI provided no content for this message)"
         })) as AIMessageSegment[],
-        updatedStoryState: storyStateWithBaseCharacterModifiedByEvents,
+        updatedStoryState: aiPartialOutput.updatedStoryState as StructuredStoryState, // Trust AI's output for state
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc && npc.name && npc.name.trim() !== '') as ActiveNPCInfoType[] ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore && lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
-        updatedStorySummary: (aiPartialOutput.sceneSummaryFragment ? (input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment : input.storyState.storySummary || ""),
+        updatedStorySummary: aiPartialOutput.updatedStorySummary,
         dataCorrectionWarnings: localCorrectionWarnings.length > 0 ? Array.from(new Set(localCorrectionWarnings)) : undefined,
         describedEvents: aiPartialOutput.describedEvents as DescribedEvent[] ?? [],
     };
-
-    if (aiPartialOutput.sceneSummaryFragment) {
-        finalOutput.updatedStorySummary = ((input.storyState.storySummary || "") + "\n" + aiPartialOutput.sceneSummaryFragment).trim();
-    }
-
 
     if (finalOutput.newLoreEntries) {
         finalOutput.newLoreEntries.forEach(lore => { if (lore.category === null || lore.category === undefined || (typeof lore.category ==='string' && lore.category.trim() === '')) delete lore.category; });
@@ -565,7 +586,7 @@ Ensure your ENTIRE output is a single JSON object.
       }
     }
 
-    console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState.character sent back is the one AI used for decisions (effective stats). Client will handle base stat updates using describedEvents.", finalOutput.updatedStoryState.character);
+    console.log("CLIENT (generateNextSceneFlow): Returning. The updatedStoryState is now fully provided by the AI. Client will use describedEvents for specific UI/toast updates if needed, but state changes are from AI.", finalOutput.updatedStoryState);
     return finalOutput;
   }
 );

@@ -4,7 +4,7 @@
 import type { DisplayMessage } from "@/types/story";
 import { cn } from "@/lib/utils";
 import Image from 'next/image';
-import { Bot, UserCircle, ShieldAlertIcon, InfoIcon } from "lucide-react"; // Added InfoIcon
+import { Bot, UserCircle, ShieldAlertIcon, InfoIcon, MilestoneIcon, BookmarkPlusIcon } from "lucide-react"; 
 import CombatHelperDisplay from "./CombatHelperDisplay";
 
 interface ChatMessageProps {
@@ -22,6 +22,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   let messageBgColor = "bg-muted text-muted-foreground"; 
   let speakerLabelToDisplay = message.speakerNameLabel;
   let avatarHintToUse = message.avatarHint || "person";
+  let MessageIcon: React.ElementType | null = null;
 
   if (isPlayer) {
     nameLabelColor = "text-blue-600 dark:text-blue-400";
@@ -33,7 +34,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     messageBgColor = "bg-secondary text-secondary-foreground"; 
     speakerLabelToDisplay = message.speakerNameLabel; 
     avatarHintToUse = message.avatarHint || "merchant friendly";
-  } else if (message.speakerType === 'GM') { // GM
+  } else if (message.speakerType === 'GM') { 
     nameLabelColor = "text-orange-600 dark:text-orange-400"; 
     speakerLabelToDisplay = message.speakerNameLabel; 
     avatarHintToUse = message.avatarHint || "wizard staff";
@@ -42,11 +43,19 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     messageBgColor = "bg-purple-100/80 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700/50";
     speakerLabelToDisplay = message.speakerNameLabel;
     avatarHintToUse = message.avatarHint || "system gear";
+    MessageIcon = InfoIcon;
+  } else if (message.speakerType === 'ArcNotification') {
+    nameLabelColor = "text-indigo-600 dark:text-indigo-400";
+    messageBgColor = "bg-indigo-100/80 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700/50";
+    speakerLabelToDisplay = message.speakerNameLabel;
+    avatarHintToUse = message.avatarHint || "milestone flag";
+    MessageIcon = message.content?.toLowerCase().includes("complete") || message.content?.toLowerCase().includes("finale") ? MilestoneIcon : BookmarkPlusIcon;
   }
   
   const AvatarComponent = () => {
-    if (message.speakerType === 'SystemHelper') {
-      return <InfoIcon className="w-10 h-10 text-purple-500 dark:text-purple-400" />; 
+    if (message.speakerType === 'SystemHelper' || message.speakerType === 'ArcNotification') {
+      const IconComp = MessageIcon || InfoIcon;
+      return <IconComp className={`w-10 h-10 ${nameLabelColor}`} />; 
     }
     if (message.avatarSrc) {
       return (
@@ -66,32 +75,34 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     return <Bot className="w-10 h-10 text-muted-foreground" />;
   };
 
-  // For SystemHelper messages, align them to the center or left, but distinct from GM/NPC
-  const messageAlignmentClass = message.speakerType === 'SystemHelper' 
-    ? "justify-center" // Or "justify-start" if preferred for all non-player
+  const messageAlignmentClass = (message.speakerType === 'SystemHelper' || message.speakerType === 'ArcNotification') 
+    ? "justify-center" 
     : isPlayer ? "justify-end" : "justify-start";
   
-  const systemMessageMaxWidth = message.speakerType === 'SystemHelper' ? "max-w-full sm:max-w-[90%]" : "max-w-[85%] sm:max-w-[75%]";
+  const systemMessageMaxWidth = (message.speakerType === 'SystemHelper' || message.speakerType === 'ArcNotification') 
+    ? "max-w-full sm:max-w-[90%]" 
+    : "max-w-[85%] sm:max-w-[75%]";
 
 
   return (
     <div className={cn("flex w-full mb-4 animate-fade-in", messageAlignmentClass)}>
-       {message.speakerType === 'SystemHelper' ? (
+       {(message.speakerType === 'SystemHelper' || message.speakerType === 'ArcNotification') ? (
          <div
           className={cn(
             "rounded-lg px-3 py-2 shadow-sm break-words text-xs italic",
             messageBgColor,
-            systemMessageMaxWidth 
+            systemMessageMaxWidth,
+            message.speakerType === 'ArcNotification' ? "text-center" : ""
           )}
         >
-           <div className={cn("font-semibold text-xs mb-0.5 flex items-center", nameLabelColor)}>
-            <InfoIcon className="w-3.5 h-3.5 mr-1.5 shrink-0"/> {speakerLabelToDisplay}
+           <div className={cn("font-semibold text-sm mb-0.5 flex items-center", nameLabelColor, message.speakerType === 'ArcNotification' ? "justify-center text-base" : "")}>
+            {MessageIcon && <MessageIcon className="w-4 h-4 mr-1.5 shrink-0"/>} {speakerLabelToDisplay}
           </div>
-          <p className="whitespace-pre-line ml-1">{message.content}</p>
+          <p className={cn("whitespace-pre-line ml-1", message.speakerType === 'ArcNotification' ? "text-sm not-italic" : "text-xs")}>{message.content}</p>
         </div>
       ) : (
         <div className={cn("flex items-end gap-2", systemMessageMaxWidth, isPlayer ? "flex-row-reverse" : "flex-row")}>
-          {!isPlayer && ( // Also excludes SystemHelper from this avatar placement
+          {!isPlayer && ( 
             <div className="shrink-0">
               <AvatarComponent />
             </div>
@@ -123,4 +134,3 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     </div>
   );
 }
-
