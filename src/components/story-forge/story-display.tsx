@@ -35,7 +35,7 @@ export default function StoryDisplay({ storyHistory, isLoadingInteraction }: Sto
   return (
     <ScrollArea 
         ref={scrollAreaRef} 
-        className="w-full h-[calc(100vh-380px)] sm:h-[calc(100vh-350px)] pr-3" // Adjust height as needed
+        className="w-full h-[calc(100vh-300px)] sm:h-[calc(100vh-270px)] pr-3" // Adjusted height
         viewportRef={viewportRef}
     >
       <div className="flex flex-col gap-2 p-1">
@@ -46,3 +46,4 @@ export default function StoryDisplay({ storyHistory, isLoadingInteraction }: Sto
     </ScrollArea>
   );
 }
+
