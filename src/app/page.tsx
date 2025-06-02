@@ -1225,7 +1225,7 @@ export default function StoryForgePage() {
           )}
 
           {currentSession && baseCharacterProfile && currentStoryState && (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow">
               <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
                 <TabsTrigger value="story" className="text-xs sm:text-sm">
                   <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
@@ -1282,7 +1282,7 @@ export default function StoryForgePage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="character" className="overflow-y-auto flex-grow">
+              <TabsContent value="character" className="flex-grow">
                 <CharacterSheet 
                   character={effectiveCharacterProfileForAI || baseCharacterProfile} 
                   storyState={currentStoryState} 
@@ -1328,3 +1328,6 @@ export default function StoryForgePage() {
     </TooltipProvider>
   );
 }
+
+
+    
