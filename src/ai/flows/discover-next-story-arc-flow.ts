@@ -33,7 +33,7 @@ const StoryArcOutlineSchemaInternal = z.object({
     order: z.number().describe("REQUIRED. The sequential order of this new arc (should be lastCompletedArcOrder + 1)."),
     mainQuestIds: z.array(z.string()).default([]).describe("REQUIRED. Must be an empty array `[]` as this is an outline for a new arc."),
     isCompleted: z.literal(false).describe("REQUIRED. Must be false for a newly discovered arc."),
-    unlockCondition: z.string().optional().describe("A suggested narrative condition for unlocking this arc, ideally based on the outcome of the 'lastCompletedArcSummary'. Example: 'Player_recovered_the_Sunstone' or 'Faction_X_defeated'. For now, this is a textual suggestion, not mechanically enforced."),
+    unlockConditions: z.array(z.string()).optional().describe("An array of suggested narrative conditions for unlocking this arc, ideally based on the 'lastCompletedArcSummary'. Example: ['Player_recovered_the_Sunstone', 'Faction_X_defeated']. For now, these are textual suggestions, not mechanically enforced. Prioritize simpler, more achievable conditions for main story progression. If no specific condition comes to mind, this can be omitted or contain a generic condition like ['Previous_arc_completed']."),
 });
 
 const DiscoverNextStoryArcOutputSchema = z.object({
@@ -70,7 +70,7 @@ const discoverNextStoryArcFlow = ai.defineFlow(
       tools: [lookupLoreTool],
       config: modelConfig,
       prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'DiscoverNextStoryArcOutputSchema'.
-The 'nextStoryArcOutline' field can be an object matching 'StoryArcOutlineSchemaInternal' or null. If an object, ALL its REQUIRED fields (id, title, description, order, mainQuestIds, isCompleted) MUST be present.
+The 'nextStoryArcOutline' field can be an object matching 'StoryArcOutlineSchemaInternal' or null. If an object, ALL its REQUIRED fields (id, title, description, order, mainQuestIds, isCompleted) MUST be present. The 'unlockConditions' field is optional, but if provided, it MUST be an array of strings.
 
 You are a master series analyst. Your task is to identify the *next logical major story arc* from the provided 'seriesPlotSummary' for the series "{{seriesName}}".
 
@@ -98,13 +98,13 @@ Your Task:
     e.  **'order' (REQUIRED):** Set this to {{lastCompletedArcOrder + 1}}.
     f.  **'mainQuestIds' (REQUIRED):** This MUST be an empty array \`[]\`.
     g.  **'isCompleted' (REQUIRED):** This MUST be \`false\`.
-    h.  **'unlockCondition' (optional):** Based on the 'lastCompletedArcSummary' (if provided) or the general transition from the previous arc, suggest a brief, narrative unlock condition for this new arc. Examples: "Player has defeated the Shadow Knight", "The ancient artifact has been recovered", "Character has reached the capital city". This is a textual suggestion for now and not mechanically enforced. If no specific condition comes to mind, you can state "Previous_arc_completed" or omit it.
+    h.  **'unlockConditions' (optional array of strings):** Based on the 'lastCompletedArcSummary' (if provided) or the general transition from the previous arc, suggest an array of 1-2 brief, narrative unlock conditions for this new arc. Examples: ["Player has defeated the Shadow Knight", "The ancient artifact has been recovered"], ["Character has reached the capital city"]. These are textual suggestions for now and not mechanically enforced. If no specific condition comes to mind, you can state ["Previous_arc_completed"] or omit the field. For main story progression, try to make these conditions generally achievable and related to story progression rather than overly specific game states (like exact health values).
 4.  **If NO clear, distinct next arc can be identified** (e.g., the summary seems exhausted, or the remaining plot points are too minor or fragmented to form a major arc):
     a.  Set 'nextStoryArcOutline' to \`null\`.
 
 Output ONLY the JSON object. Do not include any conversational text.
 Example of a valid output if an arc is found:
-\`{ "nextStoryArcOutline": { "id": "ds_arc_fantasy_3_abc12", "title": "The Dragon's Awakening", "description": "The ancient dragon, long dormant, begins to stir, threatening the northern kingdoms. Heroes must seek the legendary Sunstone to pacify it.", "order": 3, "mainQuestIds": [], "isCompleted": false, "unlockCondition": "The Orb of Prophecy was secured." } }\`
+\`{ "nextStoryArcOutline": { "id": "ds_arc_fantasy_3_abc12", "title": "The Dragon's Awakening", "description": "The ancient dragon, long dormant, begins to stir, threatening the northern kingdoms. Heroes must seek the legendary Sunstone to pacify it.", "order": 3, "mainQuestIds": [], "isCompleted": false, "unlockConditions": ["The Orb of Prophecy was secured.", "Player reached level 5"] } }\`
 Example of a valid output if no arc is found:
 \`{ "nextStoryArcOutline": null }\`
 `,
@@ -128,7 +128,10 @@ Example of a valid output if no arc is found:
         arc.order = arc.order || (input.lastCompletedArcOrder + 1);
         arc.mainQuestIds = []; 
         arc.isCompleted = false; 
-        // arc.unlockCondition is now directly from AI if provided
+        // arc.unlockConditions is now directly from AI if provided (and is an array)
+        if (arc.unlockConditions && !Array.isArray(arc.unlockConditions)) {
+             arc.unlockConditions = [String(arc.unlockConditions)]; // Ensure it's an array if AI messes up
+        }
     }
 
 

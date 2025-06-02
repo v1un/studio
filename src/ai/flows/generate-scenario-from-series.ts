@@ -557,7 +557,7 @@ const Narrative_StoryArcSchemaInternal = z.object({
     order: z.number().describe("REQUIRED."),
     mainQuestIds: z.array(z.string()).describe("REQUIRED (can be empty for outlined story arcs)."),
     isCompleted: z.boolean().describe("REQUIRED."),
-    unlockCondition: z.string().optional(),
+    unlockConditions: z.array(z.string()).optional().describe("Array of narrative conditions. For critical path arcs, prefer simpler, achievable conditions. E.g., ['Previous_arc_completed', 'Player_reached_Capital_City']. For optional/side arcs, conditions can be more specific. These are textual suggestions, not mechanically enforced yet."),
 });
 
 const Narrative_NPCDialogueEntrySchemaInternal = z.object({
@@ -615,7 +615,7 @@ export type GenerateScenarioNarrativeElementsInput = z.infer<typeof GenerateScen
 
 const GenerateScenarioNarrativeElementsOutputSchema = z.object({
   quests: z.array(Narrative_QuestSchemaInternal).describe("REQUIRED (can be empty array). Each quest needs id, description, type, status."),
-  storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED (can be empty array). Each story arc needs id, title, description, order, mainQuestIds, isCompleted."),
+  storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED (can be empty array). Each story arc needs id, title, description, order, mainQuestIds, isCompleted, and optional unlockConditions (array of strings)."),
   trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal).describe("REQUIRED (can be empty array). Each NPC needs id, name, description, relationshipStatus, knownFacts."),
   initialLoreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema).describe("REQUIRED (can be empty array). Each entry needs keyword, content."),
 });
@@ -628,7 +628,7 @@ const InitialQuestsAndStoryArcsInputSchema = GenerateScenarioNarrativeElementsIn
 });
 const InitialQuestsAndStoryArcsOutputSchema = z.object({
     quests: z.array(Narrative_QuestSchemaInternal).describe("REQUIRED. Each quest needs id, description, type, status, storyArcId, orderInStoryArc."),
-    storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED. Each story arc needs id, title, description, order, mainQuestIds, isCompleted."),
+    storyArcs: z.array(Narrative_StoryArcSchemaInternal).describe("REQUIRED. Each story arc needs id, title, description, order, mainQuestIds, isCompleted, and optional unlockConditions (array of strings)."),
 });
 
 const InitialTrackedNPCsInputSchema = GenerateScenarioNarrativeElementsInputSchema.pick({
@@ -672,15 +672,16 @@ const generateScenarioNarrativeElementsFlow = ai.defineFlow(
     const narrative_initialQuestsAndStoryArcsPrompt = ai.definePrompt({
         name: 'narrative_initialQuestsAndStoryArcsPrompt', model: modelName, input: { schema: InitialQuestsAndStoryArcsInputSchema }, output: { schema: InitialQuestsAndStoryArcsOutputSchema }, config: modelConfig,
         tools: [lookupLoreTool],
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'InitialQuestsAndStoryArcsOutputSchema'. ALL REQUIRED fields (quests array, storyArcs array, and nested required fields like quest id/desc/type/status/storyArcId/orderInStoryArc, storyArc id/title/desc/order/mainQuestIds/isCompleted) MUST be present.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'InitialQuestsAndStoryArcsOutputSchema'. ALL REQUIRED fields (quests array, storyArcs array, and nested required fields like quest id/desc/type/status/storyArcId/orderInStoryArc, storyArc id/title/desc/order/mainQuestIds/isCompleted) MUST be present. The 'unlockConditions' field in story arcs is optional, but if provided, MUST be an array of strings.
 For "{{seriesName}}" (Char: {{characterProfile.name}}, Scene: {{sceneDescription}}, Plot: {{{seriesPlotSummary}}}).
 Generate 'storyArcs' & 'quests'.
 
 'storyArcs': Generate several (e.g., 3-5, or more if the series is long and the plot summary clearly delineates them) initial Story Arcs. These MUST be major narrative segments from the series, presented in chronological order.
   - For EACH Story Arc:
     - 'id', 'title', 'order', 'isCompleted: false' are REQUIRED.
-    - 'description' is REQUIRED and MUST be a concise summary of THAT SPECIFIC ARC's main events, key characters involved, and themes, directly derived from the comprehensive 'seriesPlotSummary'. This description is crucial for context.
-  - First story arc: 'mainQuestIds' must list the IDs of its generated quests (see below).
+    - 'description' is REQUIRED and MUST be a concise summary of THAT SPECIFIC ARC's main events, key characters involved, and themes, directly derived from the comprehensive 'seriesPlotSummary'.
+    - 'unlockConditions' (optional array of strings): Suggest 1-2 narrative conditions. For critical path/main story arcs, these should be simpler and tied to natural story progression (e.g., ["Previous_arc_completed", "Player_has_spoken_to_elder"]). For optional/side arcs, conditions can be more specific if appropriate (e.g., ["Player_found_the_hidden_map", "NPC_relationship_with_X_is_high"]). These are textual suggestions and not mechanically enforced by the system yet.
+  - First story arc: 'mainQuestIds' must list the IDs of its generated quests (see below). 'unlockConditions' should be simple, like ["Game_started"].
   - Subsequent story arcs: These are OUTLINES. Their 'mainQuestIds' array MUST be EMPTY initially (e.g., \`[]\`).
 
 'quests': For the FIRST story arc ONLY, generate a suitable number (e.g., 2-4) of 'main' quests directly based on its portion of the 'seriesPlotSummary'. Each quest MUST have 'id', 'description', 'type: "main"', 'status: "active"', 'storyArcId' (first story arc's ID), 'orderInStoryArc'. 'title' is optional. Include 'rewards' (XP (number), currency (number), items (each with id, name, desc, basePrice (number), optional rarity, optional activeEffects with statModifiers and numeric 'duration' (must be positive) for consumables)). Include 1-2 'objectives' ('isCompleted: false'). Use 'lookupLoreTool' for accuracy.
@@ -842,6 +843,11 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
             quest.rewards.items.forEach((item, index) => sanitizeItem(item, `item_reward_narrative_${quest.id}`, index));
         }
     });
+    questsAndStoryArcsResult.storyArcs.forEach(arc => {
+        if (arc.unlockConditions && !Array.isArray(arc.unlockConditions)) {
+            arc.unlockConditions = [String(arc.unlockConditions)]; // Ensure it's an array if AI messes up
+        }
+    });
     npcsResult.trackedNPCs.forEach(npc => {
         npc.knownFacts = npc.knownFacts ?? [];
         if (npc.merchantInventory) {
@@ -869,4 +875,5 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
     
 
     
+
 

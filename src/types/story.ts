@@ -114,8 +114,8 @@ export interface StoryArc {
   order: number;
   mainQuestIds: string[];
   isCompleted: boolean;
-  unlockCondition?: string;
-  completionSummary?: string; // New field for AI summary of arc resolution
+  unlockConditions?: string[]; // Changed from unlockCondition: string
+  completionSummary?: string;
 }
 
 
@@ -519,4 +519,3 @@ export interface CraftingRecipe {
   requiredSkill?: { skillId: string; level: number };
   discovered?: boolean;
 }
-
