@@ -443,6 +443,7 @@ export interface DiscoverNextStoryArcInput {
   seriesPlotSummary: string;
   completedOrGeneratedArcTitles: string[];
   lastCompletedArcOrder: number;
+  lastCompletedArcSummary?: string; // Added for context to suggest unlockCondition
   usePremiumAI?: boolean;
 }
 

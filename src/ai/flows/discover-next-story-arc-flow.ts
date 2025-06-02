@@ -20,6 +20,7 @@ const DiscoverNextStoryArcInputSchema = z.object({
   seriesPlotSummary: z.string().describe("The comprehensive plot summary of the entire series. This is the primary source for identifying arcs."),
   completedOrGeneratedArcTitles: z.array(z.string()).describe("An array of titles of story arcs that have already been completed or generated/outlined for the player. The AI should find the *next* arc not in this list."),
   lastCompletedArcOrder: z.number().describe("The 'order' number of the most recently completed story arc. The new arc should follow this sequentially."),
+  lastCompletedArcSummary: z.string().optional().describe("A summary of how the most recently completed story arc concluded. This helps in generating a relevant unlock condition for the new arc."),
   usePremiumAI: z.boolean().optional().describe("Whether to use the premium AI model for this task."),
 });
 export type DiscoverNextStoryArcInput = z.infer<typeof DiscoverNextStoryArcInputSchema>;
@@ -32,7 +33,7 @@ const StoryArcOutlineSchemaInternal = z.object({
     order: z.number().describe("REQUIRED. The sequential order of this new arc (should be lastCompletedArcOrder + 1)."),
     mainQuestIds: z.array(z.string()).default([]).describe("REQUIRED. Must be an empty array `[]` as this is an outline for a new arc."),
     isCompleted: z.literal(false).describe("REQUIRED. Must be false for a newly discovered arc."),
-    unlockCondition: z.string().optional().describe("Optional narrative condition for unlocking this arc (usually not needed if dynamically discovered)."),
+    unlockCondition: z.string().optional().describe("A suggested narrative condition for unlocking this arc, ideally based on the outcome of the 'lastCompletedArcSummary'. Example: 'Player_recovered_the_Sunstone' or 'Faction_X_defeated'. For now, this is a textual suggestion, not mechanically enforced."),
 });
 
 const DiscoverNextStoryArcOutputSchema = z.object({
@@ -43,6 +44,7 @@ export type DiscoverNextStoryArcOutput = z.infer<typeof DiscoverNextStoryArcOutp
 
 // --- Exported Function ---
 export async function discoverNextStoryArc(input: IDiscoverNextStoryArcInput): Promise<IDiscoverNextStoryArcOutput> {
+  // Assume input includes lastCompletedArcSummary if available from GameSession or currentStoryState
   return discoverNextStoryArcFlow(input as DiscoverNextStoryArcInput);
 }
 
@@ -83,6 +85,7 @@ Context:
     {{else}}- None yet.
     {{/if}}
 -   **Order of the Last Completed Arc:** {{lastCompletedArcOrder}}
+-   **Summary of How Last Arc Was Completed (if available):** {{#if lastCompletedArcSummary}}"{{{lastCompletedArcSummary}}}"{{else}}N/A{{/if}}
 
 Your Task:
 1.  **Analyze the 'seriesPlotSummary'.**
@@ -95,13 +98,13 @@ Your Task:
     e.  **'order' (REQUIRED):** Set this to {{lastCompletedArcOrder + 1}}.
     f.  **'mainQuestIds' (REQUIRED):** This MUST be an empty array \`[]\`.
     g.  **'isCompleted' (REQUIRED):** This MUST be \`false\`.
-    h.  'unlockCondition' (optional): Typically not needed for dynamically discovered arcs.
+    h.  **'unlockCondition' (optional):** Based on the 'lastCompletedArcSummary' (if provided) or the general transition from the previous arc, suggest a brief, narrative unlock condition for this new arc. Examples: "Player has defeated the Shadow Knight", "The ancient artifact has been recovered", "Character has reached the capital city". This is a textual suggestion for now and not mechanically enforced. If no specific condition comes to mind, you can state "Previous_arc_completed" or omit it.
 4.  **If NO clear, distinct next arc can be identified** (e.g., the summary seems exhausted, or the remaining plot points are too minor or fragmented to form a major arc):
     a.  Set 'nextStoryArcOutline' to \`null\`.
 
 Output ONLY the JSON object. Do not include any conversational text.
 Example of a valid output if an arc is found:
-\`{ "nextStoryArcOutline": { "id": "ds_arc_fantasy_3_abc12", "title": "The Dragon's Awakening", "description": "The ancient dragon, long dormant, begins to stir, threatening the northern kingdoms. Heroes must seek the legendary Sunstone to pacify it.", "order": 3, "mainQuestIds": [], "isCompleted": false } }\`
+\`{ "nextStoryArcOutline": { "id": "ds_arc_fantasy_3_abc12", "title": "The Dragon's Awakening", "description": "The ancient dragon, long dormant, begins to stir, threatening the northern kingdoms. Heroes must seek the legendary Sunstone to pacify it.", "order": 3, "mainQuestIds": [], "isCompleted": false, "unlockCondition": "The Orb of Prophecy was secured." } }\`
 Example of a valid output if no arc is found:
 \`{ "nextStoryArcOutline": null }\`
 `,
@@ -114,20 +117,18 @@ Example of a valid output if no arc is found:
 
     if (!output) {
       console.error("discoverNextStoryArcFlow: AI failed to return any output.");
-      // Consider returning null or throwing a more specific error if the AI completely fails.
-      // For now, if output is undefined, we'll let it proceed, and it should result in nextStoryArcOutline being null.
       return { nextStoryArcOutline: null };
     }
     
-    // Validate or sanitize the output if necessary
     if (output.nextStoryArcOutline) {
         const arc = output.nextStoryArcOutline;
         arc.id = arc.id || `ds_arc_fallback_${Date.now()}`;
         arc.title = arc.title || "Untitled Discovered Arc";
         arc.description = arc.description || "No description provided by AI for this discovered arc.";
         arc.order = arc.order || (input.lastCompletedArcOrder + 1);
-        arc.mainQuestIds = []; // Ensure it's always an empty array for an outline
-        arc.isCompleted = false; // Ensure it's always false
+        arc.mainQuestIds = []; 
+        arc.isCompleted = false; 
+        // arc.unlockCondition is now directly from AI if provided
     }
 
 
@@ -135,3 +136,5 @@ Example of a valid output if no arc is found:
     return output;
   }
 );
+
+  

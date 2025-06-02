@@ -440,15 +440,8 @@ export default function StoryForgePage() {
       let clientSideWarnings: string[] = [];
       let systemMessagesForTurn: DisplayMessage[] = [];
       
-      // The AI now returns the *full* updatedStoryState.
-      // We use this directly, but first, we process `describedEvents` for UI feedback (toasts, specific system messages not related to arc changes).
       let finalUpdatedBaseStoryState = result.updatedStoryState;
 
-
-      // Process `describedEvents` for immediate UI feedback (toasts, non-arc system messages)
-      // This part modifies `systemMessagesForTurn` and `clientSideWarnings` but NOT `finalUpdatedBaseStoryState` directly for these events,
-      // as the AI is now responsible for including these mechanical changes in its returned `updatedStoryState`.
-      // However, we still need to create system messages for these events for the chat.
       if (result.describedEvents && Array.isArray(result.describedEvents)) {
         result.describedEvents.forEach(event => {
             switch (event.type) {
@@ -510,27 +503,35 @@ export default function StoryForgePage() {
                 }
                 case 'itemUsed': {
                     const e = event as ItemUsedEvent;
-                    const usedItemFromAIState = finalUpdatedBaseStoryState.inventory.find(i => i.id === e.itemIdOrName || i.name === e.itemIdOrName) || 
-                                                Object.values(finalUpdatedBaseStoryState.equippedItems).find(i => i && (i.id === e.itemIdOrName || i.name === e.itemIdOrName));
-                    let effectMsg = e.reason || "No immediate effect described.";
+                    const itemJustUsed = currentStoryState.inventory.find(i => i.id === e.itemIdOrName || i.name === e.itemIdOrName); // Check against state *before* AI update
+                    let effectMsg = e.reason || "No immediate effect described by AI.";
                     
-                    if (usedItemFromAIState && usedItemFromAIState.isConsumable && usedItemFromAIState.activeEffects) {
-                        usedItemFromAIState.activeEffects.forEach(effectDef => {
-                            if (typeof effectDef.duration === 'number' && effectDef.duration > 0) {
-                                effectMsg += ` Effect '${effectDef.name}' active for ${effectDef.duration} turns.`;
-                                systemMessagesForTurn.push(createSystemMessage(
-                                    `Buff Applied: ${effectDef.name} from ${usedItemFromAIState.name} (Duration: ${effectDef.duration} turns).`
-                                ));
-                            }
+                    if (itemJustUsed && itemJustUsed.isConsumable && itemJustUsed.activeEffects) {
+                        finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                            draftState.character.activeTemporaryEffects = draftState.character.activeTemporaryEffects || [];
+                            itemJustUsed.activeEffects?.forEach(effectDef => {
+                                if (typeof effectDef.duration === 'number' && effectDef.duration > 0) {
+                                    const newTempEffect: TemporaryEffect = {
+                                        ...effectDef,
+                                        sourceItemId: itemJustUsed.id,
+                                        turnsRemaining: effectDef.duration,
+                                    };
+                                    draftState.character.activeTemporaryEffects!.push(newTempEffect);
+                                    effectMsg += ` Effect '${effectDef.name}' active for ${effectDef.duration} turns.`;
+                                    systemMessagesForTurn.push(createSystemMessage(
+                                        `Buff Applied: ${effectDef.name} from ${itemJustUsed.name} (Duration: ${effectDef.duration} turns).`
+                                    ));
+                                }
+                            });
                         });
                     }
                     systemMessagesForTurn.push(createSystemMessage(
                         `Item Used: ${e.itemIdOrName}. ${effectMsg}`.trim()
                     ));
-                    if (usedItemFromAIState) { // Check if item was actually found to determine toast type
+                    if (itemJustUsed) { 
                         toast({ title: "Item Used", description: `${e.itemIdOrName} used.`});
                     } else {
-                        clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was used, but it's not clear if it was in inventory before AI state update.`);
+                        clientSideWarnings.push(`AI reported item "${e.itemIdOrName}" was used, but it wasn't found in inventory before AI state update. AI is assumed to have handled its removal.`);
                     }
                     break;
                 }
@@ -601,15 +602,23 @@ export default function StoryForgePage() {
         });
       }
 
-      // --- Temporary Effect Duration Management (End of Turn) ---
-      // This still needs to happen on the client side if AI is not explicitly managing turnsRemaining in its state update.
-      // For now, let's assume AI *might* update it, but we also do a pass here.
-      // It's safer if AI fully manages this in its returned state.
-      // For this iteration, we will assume the AI's returned `finalUpdatedBaseStoryState.character.activeTemporaryEffects` is the source of truth for durations.
-      // If an effect's duration ran out, the AI should have removed it.
+      finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+        if (draftState.character.activeTemporaryEffects) {
+            const stillActiveEffects: TemporaryEffect[] = [];
+            draftState.character.activeTemporaryEffects.forEach(effect => {
+                effect.turnsRemaining -= 1;
+                if (effect.turnsRemaining > 0) {
+                    stillActiveEffects.push(effect);
+                } else {
+                    systemMessagesForTurn.push(createSystemMessage(`Effect Expired: ${effect.name} (from ${effect.sourceItemId ? finalUpdatedBaseStoryState.inventory.find(i=>i.id===effect.sourceItemId)?.name || finalUpdatedBaseStoryState.equippedItems[effect.sourceItemId as EquipmentSlot]?.name || effect.sourceItemId : 'Unknown Source'}) has worn off.`));
+                }
+            });
+            draftState.character.activeTemporaryEffects = stillActiveEffects;
+        }
+      });
 
-      // Check for Story Arc Completion based on AI's updated state
-      const previousStoryArcId = currentStoryState.currentStoryArcId; // Arc ID *before* this turn
+
+      const previousStoryArcId = currentStoryState.currentStoryArcId; 
       const arcJustCompleted = finalUpdatedBaseStoryState.storyArcs.find(arc => arc.id === previousStoryArcId && arc.isCompleted && !currentStoryState.storyArcs.find(sa => sa.id === arc.id && sa.isCompleted));
 
       if (arcJustCompleted) {
@@ -668,6 +677,7 @@ export default function StoryForgePage() {
                     seriesPlotSummary: currentSession.seriesPlotSummary,
                     completedOrGeneratedArcTitles: finalUpdatedBaseStoryState.storyArcs.map(arc => arc.title),
                     lastCompletedArcOrder: arcJustCompleted.order,
+                    lastCompletedArcSummary: arcJustCompleted.completionSummary,
                     usePremiumAI: currentSession.isPremiumSession,
                 };
                 const discoveryResult: DiscoverNextStoryArcOutput = await callDiscoverNextStoryArc(discoverInput);
@@ -722,7 +732,6 @@ export default function StoryForgePage() {
               if (arcIndex !== -1) {
                 draftState.storyArcs[arcIndex].mainQuestIds = fleshedResult.fleshedOutQuests.map(q => q.id);
               }
-              // Set currentStoryArcId explicitly only if it's not already set or different
               if (draftState.currentStoryArcId !== nextStoryArcToFleshOut!.id) {
                   draftState.currentStoryArcId = nextStoryArcToFleshOut!.id;
                   systemMessagesForTurn.push(createSystemMessage(`NEW CHAPTER BEGINS: ${nextStoryArcToFleshOut.title}!\n\n${nextStoryArcToFleshOut.description}`, 'ArcNotification', 'ARC INITIATED'));
@@ -740,7 +749,7 @@ export default function StoryForgePage() {
           setLoadingType('nextScene');
         } else if (nextStoryArcToFleshOut && !currentSession.seriesPlotSummary) {
             console.warn("CLIENT: Next story arc is outlined, but no seriesPlotSummary found in session to flesh it out.");
-        } else if (!nextStoryArcToFleshOut && arcJustCompleted) { // Check arcJustCompleted to ensure this only logs if an arc truly finished and no new one was found
+        } else if (!nextStoryArcToFleshOut && arcJustCompleted) { 
             console.log("CLIENT: All pre-defined/discoverable story arcs seem to be completed.");
         }
       }
@@ -978,7 +987,7 @@ export default function StoryForgePage() {
           </p>
         </header>
 
-        <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto px-4 sm:px-6"> {/* Removed overflow-hidden here */}
+        <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto px-4 sm:px-6">
           {isLoadingInteraction && (
             <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1053,7 +1062,7 @@ export default function StoryForgePage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="character" className="flex-grow"> {/* Removed overflow-y-auto */}
+              <TabsContent value="character" className="flex-grow">
                 <CharacterSheet 
                   character={effectiveCharacterProfileForAI || baseCharacterProfile} 
                   storyState={currentStoryState} 
@@ -1099,3 +1108,4 @@ export default function StoryForgePage() {
     </TooltipProvider>
   );
 }
+
