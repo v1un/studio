@@ -1,5 +1,6 @@
 
 import type { LoreEntry, RawLoreEntry } from '@/types/story';
+import { generateUUID } from '@/lib/utils';
 
 const LOREBOOK_KEY = "storyForgeLorebook";
 
@@ -42,7 +43,7 @@ export function addLoreEntry(entryData: {
   const newEntry: LoreEntry = {
     ...entryData,
     keyword: entryData.keyword.trim(), // Ensure keyword is trimmed
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     createdAt: new Date().toISOString(),
   };
   const updatedLorebook = [...lorebook, newEntry];
@@ -80,7 +81,7 @@ export function initializeLorebook(rawEntries: RawLoreEntry[]): void {
   const newLorebook: LoreEntry[] = rawEntries.map(rawEntry => ({
     ...rawEntry,
     keyword: rawEntry.keyword.trim(),
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     source: 'AI-Generated-Scenario-Start',
     createdAt: new Date().toISOString(),
   }));

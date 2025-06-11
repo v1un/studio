@@ -40,6 +40,7 @@ import { simpleTestAction } from '@/ai/actions/simple-test-action';
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon, CompassIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
+import { generateUUID } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -65,11 +66,11 @@ const scenarioGenerationSteps = [
 // Helper function to create system messages
 function createSystemMessage(content: string, type: DisplayMessage['speakerType'] = 'SystemHelper', label?: string): DisplayMessage {
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     speakerType: type,
     speakerNameLabel: label || (type === 'ArcNotification' ? 'STORY EVENT' : 'SYSTEM EVENT'),
     content: content,
-    avatarSrc: undefined, 
+    avatarSrc: undefined,
     avatarHint: type === 'ArcNotification' ? "milestone flag" : "system gear",
     isPlayer: false,
   };
@@ -306,7 +307,7 @@ export default function StoryForgePage() {
       }
 
       const initialGMMessage: DisplayMessage = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         speakerType: 'GM',
         speakerNameLabel: 'GAME-MASTER',
         speakerDisplayName: "admin",
@@ -337,12 +338,12 @@ export default function StoryForgePage() {
 
 
       const firstTurn: StoryTurn = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         messages: [initialGMMessage],
         storyStateAfterScene: finalStoryState,
       };
 
-      const newSessionId = crypto.randomUUID();
+      const newSessionId = generateUUID();
       const newSession: GameSession = {
         id: newSessionId,
         storyPrompt: `Adventure in the world of: ${data.seriesName}${data.characterName ? ` as ${data.characterName}` : ''}`,
@@ -389,7 +390,7 @@ export default function StoryForgePage() {
     console.log("CLIENT: User action submitted:", userInput);
 
     const playerMessage: DisplayMessage = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       speakerType: 'Player',
       speakerNameLabel: baseCharacterProfile.name,
       speakerDisplayName: baseCharacterProfile.name,
@@ -402,9 +403,9 @@ export default function StoryForgePage() {
     setStoryHistory(prevHistory => {
         const lastTurn = prevHistory[prevHistory.length -1];
          const newTurnForPlayerMessage: StoryTurn = {
-            id: `pending-${crypto.randomUUID()}`,
+            id: `pending-${generateUUID()}`,
             messages: [playerMessage],
-            storyStateAfterScene: lastTurn.storyStateAfterScene 
+            storyStateAfterScene: lastTurn.storyStateAfterScene
         };
         return [...prevHistory, newTurnForPlayerMessage];
     });
@@ -824,7 +825,7 @@ export default function StoryForgePage() {
         const speakerDisplayName = isGM ? 'admin' : aiMsg.speaker;
 
         return {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           speakerType: isGM ? 'GM' : 'NPC',
           speakerNameLabel: speakerLabel,
           speakerDisplayName: speakerDisplayName,
@@ -903,20 +904,20 @@ export default function StoryForgePage() {
         };
 
         const combatHelperMessage: DisplayMessage = {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           speakerType: 'SystemHelper',
           speakerNameLabel: 'COMBAT LOG',
           isPlayer: false,
           combatHelperInfo: combatHelperData,
-          avatarHint: "system combat", 
+          avatarHint: "system combat",
         };
         turnMessages.push(combatHelperMessage);
       }
 
       const completedTurn: StoryTurn = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         messages: turnMessages,
-        storyStateAfterScene: finalUpdatedBaseStoryState, 
+        storyStateAfterScene: finalUpdatedBaseStoryState,
       };
 
       setStoryHistory(prevHistory => {

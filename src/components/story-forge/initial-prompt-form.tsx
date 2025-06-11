@@ -2,12 +2,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { BookPlusIcon, UserIcon, ShieldQuestionIcon, SparklesIcon } from "lucide-react";
+import { BookPlusIcon, UserIcon, ShieldQuestionIcon, SparklesIcon, Settings, ArrowRight } from "lucide-react";
 
 interface InitialPromptFormProps {
   onSubmitSeries: (data: { seriesName: string; characterName?: string; characterClass?: string; usePremiumAI: boolean }) => void;
@@ -15,6 +16,7 @@ interface InitialPromptFormProps {
 }
 
 export default function InitialPromptForm({ onSubmitSeries, isLoading }: InitialPromptFormProps) {
+  const router = useRouter();
   const [seriesName, setSeriesName] = useState("");
   const [characterName, setCharacterName] = useState("");
   const [characterClass, setCharacterClass] = useState("");
@@ -30,6 +32,16 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
         usePremiumAI: usePremiumAI,
       });
     }
+  };
+
+  const handleAdvancedGeneration = () => {
+    const params = new URLSearchParams();
+    if (seriesName.trim()) params.set('series', seriesName.trim());
+    if (characterName.trim()) params.set('character', characterName.trim());
+    if (characterClass.trim()) params.set('class', characterClass.trim());
+    if (usePremiumAI) params.set('premium', 'true');
+
+    router.push(`/scenario-generation?${params.toString()}`);
   };
 
   return (
@@ -108,10 +120,35 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
 
 
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex flex-col space-y-3">
           <Button type="submit" disabled={isLoading || !seriesName.trim()} className="w-full text-lg py-6">
-            {isLoading ? "Generating scenario..." : "Enter Universe"}
+            {isLoading ? "Generating scenario..." : "Quick Start (Legacy)"}
           </Button>
+
+          <div className="relative w-full">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleAdvancedGeneration}
+            disabled={isLoading || !seriesName.trim()}
+            className="w-full text-lg py-6 border-primary/20 hover:border-primary/40"
+          >
+            <Settings className="w-5 h-5 mr-2" />
+            Advanced Generation (Recommended)
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+
+          <p className="text-xs text-center text-muted-foreground">
+            Advanced generation uses a new multi-phase system that's more reliable and gives you control over each step.
+          </p>
         </CardFooter>
       </form>
     </Card>

@@ -1,5 +1,11 @@
 
 import { config } from 'dotenv';
+import path from 'path';
+
+// Load environment variables from .env.local
+config({ path: path.resolve(process.cwd(), '.env.local') });
+
+// Also try to load from .env as fallback
 config();
 
 import '@/ai/flows/generate-story-start.ts';
