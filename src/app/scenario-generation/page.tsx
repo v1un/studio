@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ScenarioGenerationWizard from "@/components/scenario-generation/scenario-generation-wizard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,19 +12,19 @@ import { ArrowLeft, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { clearLorebook, initializeLorebook } from "@/lib/lore-manager";
 import { generateUUID } from "@/lib/utils";
-import type { 
-  GameSession, 
-  StoryTurn, 
-  DisplayMessage, 
+import type {
+  GameSession,
+  StoryTurn,
+  DisplayMessage,
   StructuredStoryState,
-  RawLoreEntry 
+  RawLoreEntry
 } from "@/types/story";
 
 const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
 const SESSION_KEY_PREFIX = "storyForgeSession_";
 const GM_AVATAR_PLACEHOLDER = "https://placehold.co/40x40.png";
 
-export default function ScenarioGenerationPage() {
+function ScenarioGenerationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -251,7 +251,7 @@ export default function ScenarioGenerationPage() {
                 New Multi-Phase Generation
               </h4>
               <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-                <li>• <strong>6 separate phases</strong> - each completes in under 30 seconds</li>
+                <li>• <strong>7 separate phases</strong> - each completes in under 30 seconds</li>
                 <li>• <strong>Manual progression</strong> - review each phase before continuing</li>
                 <li>• <strong>Error recovery</strong> - retry individual phases if needed</li>
                 <li>• <strong>Progress saving</strong> - pause and resume generation anytime</li>
@@ -278,5 +278,20 @@ export default function ScenarioGenerationPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ScenarioGenerationPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center p-4">
+        <div className="text-center space-y-4">
+          <Sparkles className="w-12 h-12 text-primary mx-auto animate-pulse" />
+          <p className="text-lg text-muted-foreground">Loading scenario generation...</p>
+        </div>
+      </div>
+    }>
+      <ScenarioGenerationContent />
+    </Suspense>
   );
 }

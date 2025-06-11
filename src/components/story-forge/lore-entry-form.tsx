@@ -15,6 +15,13 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { LoreEntry } from "@/types/story";
 
 const loreEntryFormSchema = z.object({
@@ -24,6 +31,20 @@ const loreEntryFormSchema = z.object({
 });
 
 export type LoreEntryFormData = z.infer<typeof loreEntryFormSchema>;
+
+// Predefined category options based on the scenario generation system
+const PREDEFINED_CATEGORIES = [
+  "Character",
+  "Location",
+  "Faction/Organization",
+  "Magic/Power",
+  "History/Events",
+  "Culture/Society",
+  "Item/Concept",
+  "Technology",
+  "Event/History",
+  "Uncategorized"
+];
 
 interface LoreEntryFormProps {
   onSubmit: (data: LoreEntryFormData) => void;
@@ -87,9 +108,20 @@ export default function LoreEntryForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Category (Optional)</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g., Location, Character, Item" {...field} disabled={isLoading} />
-              </FormControl>
+              <Select onValueChange={field.onChange} value={field.value} disabled={isLoading}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {PREDEFINED_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}

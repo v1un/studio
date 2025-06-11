@@ -811,21 +811,143 @@ const characterAndSceneFlow = ai.defineFlow(
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
-You are a master storyteller for "{{seriesName}}".
-Create a character and opening scene. Character name: {{characterNameInput}} (if empty, AI decides). Character class: {{characterClassInput}} (if empty, AI decides). Premium AI: {{usePremiumAI}}.
-Generate: sceneDescription (2-3 paragraphs), characterCore (complete profile), currentLocation (specific place name).
+
+You are a master storyteller and canon expert for "{{seriesName}}". Your task is to create an authentic character and opening scene that strictly adheres to the series' established lore, world rules, and character archetypes.
+
+**CANON COMPLIANCE REQUIREMENTS:**
+- Respect ALL established world rules, magic systems, political structures, and cultural norms from the original series
+- Ensure character abilities and limitations align with the series' power scaling and established mechanics
+- Maintain consistency with the series' tone, themes, and narrative style
+- Consider the character's starting point in the series timeline and their canonical knowledge/relationships at that moment
+
+**CHARACTER CREATION GUIDELINES:**
+Character name: {{characterNameInput}} (if empty, create an appropriate name for the series)
+Character class: {{characterClassInput}} (if empty, select a class/role that fits the series' established archetypes)
+
+**STARTING CONDITIONS AWARENESS:**
+- Character begins with NO prior relationships in this world (unless canonically established)
+- Character has NO money, possessions, or local knowledge (unless specified by series canon)
+- Character cannot read/write local language initially (if applicable to series)
+- Character has only basic survival instincts and any canonical abilities from their background
+- Character is unfamiliar with local customs, geography, and social structures
+
+**SCENE DESCRIPTION (2-3 detailed paragraphs):**
+- Set the scene at a canonical starting location appropriate for new arrivals/beginnings in this series
+- Describe the immediate environment with rich sensory details (sights, sounds, smells, atmosphere)
+- Include environmental storytelling that hints at the world's deeper lore and current state
+- Establish the mood and tone consistent with the series' opening moments
+- Show, don't tell - let details reveal the world's nature organically
+
+**CHARACTER PROFILE REQUIREMENTS:**
+- Create a complete character profile with appropriate starting stats for the series
+- Ensure health, mana, and other stats reflect realistic starting values for this world
+- Set language skills appropriately (speaking vs reading/writing based on series canon)
+- Include a compelling backstory that explains their presence in this world
+- Balance character competence with room for growth and learning
+
+**LOCATION SPECIFICATION:**
+- Provide a specific, named location that exists in or fits seamlessly with the series' geography
+- Choose a location that naturally facilitates character introduction and early story development
+- Ensure the location has narrative potential for future scenes and character interactions
+
+Generate: sceneDescription (2-3 rich paragraphs), characterCore (complete profile with appropriate starting conditions), currentLocation (specific canonical place name).
 Output ONLY JSON for Foundation_CharacterAndSceneOutputSchema. Do not include any other conversational text.`,
     });
 
     const foundation_styleGuidePrompt = ai.definePrompt({
         name: 'foundation_styleGuidePrompt', model: modelName, input: { schema: Foundation_StyleGuideInputSchema }, output: { schema: Foundation_StyleGuideOutputSchema }, config: generalModelConfig,
-        prompt: `Create a style guide for "{{seriesName}}". Include tone, narrative style, dialogue approach, and thematic elements.
+        prompt: `You are a literary analyst and expert on "{{seriesName}}". Create a comprehensive style guide that captures the essence of this series' storytelling approach.
+
+**NARRATIVE TONE & ATMOSPHERE:**
+- Analyze the series' overall emotional tone (dark, hopeful, comedic, dramatic, etc.)
+- Identify the primary mood and atmosphere that permeates the series
+- Note how tension and pacing are typically handled
+- Describe the balance between serious and lighter moments
+
+**DIALOGUE STYLE & CHARACTER VOICE:**
+- Examine how characters speak and express themselves in the original series
+- Note any distinctive speech patterns, formality levels, or linguistic quirks
+- Identify how dialogue reveals character personality and relationships
+- Describe the balance between exposition and natural conversation
+
+**THEMATIC ELEMENTS & CORE MESSAGES:**
+- Identify the central themes and philosophical questions the series explores
+- Note recurring motifs, symbols, and metaphors
+- Describe how the series handles moral complexity and character growth
+- Identify what makes this series unique in its genre
+
+**NARRATIVE STRUCTURE & STORYTELLING APPROACH:**
+- Analyze how the series typically structures its story arcs and character development
+- Note the pacing preferences (fast-paced action vs slow character development)
+- Identify how the series handles world-building and exposition
+- Describe the typical relationship between plot and character development
+
+**GENRE CONVENTIONS & UNIQUE ELEMENTS:**
+- Identify which genre conventions the series follows or subverts
+- Note any unique storytelling techniques or narrative innovations
+- Describe how the series balances familiar elements with original concepts
+- Identify signature elements that make this series recognizable
+
+Create a detailed style guide that will ensure all generated content maintains authentic consistency with "{{seriesName}}".
 Output ONLY JSON for Foundation_StyleGuideOutputSchema. Do not include any other conversational text.`,
     });
 
     const foundation_seriesPlotSummaryPrompt = ai.definePrompt({
         name: 'foundation_seriesPlotSummaryPrompt', model: modelName, input: { schema: Foundation_SeriesPlotSummaryInputSchema }, output: { schema: Foundation_SeriesPlotSummaryOutputSchema }, config: plotSummaryModelConfig,
-        prompt: `Create a comprehensive plot summary for "{{seriesName}}" with character {{characterNameInput}}. Include major story arcs, key conflicts, and character development paths.
+        prompt: `You are a comprehensive lore expert for "{{seriesName}}". Create an extensive, detailed plot summary that serves as the foundation for all subsequent content generation.
+
+**CHARACTER CONTEXT:**
+Primary character: {{characterNameInput}} (if specified)
+- Focus on this character's canonical journey, relationships, and development arc
+- Include their starting conditions, abilities, and knowledge state at series beginning
+- Detail their major character growth moments and relationship changes
+
+**COMPREHENSIVE PLOT COVERAGE:**
+Create a detailed summary covering:
+
+**MAJOR STORY ARCS (in chronological order):**
+- Break down the series into distinct narrative arcs with clear beginning/middle/end
+- For each arc: main conflict, key events, character introductions, and resolution
+- Include approximate timeline and how arcs connect to each other
+- Note any parallel storylines or subplots that run alongside main arcs
+
+**KEY CONFLICTS & ANTAGONISTS:**
+- Primary conflicts (internal and external) that drive the narrative
+- Major antagonists and their motivations, methods, and relationship to protagonists
+- Political, social, or cosmic conflicts that shape the world state
+- How conflicts evolve and resolve throughout the series
+
+**WORLD STATE & POLITICAL LANDSCAPE:**
+- Current political situation, power structures, and governing bodies
+- Major factions, organizations, and their relationships/conflicts
+- Economic systems, social hierarchies, and cultural dynamics
+- Geographic regions and their significance to the overall plot
+
+**CHARACTER DEVELOPMENT PATHS:**
+- Major character introductions and their roles in the overarching narrative
+- Character relationship dynamics and how they evolve
+- Key character growth moments, revelations, and transformations
+- Supporting character arcs that intersect with the main storyline
+
+**MAGIC/POWER SYSTEMS & WORLD RULES:**
+- Detailed explanation of any supernatural elements, magic systems, or special abilities
+- Limitations, costs, and consequences of power usage
+- How these systems impact plot development and character capabilities
+- Evolution or revelation of power systems throughout the series
+
+**CRITICAL PLOT POINTS & TURNING MOMENTS:**
+- Major revelations that change character understanding or world state
+- Pivotal battles, confrontations, or dramatic moments
+- Character deaths, betrayals, or major relationship changes
+- World-changing events that alter the status quo
+
+**THEMATIC PROGRESSION:**
+- How central themes develop and are explored throughout the series
+- Moral questions and philosophical elements that drive character decisions
+- Symbolic elements and their significance to the overall narrative
+
+This summary will be used to generate quests, story arcs, character interactions, and world details. Ensure it provides sufficient depth for creating authentic, canon-compliant content while maintaining logical consistency with established lore.
+
 Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema. Do not include any other conversational text.`,
     });
 
@@ -891,9 +1013,65 @@ const characterSkillsFlow = ai.defineFlow(
 
     const foundation_initialCharacterSkillsPrompt = ai.definePrompt({
         name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: generalModelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object. If 'skillsAndAbilities' are provided, each skill MUST have a unique 'id', 'name', 'description', and 'type'.
-For "{{seriesName}}" (Character: {{character.name}} - {{character.class}}, Scene: {{sceneDescription}}, Location: {{currentLocation}}).
-Generate 3-5 starting skills/abilities appropriate for this character and setting.
+        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object. Each skill MUST have a unique 'id', 'name', 'description', and 'type'.
+
+You are a character development expert for "{{seriesName}}". Create starting skills and abilities that are authentic to the series' power systems and character archetypes.
+
+**CONTEXT:**
+Character: {{character.name}} ({{character.class}})
+Character Background: {{character.description}}
+Current Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+**CANON COMPLIANCE FOR SKILLS:**
+- Ensure all skills align with the established power systems and magic rules of "{{seriesName}}"
+- Respect the series' power scaling - starting characters should have appropriately limited abilities
+- Consider the character's background and how they would have acquired these skills
+- Maintain consistency with similar character archetypes from the original series
+
+**STARTING SKILL GUIDELINES:**
+Generate 3-5 starting skills/abilities that follow these principles:
+
+**SKILL BALANCE:**
+- Mix of active abilities and passive traits
+- Include both combat and non-combat skills where appropriate
+- Balance powerful abilities with meaningful limitations or costs
+- Ensure skills complement the character's class and background
+
+**SKILL AUTHENTICITY:**
+- Each skill should feel like it belongs in this series' world
+- Use terminology and concepts consistent with the series' established lore
+- Consider how these skills would be perceived by other characters in the world
+- Ensure skill descriptions match the series' tone and style
+
+**PROGRESSION POTENTIAL:**
+- Design skills that can grow and evolve as the character develops
+- Include hints at advanced techniques or mastery levels
+- Consider how skills might combine or interact with future abilities
+- Leave room for character growth and learning
+
+**SKILL CATEGORIES TO CONSIDER:**
+- Combat abilities (weapon skills, martial techniques, tactical knowledge)
+- Magic or supernatural abilities (if applicable to the series)
+- Social skills (persuasion, deception, leadership, cultural knowledge)
+- Survival skills (navigation, crafting, resource management)
+- Knowledge skills (lore, languages, academic subjects)
+- Physical abilities (athletics, stealth, perception)
+
+**SKILL STRUCTURE REQUIREMENTS:**
+Each skill must include:
+- 'id': Unique identifier (use format: "skill_[descriptive_name]")
+- 'name': Clear, evocative name that fits the series' naming conventions
+- 'description': Detailed explanation of what the skill does, its limitations, and how it manifests
+- 'type': Appropriate category (combat, magic, social, survival, knowledge, physical, etc.)
+
+**LIMITATION AWARENESS:**
+- Consider the character's starting conditions (no money, limited knowledge, etc.)
+- Ensure skills don't contradict the character's inexperience with this world
+- Balance competence with room for growth and learning
+- Avoid skills that would trivialize early challenges
+
+Create skills that feel authentic to "{{seriesName}}" while providing a solid foundation for character development.
 Output ONLY { "skillsAndAbilities": [...] }.`,
     });
 
@@ -973,13 +1151,148 @@ const itemsAndEquipmentFlow = ai.defineFlow(
     // Define item generation prompts (reusing existing ones)
     const foundation_initialInventoryPrompt = ai.definePrompt({
         name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: generalModelConfig,
-        prompt: `Generate starting inventory items for "{{seriesName}}" character {{character.name}} ({{character.class}}).
+        prompt: `You are an item design expert for "{{seriesName}}". Create a starting inventory that reflects the character's realistic starting conditions and the series' established item systems.
+
+**CHARACTER CONTEXT:**
+Character: {{character.name}} ({{character.class}})
+Character Background: {{character.description}}
+Current Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+Currency: {{character.currency}} (starting money)
+Language Reading: {{character.languageReading}}/100
+Language Speaking: {{character.languageSpeaking}}/100
+
+**STARTING CONDITION AWARENESS:**
+- Character begins with minimal possessions (unless canonically specified otherwise)
+- Items should reflect what someone in their situation would realistically have
+- Consider how the character acquired these items (brought from previous life, found, given, etc.)
+- Respect the series' economic systems and item rarity
+
+**INVENTORY GUIDELINES:**
+Generate 3-7 starting inventory items following these principles:
+
+**ITEM AUTHENTICITY:**
+- All items must fit seamlessly within the series' established world and technology level
+- Use naming conventions and descriptions consistent with the series' style
+- Consider cultural and regional variations in item design and availability
+- Ensure items match the series' tone (serious, whimsical, dark, etc.)
+
+**PRACTICAL NECESSITY:**
+- Include basic survival items appropriate for the character's situation
+- Consider immediate needs: food, water, basic tools, clothing
+- Include items that enable basic functionality in the world
+- Balance utility with the character's limited starting resources
+
+**ITEM CATEGORIES TO CONSIDER:**
+- Basic consumables (food, water, basic medicines)
+- Simple tools (rope, basic knife, flint and steel, etc.)
+- Personal effects (letters, mementos, identification if applicable)
+- Basic clothing or accessories beyond equipped items
+- Currency or trade goods (if appropriate to starting conditions)
+- Information items (maps, books, notes - considering literacy limitations)
+
+**ITEM BALANCE:**
+- Avoid overpowered or game-breaking items for starting characters
+- Include items with both benefits and limitations
+- Consider maintenance requirements and durability
+- Ensure items don't trivialize early challenges
+
+**ECONOMIC REALISM:**
+- Items should reflect the character's economic status (likely poor/starting)
+- Consider the local economy and what's available in the starting location
+- Respect currency limitations and purchasing power
+- Include items of varying quality levels
+
+**ITEM STRUCTURE REQUIREMENTS:**
+Each item must include:
+- 'id': Unique identifier
+- 'name': Clear, series-appropriate name
+- 'description': Detailed description including appearance, function, and any special properties
+- 'basePrice': Realistic price in the series' currency system
+- Optional: 'rarity', 'activeEffects' (if the item has special properties)
+
+**NARRATIVE POTENTIAL:**
+- Include items that could lead to interesting story moments
+- Consider items that might be recognized by NPCs or have cultural significance
+- Include items that could be upgraded or modified later
+- Think about how items might be used creatively in various situations
+
+Create an inventory that provides basic functionality while maintaining the challenge and authenticity of starting with limited resources in "{{seriesName}}".
 Output ONLY { "inventory": [...] }.`,
     });
 
     const foundation_initialMainGearPrompt = ai.definePrompt({
         name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: generalModelConfig,
-        prompt: `Generate main gear (weapons, armor) for "{{seriesName}}" character {{character.name}} ({{character.class}}).
+        prompt: `You are a combat equipment specialist for "{{seriesName}}". Create starting main gear (weapons and primary armor) that reflects the character's background and the series' combat systems.
+
+**CHARACTER CONTEXT:**
+Character: {{character.name}} ({{character.class}})
+Character Background: {{character.description}}
+Current Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+**COMBAT SYSTEM COMPLIANCE:**
+- Ensure all gear aligns with the series' established combat mechanics and weapon types
+- Respect the series' technology level and available materials
+- Consider the character's class/role and what weapons they would realistically use
+- Maintain consistency with the series' power scaling for starting equipment
+
+**MAIN GEAR CATEGORIES:**
+Generate 2-4 pieces of main gear including:
+
+**PRIMARY WEAPONS:**
+- Select weapons appropriate for the character's class and background
+- Consider the character's physical capabilities and training
+- Ensure weapons fit the series' combat style and available technology
+- Include both offensive capabilities and realistic limitations
+
+**DEFENSIVE EQUIPMENT:**
+- Armor pieces that provide meaningful protection without being overpowered
+- Consider mobility vs protection trade-offs appropriate to the character
+- Ensure armor fits the series' aesthetic and material availability
+- Include cultural or regional design elements where appropriate
+
+**GEAR AUTHENTICITY REQUIREMENTS:**
+- Use weapon and armor types that exist within the series' world
+- Apply appropriate naming conventions and terminology from the series
+- Consider the craftsmanship quality available to starting characters
+- Ensure gear reflects the character's economic status and access to equipment
+
+**BALANCE CONSIDERATIONS:**
+- Starting gear should provide basic combat capability without being overpowered
+- Include meaningful limitations (durability, maintenance needs, skill requirements)
+- Consider how gear might be upgraded or replaced as the character progresses
+- Ensure gear doesn't trivialize early combat encounters
+
+**EQUIPMENT SLOTS:**
+Consider these primary equipment slots:
+- mainHand: Primary weapon or tool
+- offHand: Secondary weapon, shield, or off-hand tool
+- chest: Primary armor piece
+- head: Helmet or headgear (if appropriate)
+
+**ITEM STRUCTURE REQUIREMENTS:**
+Each piece of gear must include:
+- 'id': Unique identifier
+- 'name': Series-appropriate name
+- 'description': Detailed description including appearance, materials, and combat properties
+- 'equipSlot': Appropriate equipment slot
+- 'basePrice': Realistic price reflecting quality and availability
+- Optional: 'activeEffects' for special properties, 'rarity' for exceptional items
+
+**NARRATIVE INTEGRATION:**
+- Consider how the character acquired this gear (inherited, purchased, found, etc.)
+- Include gear that might be recognized by NPCs or have cultural significance
+- Think about gear maintenance and replacement needs
+- Consider how gear reflects the character's personality and fighting style
+
+**STARTING CONDITION AWARENESS:**
+- Gear should reflect limited starting resources and access
+- Avoid equipment that would be restricted to experienced warriors
+- Consider the character's unfamiliarity with local customs and availability
+- Ensure gear is practical for the character's immediate situation
+
+Create main gear that provides essential combat capability while maintaining authenticity to "{{seriesName}}" and respecting starting character limitations.
 Output ONLY { "mainGear": [...] }.`,
     });
 
@@ -1104,8 +1417,71 @@ const worldFactsFlow = ai.defineFlow(
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
         name: 'foundation_initialWorldFactsPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialWorldFactsOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialWorldFactsOutputSchema'. The 'worldFacts' array is REQUIRED (can be empty).
-For "{{seriesName}}" (Char: {{character.name}} - Desc: {{character.description}}, Reading: {{character.languageReading}}/100, Speaking: {{character.languageSpeaking}}/100, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
-Generate ONLY 'worldFacts': 3-5 key facts.
+
+You are a world-building expert for "{{seriesName}}". Create essential world facts that establish the fundamental rules and current state of the world for this scenario.
+
+**CHARACTER CONTEXT:**
+Character: {{character.name}} ({{character.class}})
+Character Description: {{character.description}}
+Language Reading: {{character.languageReading}}/100
+Language Speaking: {{character.languageSpeaking}}/100
+Current Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+**WORLD FACTS REQUIREMENTS:**
+Generate 5-8 key world facts that establish the foundational knowledge needed for this scenario. Focus on facts that are:
+
+**IMMEDIATELY RELEVANT:**
+- Information that directly impacts the character's current situation
+- Facts about the current location and its immediate surroundings
+- Current political or social climate affecting the area
+- Economic conditions and trade systems in effect
+
+**CANONICALLY ACCURATE:**
+- All facts must align perfectly with the established lore of "{{seriesName}}"
+- Respect the series' timeline and current world state
+- Maintain consistency with known political structures and power dynamics
+- Ensure facts don't contradict established character relationships or world rules
+
+**ACTIONABLE KNOWLEDGE:**
+- Facts that inform decision-making and character interactions
+- Information about local customs, laws, and social expectations
+- Current threats, opportunities, or significant events affecting the region
+- Practical knowledge about survival, commerce, and navigation
+
+**FACT CATEGORIES TO CONSIDER:**
+- **Political/Governance**: Current rulers, laws, political tensions, recent changes
+- **Economic**: Currency systems, trade routes, economic conditions, market availability
+- **Social/Cultural**: Customs, traditions, social hierarchies, cultural tensions
+- **Geographic**: Important locations, travel conditions, regional characteristics
+- **Magical/Supernatural**: Active magical phenomena, supernatural threats or protections
+- **Current Events**: Recent happenings that affect the world state and character opportunities
+
+**STARTING CONDITION AWARENESS:**
+- Consider what a newcomer to this world would need to know immediately
+- Include facts that explain why certain things might be difficult for the character
+- Address language barriers and cultural unfamiliarity where relevant
+- Include information about how newcomers are typically received or treated
+
+**LOGICAL CONSISTENCY:**
+- Ensure facts work together to create a coherent world state
+- Avoid contradictions with the character's background and abilities
+- Consider how facts might influence future story developments
+- Maintain internal logic within the series' established rules
+
+**NARRATIVE UTILITY:**
+- Include facts that create story opportunities and potential conflicts
+- Provide information that can drive character goals and motivations
+- Establish stakes and consequences for character actions
+- Create a foundation for meaningful NPC interactions and quest development
+
+Each world fact should be:
+- Concise but informative (1-2 sentences)
+- Directly relevant to the character's situation
+- Consistent with series canon
+- Useful for informing future story decisions
+
+Create world facts that establish a solid foundation for authentic storytelling within "{{seriesName}}" while respecting the character's starting conditions and knowledge limitations.
 Output ONLY { "worldFacts": [...] }.`,
     });
 
@@ -1169,10 +1545,101 @@ const questsAndArcsFlow = ai.defineFlow(
     const narrative_initialQuestsAndStoryArcsPrompt = ai.definePrompt({
         name: 'narrative_initialQuestsAndStoryArcsPrompt', model: modelName, input: { schema: InitialQuestsAndStoryArcsInputSchema }, output: { schema: InitialQuestsAndStoryArcsOutputSchema }, config: modelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'InitialQuestsAndStoryArcsOutputSchema'. Both 'quests' and 'storyArcs' arrays are REQUIRED (can be empty).
-For "{{seriesName}}" with plot: {{seriesPlotSummary}}
+
+You are a master quest designer and story architect for "{{seriesName}}". Create initial quests and story arcs that provide engaging progression while maintaining perfect canon compliance and logical consistency.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Comprehensive Plot Summary: {{seriesPlotSummary}}
 Character: {{characterProfile.name}} ({{characterProfile.class}}) - {{characterProfile.description}}
-Scene: {{sceneDescription}}, Location: {{currentLocation}}
-Generate initial quests and story arcs.
+Current Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+
+**CANON COMPLIANCE REQUIREMENTS:**
+- All quests and story arcs must align perfectly with the established timeline and world state of "{{seriesName}}"
+- Respect the character's canonical starting position and knowledge limitations
+- Ensure quest objectives don't contradict established series lore or character relationships
+- Maintain consistency with the series' tone, themes, and storytelling approach
+
+**STARTING CONDITION AWARENESS:**
+- Character begins with no money, limited possessions, and minimal local knowledge
+- Character cannot read/write local language initially (if applicable)
+- Character has no established relationships or reputation in this world
+- Character is unfamiliar with local customs, geography, and social structures
+- Design quests that account for these limitations while providing growth opportunities
+
+**STORY ARC DESIGN PRINCIPLES:**
+Generate 3-5 major story arcs that:
+
+**CHRONOLOGICAL PROGRESSION:**
+- Present story arcs in logical chronological order based on the series timeline
+- Each arc should represent a distinct narrative phase with clear beginning, middle, and end
+- Ensure natural progression from character introduction to major series events
+- Consider pacing and character development requirements between arcs
+
+**THEMATIC CONSISTENCY:**
+- Each arc should explore core themes from "{{seriesName}}"
+- Maintain the series' balance between character development and plot advancement
+- Include appropriate moral complexity and decision-making opportunities
+- Ensure arcs contribute to the overall narrative vision of the series
+
+**UNLOCK CONDITIONS:**
+- First arc: Simple conditions like ["Game_started", "Character_arrived_in_world"]
+- Subsequent arcs: Logical progression conditions based on character growth and story development
+- Consider both narrative milestones and character capability requirements
+- Ensure conditions are achievable and don't create impossible barriers
+
+**QUEST DESIGN PRINCIPLES:**
+For the FIRST story arc only, generate 2-4 main quests that:
+
+**IMMEDIATE ACCESSIBILITY:**
+- Can be started given the character's current situation and limitations
+- Don't require resources, knowledge, or relationships the character doesn't have
+- Provide clear, achievable objectives for a newcomer to this world
+- Include appropriate guidance and learning opportunities
+
+**NARRATIVE INTEGRATION:**
+- Directly advance the first story arc's central conflict or theme
+- Introduce key characters, locations, or concepts important to the series
+- Provide meaningful choices that reflect the character's personality and values
+- Create opportunities for character growth and world exploration
+
+**LOGICAL PROGRESSION:**
+- Each quest should build naturally from the previous one
+- Include both immediate objectives and longer-term goals
+- Provide appropriate rewards that help the character progress
+- Consider how quest completion affects the character's situation and capabilities
+
+**CONFLICT PREVENTION:**
+- Ensure quests don't contradict the character's established background or abilities
+- Avoid objectives that would be impossible given the character's starting conditions
+- Don't create quests that conflict with established world rules or character limitations
+- Ensure quest rewards are appropriate for the character's current level and situation
+
+**QUEST STRUCTURE REQUIREMENTS:**
+Each quest must include:
+- 'id': Unique identifier
+- 'description': Clear, engaging description of the quest's purpose and stakes
+- 'type': "main" for story-critical quests
+- 'status': "active" for immediately available quests
+- 'storyArcId': ID of the first story arc
+- 'orderInStoryArc': Numerical order within the arc
+- 'objectives': 1-2 clear, achievable objectives with 'isCompleted: false'
+- 'rewards': Appropriate XP, currency, and items for character progression
+
+**REWARD BALANCE:**
+- XP rewards should reflect quest difficulty and importance
+- Currency rewards should be modest but helpful for a starting character
+- Item rewards should be useful but not overpowered for the character's level
+- Consider both immediate utility and long-term character development
+
+**WORLD INTEGRATION:**
+- Quests should feel like natural extensions of the world and story
+- Include opportunities to interact with important locations and characters
+- Provide information and context that enhances world understanding
+- Create hooks for future story developments and character relationships
+
+Generate story arcs and quests that provide engaging progression while respecting the character's starting limitations and maintaining perfect authenticity to "{{seriesName}}".
 Output ONLY { "quests": [...], "storyArcs": [...] }.`,
     });
 
@@ -1595,8 +2062,575 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
   }
 );
 
-    
+// ===== NEW DEDICATED LORE GENERATION PHASE =====
 
-    
+export type GenerateLoreEntriesInput = {
+  seriesName: string;
+  seriesPlotSummary: string;
+  characterProfile: CharacterProfile;
+  sceneDescription: string;
+  currentLocation: string;
+  worldFacts: string[];
+  usePremiumAI: boolean;
+};
 
+export type GenerateLoreEntriesOutput = {
+  loreEntries: RawLoreEntry[];
+};
 
+const GenerateLoreEntriesInputSchema = z.object({
+  seriesName: z.string(),
+  seriesPlotSummary: z.string(),
+  characterProfile: Foundation_CharacterCoreProfileSchemaInternal,
+  sceneDescription: z.string(),
+  currentLocation: z.string(),
+  worldFacts: z.array(z.string()),
+  usePremiumAI: z.boolean(),
+});
+
+const GenerateLoreEntriesOutputSchema = z.object({
+  loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema).describe("REQUIRED. Each entry needs keyword, content, and category."),
+});
+
+export async function generateLoreEntries(input: GenerateLoreEntriesInput): Promise<GenerateLoreEntriesOutput> {
+  return loreGenerationFlow(input);
+}
+
+const loreGenerationFlow = ai.defineFlow(
+  {
+    name: 'loreGenerationFlow',
+    inputSchema: GenerateLoreEntriesInputSchema,
+    outputSchema: GenerateLoreEntriesOutputSchema,
+  },
+  async (input: GenerateLoreEntriesInput): Promise<GenerateLoreEntriesOutput> => {
+    const flowStartTime = Date.now();
+    console.log(`[${new Date(flowStartTime).toISOString()}] loreGenerationFlow: START for Series: ${input.seriesName}`);
+
+    const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    const modelConfig = { maxOutputTokens: input.usePremiumAI ? 32000 : 16000 };
+
+    // Enhanced lore generation prompts with much more detail and categories
+    const lore_majorCharactersPrompt = ai.definePrompt({
+        name: 'lore_majorCharactersPrompt', model: modelName, input: { schema: GenerateLoreEntriesInputSchema }, output: { schema: z.object({ loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema) }) }, config: modelConfig,
+        prompt: `You are the ultimate character lore expert for "{{seriesName}}". Create comprehensive lore entries for major characters that will appear in or influence this scenario.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Character: {{characterProfile.name}} ({{characterProfile.class}}) - {{characterProfile.description}}
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+World Facts: {{worldFacts}}
+
+**CHARACTER LORE REQUIREMENTS:**
+Generate 15-20 detailed lore entries for MAJOR CHARACTERS from "{{seriesName}}" who are:
+- Central to the main storyline and likely to interact with the player character
+- Important political, social, or magical figures in the world
+- Antagonists, allies, or neutral parties with significant influence
+- Characters whose actions drive major plot developments
+
+**LORE ENTRY GUIDELINES:**
+For each character, create entries that include:
+
+**CORE IDENTITY:**
+- Full name, titles, and how they're commonly addressed
+- Current role, position, or occupation in the world
+- Physical description and distinctive characteristics
+- Personality traits, motivations, and core beliefs
+
+**BACKGROUND & HISTORY:**
+- Origin story and how they came to their current position
+- Major life events that shaped their character
+- Past relationships and how they've evolved
+- Significant achievements, failures, or turning points
+
+**CURRENT STATUS:**
+- Present location and activities
+- Current goals and what they're working toward
+- Recent events affecting their situation
+- Current relationships and alliances
+
+**ABILITIES & RESOURCES:**
+- Special powers, skills, or magical abilities
+- Political influence, wealth, or organizational control
+- Combat capabilities and preferred fighting styles
+- Unique knowledge or information they possess
+
+**RELATIONSHIP DYNAMICS:**
+- How they typically interact with newcomers like {{characterProfile.name}}
+- Their stance toward the player character's class/background
+- Potential for alliance, conflict, or neutrality
+- What they might want from or offer to the player character
+
+**NARRATIVE HOOKS:**
+- Plot threads they're involved in that could affect the player
+- Secrets they know or are hiding
+- Problems they face that might require assistance
+- Opportunities they could provide for character advancement
+
+**CANON COMPLIANCE:**
+- Ensure all information aligns perfectly with established series lore
+- Respect character development arcs and current timeline position
+- Maintain consistency with their canonical personality and motivations
+- Consider their relationships with other major characters
+
+Each lore entry should be 3-4 sentences providing rich, actionable information that enhances storytelling and character interactions.
+
+Output ONLY { "loreEntries": [{"keyword": "Character Name", "content": "...", "category": "Character"}, ...] }.`,
+    });
+
+    const lore_worldLocationsPrompt = ai.definePrompt({
+        name: 'lore_worldLocationsPrompt', model: modelName, input: { schema: GenerateLoreEntriesInputSchema }, output: { schema: z.object({ loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema) }) }, config: modelConfig,
+        prompt: `You are the master geographer and location expert for "{{seriesName}}". Create comprehensive lore entries for important locations that define the world's geography and culture.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Character: {{characterProfile.name}} starting at {{currentLocation}}
+Scene: {{sceneDescription}}
+World Facts: {{worldFacts}}
+
+**LOCATION LORE REQUIREMENTS:**
+Generate 15-20 detailed lore entries for MAJOR LOCATIONS including:
+- Capital cities and major urban centers
+- Important regions, kingdoms, or territories
+- Significant landmarks, dungeons, or mystical sites
+- Trade routes, borders, and strategic locations
+- Cultural or religious centers of importance
+
+**LOCATION CATEGORIES:**
+**MAJOR CITIES & SETTLEMENTS:**
+- Political capitals and centers of power
+- Trade hubs and commercial centers
+- Cultural or religious centers
+- Military strongholds and fortifications
+
+**GEOGRAPHIC REGIONS:**
+- Kingdoms, provinces, or territorial divisions
+- Natural regions (forests, mountains, deserts, etc.)
+- Magical or supernatural areas
+- Contested or dangerous territories
+
+**SIGNIFICANT LANDMARKS:**
+- Ancient ruins or historical sites
+- Magical locations or sources of power
+- Natural wonders or geographic features
+- Battlefields or sites of historical importance
+
+**INFRASTRUCTURE & ROUTES:**
+- Major roads, trade routes, and travel paths
+- Borders, checkpoints, and controlled passages
+- Ports, harbors, and transportation hubs
+- Communication networks and way stations
+
+**LORE ENTRY DETAILS:**
+For each location, include:
+
+**PHYSICAL DESCRIPTION:**
+- Geographic features, climate, and natural characteristics
+- Architecture, layout, and distinctive visual elements
+- Size, population, and general atmosphere
+- Notable buildings, districts, or areas within
+
+**POLITICAL & SOCIAL STRUCTURE:**
+- Governing system and current leadership
+- Social hierarchy and cultural norms
+- Economic base and primary industries
+- Relationship with neighboring regions
+
+**HISTORICAL SIGNIFICANCE:**
+- Founding story and historical development
+- Major events that occurred there
+- Role in larger conflicts or political movements
+- Cultural or religious importance
+
+**CURRENT STATUS:**
+- Present political situation and stability
+- Economic conditions and trade relationships
+- Current threats, opportunities, or challenges
+- Recent events affecting the location
+
+**PRACTICAL INFORMATION:**
+- Travel conditions and accessibility
+- Services available to visitors (inns, shops, etc.)
+- Local laws, customs, and expectations
+- Dangers or precautions travelers should know
+
+**NARRATIVE POTENTIAL:**
+- Story opportunities and adventure hooks
+- Important NPCs likely to be found there
+- Resources or information available
+- How the location might factor into larger plots
+
+Each entry should provide 3-4 sentences of rich, practical information that helps players understand and navigate the world.
+
+Output ONLY { "loreEntries": [{"keyword": "Location Name", "content": "...", "category": "Location"}, ...] }.`,
+    });
+
+    // Prepare input for all lore prompts
+    const loreInput = input;
+
+    // Additional comprehensive lore prompts
+    const lore_factionsAndOrganizationsPrompt = ai.definePrompt({
+        name: 'lore_factionsAndOrganizationsPrompt', model: modelName, input: { schema: GenerateLoreEntriesInputSchema }, output: { schema: z.object({ loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema) }) }, config: modelConfig,
+        prompt: `You are the political and organizational expert for "{{seriesName}}". Create detailed lore entries for major factions, organizations, and power structures that shape the world.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Character: {{characterProfile.name}} ({{characterProfile.class}})
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+World Facts: {{worldFacts}}
+
+**FACTION LORE REQUIREMENTS:**
+Generate 12-15 detailed lore entries for MAJOR FACTIONS AND ORGANIZATIONS including:
+- Political parties, governments, and ruling bodies
+- Military organizations, knightly orders, and guard units
+- Religious institutions, cults, and spiritual organizations
+- Merchant guilds, trade organizations, and economic powers
+- Criminal organizations, rebel groups, and underground movements
+- Academic institutions, magical schools, and research organizations
+
+For each faction/organization, include:
+- Leadership structure and key figures
+- Goals, motivations, and methods
+- Resources, influence, and territorial control
+- Relationships with other factions
+- How they might interact with newcomers like {{characterProfile.name}}
+- Current activities and recent developments
+
+Each entry should be 3-4 sentences providing actionable information for political intrigue and faction interactions.
+
+Output ONLY { "loreEntries": [{"keyword": "Faction Name", "content": "...", "category": "Faction/Organization"}, ...] }.`,
+    });
+
+    const lore_magicAndPowerSystemsPrompt = ai.definePrompt({
+        name: 'lore_magicAndPowerSystemsPrompt', model: modelName, input: { schema: GenerateLoreEntriesInputSchema }, output: { schema: z.object({ loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema) }) }, config: modelConfig,
+        prompt: `You are the magic and power systems expert for "{{seriesName}}". Create comprehensive lore entries explaining the supernatural elements and power systems that govern this world.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Character: {{characterProfile.name}} ({{characterProfile.class}})
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+World Facts: {{worldFacts}}
+
+**MAGIC/POWER SYSTEM LORE REQUIREMENTS:**
+Generate 10-12 detailed lore entries covering:
+- Core magic systems and how they function
+- Types of magical abilities and their limitations
+- Sources of power and how they're accessed
+- Magical artifacts, items, and their significance
+- Supernatural creatures and entities
+- Magical locations and phenomena
+- Rules, restrictions, and consequences of power usage
+- Training methods and magical education
+- Cultural attitudes toward magic and power
+
+For each system/concept, include:
+- How it works mechanically within the world
+- Who can access it and under what conditions
+- Limitations, costs, and potential dangers
+- How it's perceived by society
+- Relevance to the current story and character situation
+
+Each entry should be 3-4 sentences providing clear understanding of the world's supernatural elements.
+
+Output ONLY { "loreEntries": [{"keyword": "Magic/Power Concept", "content": "...", "category": "Magic/Power"}, ...] }.`,
+    });
+
+    const lore_historyAndEventsPrompt = ai.definePrompt({
+        name: 'lore_historyAndEventsPrompt', model: modelName, input: { schema: GenerateLoreEntriesInputSchema }, output: { schema: z.object({ loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema) }) }, config: modelConfig,
+        prompt: `You are the historian and chronicler for "{{seriesName}}". Create detailed lore entries for major historical events and background elements that shaped the current world state.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Character: {{characterProfile.name}} ({{characterProfile.class}})
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+World Facts: {{worldFacts}}
+
+**HISTORICAL LORE REQUIREMENTS:**
+Generate 10-12 detailed lore entries covering:
+- Major wars, conflicts, and their outcomes
+- Founding events and origin stories of nations/organizations
+- Catastrophic events that changed the world
+- Important treaties, agreements, and political changes
+- Legendary figures and their historical impact
+- Cultural developments and social movements
+- Economic shifts and trade developments
+- Technological or magical discoveries
+- Recent events affecting the current situation
+
+For each historical element, include:
+- What happened and when it occurred
+- Key figures involved and their roles
+- Consequences and lasting effects on the world
+- How it influences current politics and society
+- Relevance to the character's present situation
+
+Each entry should be 3-4 sentences providing context for understanding the current world state.
+
+Output ONLY { "loreEntries": [{"keyword": "Historical Event/Element", "content": "...", "category": "History/Events"}, ...] }.`,
+    });
+
+    const lore_cultureAndSocietyPrompt = ai.definePrompt({
+        name: 'lore_cultureAndSocietyPrompt', model: modelName, input: { schema: GenerateLoreEntriesInputSchema }, output: { schema: z.object({ loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema) }) }, config: modelConfig,
+        prompt: `You are the cultural anthropologist and society expert for "{{seriesName}}". Create detailed lore entries for cultural elements, social systems, and daily life aspects that define how people live in this world.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Character: {{characterProfile.name}} ({{characterProfile.class}})
+Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+World Facts: {{worldFacts}}
+
+**CULTURAL LORE REQUIREMENTS:**
+Generate 10-12 detailed lore entries covering:
+- Social hierarchies and class systems
+- Cultural traditions, festivals, and ceremonies
+- Religious beliefs and spiritual practices
+- Languages, dialects, and communication systems
+- Art, literature, and entertainment forms
+- Food, cuisine, and dining customs
+- Fashion, clothing, and personal appearance norms
+- Marriage, family structures, and social relationships
+- Education systems and knowledge transmission
+- Economic systems and trade practices
+- Legal systems and justice concepts
+
+For each cultural element, include:
+- How it functions in daily life
+- Regional or class variations
+- Historical development and current state
+- How outsiders like {{characterProfile.name}} might encounter it
+- Social expectations and potential cultural misunderstandings
+
+Each entry should be 3-4 sentences providing practical cultural knowledge for character interactions.
+
+Output ONLY { "loreEntries": [{"keyword": "Cultural Element", "content": "...", "category": "Culture/Society"}, ...] }.`,
+    });
+
+    // Execute all lore generation prompts in parallel
+    let majorCharactersLore, worldLocationsLore, factionsLore, magicSystemsLore, historyLore, cultureLore;
+    try {
+        console.log(`[${new Date().toISOString()}] loreGenerationFlow: Firing parallel lore generation calls.`);
+        [
+            majorCharactersLore,
+            worldLocationsLore,
+            factionsLore,
+            magicSystemsLore,
+            historyLore,
+            cultureLore
+        ] = await Promise.all([
+            lore_majorCharactersPrompt(loreInput).then(r => r.output),
+            lore_worldLocationsPrompt(loreInput).then(r => r.output),
+            lore_factionsAndOrganizationsPrompt(loreInput).then(r => r.output),
+            lore_magicAndPowerSystemsPrompt(loreInput).then(r => r.output),
+            lore_historyAndEventsPrompt(loreInput).then(r => r.output),
+            lore_cultureAndSocietyPrompt(loreInput).then(r => r.output)
+        ]);
+    } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] loreGenerationFlow: Parallel lore calls FAILED. Error: ${e.message}`);
+        throw new Error(`AI failed during lore generation. Details: ${e.message}`);
+    }
+
+    // Combine all lore entries
+    const allLoreEntries: RawLoreEntry[] = [
+        ...(majorCharactersLore?.loreEntries || []),
+        ...(worldLocationsLore?.loreEntries || []),
+        ...(factionsLore?.loreEntries || []),
+        ...(magicSystemsLore?.loreEntries || []),
+        ...(historyLore?.loreEntries || []),
+        ...(cultureLore?.loreEntries || [])
+    ];
+
+    console.log(`[${new Date().toISOString()}] loreGenerationFlow: Generated ${allLoreEntries.length} lore entries.`);
+
+    const finalOutput: GenerateLoreEntriesOutput = {
+      loreEntries: allLoreEntries.filter(entry => entry.keyword && entry.content),
+    };
+
+    console.log(`[${new Date().toISOString()}] loreGenerationFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
+    return finalOutput;
+  }
+);
+
+// ===== SEPARATE NPC GENERATION PHASE =====
+
+export type GenerateNPCsInput = {
+  seriesName: string;
+  seriesPlotSummary: string;
+  characterProfile: CharacterProfile;
+  sceneDescription: string;
+  currentLocation: string;
+  loreEntries: RawLoreEntry[];
+  usePremiumAI: boolean;
+};
+
+export type GenerateNPCsOutput = {
+  trackedNPCs: NPCProfileType[];
+};
+
+export async function generateNPCs(input: GenerateNPCsInput): Promise<GenerateNPCsOutput> {
+  return npcGenerationFlow(input);
+}
+
+const npcGenerationFlow = ai.defineFlow(
+  {
+    name: 'npcGenerationFlow',
+    inputSchema: z.object({
+      seriesName: z.string(),
+      seriesPlotSummary: z.string(),
+      characterProfile: Foundation_CharacterCoreProfileSchemaInternal,
+      sceneDescription: z.string(),
+      currentLocation: z.string(),
+      loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema),
+      usePremiumAI: z.boolean(),
+    }),
+    outputSchema: z.object({
+      trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal),
+    }),
+  },
+  async (input: GenerateNPCsInput): Promise<GenerateNPCsOutput> => {
+    const flowStartTime = Date.now();
+    console.log(`[${new Date(flowStartTime).toISOString()}] npcGenerationFlow: START for Series: ${input.seriesName}`);
+
+    const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
+    const modelConfig = { maxOutputTokens: input.usePremiumAI ? 16000 : 8000 };
+
+    // Enhanced NPC generation prompt
+    const enhanced_initialTrackedNPCsPrompt = ai.definePrompt({
+        name: 'enhanced_initialTrackedNPCsPrompt', model: modelName,
+        input: { schema: z.object({
+          seriesName: z.string(),
+          seriesPlotSummary: z.string(),
+          characterProfile: Foundation_CharacterCoreProfileSchemaInternal,
+          sceneDescription: z.string(),
+          currentLocation: z.string(),
+          loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema),
+        }) },
+        output: { schema: z.object({ trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal) }) },
+        config: modelConfig,
+        prompt: `You are an expert character creator for "{{seriesName}}". Using the provided lore entries as reference, create NPCs that will populate the immediate scenario and provide ongoing story opportunities.
+
+**CONTEXT:**
+Series: {{seriesName}}
+Plot Summary: {{seriesPlotSummary}}
+Player Character: {{characterProfile.name}} ({{characterProfile.class}}) - {{characterProfile.description}}
+Current Scene: {{sceneDescription}}
+Location: {{currentLocation}}
+Available Lore: {{loreEntries}}
+
+**NPC CREATION REQUIREMENTS:**
+Generate 8-12 NPCs including:
+
+**IMMEDIATE SCENE NPCs (3-4 characters):**
+- NPCs physically present in the current scene
+- Characters the player will interact with immediately
+- Include a mix of helpful, neutral, and potentially challenging personalities
+- Ensure they have clear reasons for being in this location
+
+**MAJOR STORY NPCs (4-6 characters):**
+- Important characters from the series who will influence the story
+- Key allies, mentors, or antagonists the player should know about
+- Characters who drive major plot developments
+- Include both accessible and distant/powerful figures
+
+**LOCAL COMMUNITY NPCs (2-3 characters):**
+- Merchants, guards, innkeepers, or other service providers
+- Local residents who provide world flavor and practical services
+- Characters who can provide information or minor quests
+- Include cultural representatives of the local area
+
+**NPC DESIGN PRINCIPLES:**
+
+**CANON COMPLIANCE:**
+- All NPCs must fit perfectly within the established world of "{{seriesName}}"
+- Respect existing character relationships and power dynamics
+- Maintain consistency with the series' tone and character archetypes
+- Use appropriate naming conventions and cultural elements
+
+**RELATIONSHIP AWARENESS:**
+- Set initial relationship status based on the player character's canonical position
+- Consider how NPCs would realistically react to someone like {{characterProfile.name}}
+- Account for the character's starting conditions (no money, limited knowledge, etc.)
+- Include NPCs with varying levels of helpfulness and accessibility
+
+**FUNCTIONAL DIVERSITY:**
+- Include NPCs who serve different narrative and practical functions
+- Mix of combat-capable and non-combat characters
+- Variety of social classes, occupations, and personality types
+- Balance between approachable and intimidating characters
+
+**STORY INTEGRATION:**
+- Each NPC should have clear potential for ongoing story development
+- Include characters who can provide quests, information, or services
+- Create NPCs with their own goals and motivations
+- Ensure NPCs can drive plot forward through their actions and needs
+
+**NPC STRUCTURE REQUIREMENTS:**
+Each NPC must include:
+- 'id': Unique identifier
+- 'name': Series-appropriate name
+- 'description': Detailed physical and personality description
+- 'relationshipStatus': Numerical value (-100 to 100) based on canonical relationships
+- 'knownFacts': Array of information the NPC knows (can be empty initially)
+- 'firstEncounteredLocation' and 'lastKnownLocation': Set to appropriate locations
+- 'firstEncounteredTurnId' and 'lastSeenTurnId': Set to "initial_turn_0"
+
+**OPTIONAL ENHANCEMENTS:**
+- 'classOrRole': Character's profession or role in society
+- 'health' and 'maxHealth': For combat-capable NPCs
+- 'mana' and 'maxMana': For magic-using NPCs
+- 'isMerchant': true for merchant NPCs with 'merchantInventory'
+
+**STARTING CONDITION CONSIDERATIONS:**
+- NPCs should react appropriately to a newcomer with limited resources
+- Include characters who might help or hinder someone in the player's situation
+- Consider language barriers and cultural misunderstandings
+- Ensure NPC reactions are realistic for the character's starting state
+
+**EXCLUSIONS:**
+- Do NOT include {{characterProfile.name}} in the NPC list
+- Avoid creating NPCs that contradict established series characters
+- Don't create overpowered NPCs that would trivialize challenges
+
+Create NPCs that provide rich interaction opportunities while maintaining authenticity to "{{seriesName}}" and supporting engaging storytelling.
+Output ONLY { "trackedNPCs": [...] }.`,
+    });
+
+    const npcsInput = {
+      seriesName: input.seriesName,
+      seriesPlotSummary: input.seriesPlotSummary,
+      characterProfile: input.characterProfile,
+      sceneDescription: input.sceneDescription,
+      currentLocation: input.currentLocation,
+      loreEntries: input.loreEntries,
+    };
+
+    let npcsResult;
+    try {
+        const { output } = await enhanced_initialTrackedNPCsPrompt(npcsInput);
+        npcsResult = output;
+    } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] npcGenerationFlow: FAILED. Error: ${e.message}`);
+        throw new Error(`AI failed during NPC generation. Details: ${e.message}`);
+    }
+
+    if (!npcsResult || !npcsResult.trackedNPCs) {
+      throw new Error('Failed to generate NPCs (REQUIRED field missing).');
+    }
+
+    const finalOutput: GenerateNPCsOutput = {
+      trackedNPCs: npcsResult.trackedNPCs.filter(npc => npc.name !== input.characterProfile.name),
+    };
+
+    console.log(`[${new Date().toISOString()}] npcGenerationFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
+    return finalOutput;
+  }
+);

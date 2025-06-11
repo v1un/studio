@@ -7,13 +7,12 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle, AlertCircle, Play, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { 
+import type {
   GenerateCharacterAndSceneInput, GenerateCharacterAndSceneOutput,
   GenerateCharacterSkillsInput, GenerateCharacterSkillsOutput,
   GenerateItemsAndEquipmentInput, GenerateItemsAndEquipmentOutput,
   GenerateWorldFactsInput, GenerateWorldFactsOutput,
-  GenerateQuestsAndArcsInput, GenerateQuestsAndArcsOutput,
-  GenerateNPCsAndLoreInput, GenerateNPCsAndLoreOutput
+  GenerateQuestsAndArcsInput, GenerateQuestsAndArcsOutput
 } from "@/ai/flows/generate-scenario-from-series";
 
 export type ScenarioGenerationPhase = {
@@ -77,6 +76,13 @@ const INITIAL_PHASES: ScenarioGenerationPhase[] = [
     estimatedTime: '8-12 seconds',
   },
   {
+    id: 'lore-generation',
+    name: 'Lore & World Building',
+    description: 'Creating comprehensive world lore, character backgrounds, and cultural details',
+    status: 'pending',
+    estimatedTime: '25-30 seconds',
+  },
+  {
     id: 'quests-arcs',
     name: 'Quests & Story Arcs',
     description: 'Designing initial quests and overarching story structure',
@@ -84,11 +90,11 @@ const INITIAL_PHASES: ScenarioGenerationPhase[] = [
     estimatedTime: '20-25 seconds',
   },
   {
-    id: 'npcs-lore',
-    name: 'NPCs & Lore Entries',
-    description: 'Populating the world with characters and detailed lore',
+    id: 'npcs',
+    name: 'NPCs & Characters',
+    description: 'Populating the world with important characters and relationships',
     status: 'pending',
-    estimatedTime: '20-25 seconds',
+    estimatedTime: '15-20 seconds',
   },
 ];
 
@@ -143,11 +149,14 @@ export default function ScenarioGenerationWizard({
         case 'world-facts':
           result = await executeWorldFactsPhase();
           break;
+        case 'lore-generation':
+          result = await executeLoreGenerationPhase();
+          break;
         case 'quests-arcs':
           result = await executeQuestsAndArcsPhase();
           break;
-        case 'npcs-lore':
-          result = await executeNPCsAndLorePhase();
+        case 'npcs':
+          result = await executeNPCsPhase();
           break;
         default:
           throw new Error(`Unknown phase: ${phase.id}`);
@@ -284,26 +293,52 @@ export default function ScenarioGenerationWizard({
     return await generateQuestsAndArcs(input);
   };
 
-  const executeNPCsAndLorePhase = async (): Promise<GenerateNPCsAndLoreOutput> => {
-    const { generateNPCsAndLore } = await import("@/ai/flows/generate-scenario-from-series");
-    
+  const executeLoreGenerationPhase = async () => {
+    const { generateLoreEntries } = await import("@/ai/flows/generate-scenario-from-series");
+
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
-    
-    if (!characterSceneResult || !skillsResult) {
+    const worldFactsResult = generationData.phases.find(p => p.id === 'world-facts')?.result as GenerateWorldFactsOutput;
+
+    if (!characterSceneResult || !skillsResult || !worldFactsResult) {
       throw new Error("Previous phases must be completed first");
     }
 
-    const input: GenerateNPCsAndLoreInput = {
+    const input = {
       seriesName: generationData.seriesName,
       seriesPlotSummary: characterSceneResult.seriesPlotSummary,
       characterProfile: skillsResult.updatedCharacterProfile,
       sceneDescription: characterSceneResult.sceneDescription,
       currentLocation: characterSceneResult.currentLocation,
+      worldFacts: worldFactsResult.worldFacts,
       usePremiumAI: generationData.usePremiumAI,
     };
 
-    return await generateNPCsAndLore(input);
+    return await generateLoreEntries(input);
+  };
+
+  const executeNPCsPhase = async () => {
+    const { generateNPCs } = await import("@/ai/flows/generate-scenario-from-series");
+
+    const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
+    const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
+    const loreResult = generationData.phases.find(p => p.id === 'lore-generation')?.result;
+
+    if (!characterSceneResult || !skillsResult || !loreResult) {
+      throw new Error("Previous phases must be completed first");
+    }
+
+    const input = {
+      seriesName: generationData.seriesName,
+      seriesPlotSummary: characterSceneResult.seriesPlotSummary,
+      characterProfile: skillsResult.updatedCharacterProfile,
+      sceneDescription: characterSceneResult.sceneDescription,
+      currentLocation: characterSceneResult.currentLocation,
+      loreEntries: loreResult.loreEntries,
+      usePremiumAI: generationData.usePremiumAI,
+    };
+
+    return await generateNPCs(input);
   };
 
   const finalizeScenario = async () => {
@@ -312,18 +347,20 @@ export default function ScenarioGenerationWizard({
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
     const itemsResult = generationData.phases.find(p => p.id === 'items-equipment')?.result as GenerateItemsAndEquipmentOutput;
     const worldFactsResult = generationData.phases.find(p => p.id === 'world-facts')?.result as GenerateWorldFactsOutput;
+    const loreResult = generationData.phases.find(p => p.id === 'lore-generation')?.result;
     const questsResult = generationData.phases.find(p => p.id === 'quests-arcs')?.result as GenerateQuestsAndArcsOutput;
-    const npcsLoreResult = generationData.phases.find(p => p.id === 'npcs-lore')?.result as GenerateNPCsAndLoreOutput;
+    const npcsResult = generationData.phases.find(p => p.id === 'npcs')?.result;
 
     // Check if all required results are available
-    if (!characterSceneResult || !skillsResult || !itemsResult || !worldFactsResult || !questsResult || !npcsLoreResult) {
+    if (!characterSceneResult || !skillsResult || !itemsResult || !worldFactsResult || !loreResult || !questsResult || !npcsResult) {
       console.error('Missing phase results:', {
         characterSceneResult: !!characterSceneResult,
         skillsResult: !!skillsResult,
         itemsResult: !!itemsResult,
         worldFactsResult: !!worldFactsResult,
+        loreResult: !!loreResult,
         questsResult: !!questsResult,
-        npcsLoreResult: !!npcsLoreResult,
+        npcsResult: !!npcsResult,
       });
       toast({
         title: "Error",
@@ -344,8 +381,8 @@ export default function ScenarioGenerationWizard({
       seriesPlotSummary: characterSceneResult.seriesPlotSummary,
       quests: questsResult.quests,
       storyArcs: questsResult.storyArcs,
-      trackedNPCs: npcsLoreResult.trackedNPCs,
-      initialLoreEntries: npcsLoreResult.initialLoreEntries,
+      trackedNPCs: npcsResult.trackedNPCs,
+      initialLoreEntries: loreResult.loreEntries,
     };
 
     onComplete(finalResult);

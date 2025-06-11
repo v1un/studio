@@ -14,6 +14,14 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -32,38 +40,92 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LibraryIcon, InfoIcon, PlusCircleIcon, Edit3Icon, Trash2Icon, Loader2 } from "lucide-react";
+import { LibraryIcon, InfoIcon, PlusCircleIcon, Edit3Icon, Trash2Icon, Loader2, Search, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 export default function LorebookDisplay() {
   const [loreEntries, setLoreEntries] = useState<LoreEntry[]>([]);
+  const [filteredEntries, setFilteredEntries] = useState<LoreEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFormLoading, setIsFormLoading] = useState(false);
-  
+
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [entryToEdit, setEntryToEdit] = useState<LoreEntry | null>(null);
   const [entryToDelete, setEntryToDelete] = useState<LoreEntry | null>(null);
+
+  // Filtering and search state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const { toast } = useToast();
 
   const fetchLoreEntries = useCallback(() => {
     setIsLoading(true);
     const entries = getLorebook();
-    // Sort entries by keyword for consistent display, then by createdAt
+    // Sort entries by category first, then by keyword
     entries.sort((a, b) => {
-      const keywordComp = a.keyword.toLowerCase().localeCompare(b.keyword.toLowerCase());
-      if (keywordComp !== 0) return keywordComp;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      // Sort by category first (with "Character" first, then alphabetically)
+      const categoryA = a.category || "Uncategorized";
+      const categoryB = b.category || "Uncategorized";
+
+      if (categoryA === "Character" && categoryB !== "Character") return -1;
+      if (categoryB === "Character" && categoryA !== "Character") return 1;
+
+      const categoryComp = categoryA.localeCompare(categoryB);
+      if (categoryComp !== 0) return categoryComp;
+
+      // Then sort by keyword within category
+      return a.keyword.toLowerCase().localeCompare(b.keyword.toLowerCase());
     });
     setLoreEntries(entries);
     setIsLoading(false);
   }, []);
 
+  // Filter entries based on search term and category
+  const filterEntries = useCallback(() => {
+    let filtered = loreEntries;
+
+    // Filter by category
+    if (selectedCategory !== "all") {
+      filtered = filtered.filter(entry =>
+        (entry.category || "Uncategorized") === selectedCategory
+      );
+    }
+
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(entry =>
+        entry.keyword.toLowerCase().includes(term) ||
+        entry.content.toLowerCase().includes(term)
+      );
+    }
+
+    setFilteredEntries(filtered);
+  }, [loreEntries, selectedCategory, searchTerm]);
+
+  // Get unique categories for filter dropdown
+  const availableCategories = useCallback(() => {
+    const categories = new Set<string>();
+    loreEntries.forEach(entry => {
+      categories.add(entry.category || "Uncategorized");
+    });
+    return Array.from(categories).sort((a, b) => {
+      if (a === "Character") return -1;
+      if (b === "Character") return 1;
+      return a.localeCompare(b);
+    });
+  }, [loreEntries]);
+
   useEffect(() => {
     fetchLoreEntries();
   }, [fetchLoreEntries]);
+
+  useEffect(() => {
+    filterEntries();
+  }, [filterEntries]);
 
   const handleCreateSubmit = async (data: LoreEntryFormData) => {
     setIsFormLoading(true);
@@ -157,15 +219,71 @@ export default function LorebookDisplay() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Search and Filter Controls */}
+          {loreEntries.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  placeholder="Search lore entries..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter className="text-muted-foreground w-4 h-4" />
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {availableCategories().map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
           {loreEntries.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center p-6 border rounded-md bg-background/50">
               <InfoIcon className="w-12 h-12 text-muted-foreground mb-3" />
               <p className="text-muted-foreground text-lg">Your Lorebook is currently empty.</p>
               <p className="text-sm text-muted-foreground mt-1">Create your first entry or discover lore as you play!</p>
             </div>
+          ) : filteredEntries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center text-center p-6 border rounded-md bg-background/50">
+              <Search className="w-12 h-12 text-muted-foreground mb-3" />
+              <p className="text-muted-foreground text-lg">No lore entries match your search.</p>
+              <p className="text-sm text-muted-foreground mt-1">Try adjusting your search terms or category filter.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => {
+                  setSearchTerm("");
+                  setSelectedCategory("all");
+                }}
+              >
+                Clear Filters
+              </Button>
+            </div>
           ) : (
-            <Accordion type="single" collapsible className="w-full">
-              {loreEntries.map((entry) => (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm text-muted-foreground">
+                  Showing {filteredEntries.length} of {loreEntries.length} entries
+                  {selectedCategory !== "all" && ` in ${selectedCategory}`}
+                  {searchTerm && ` matching "${searchTerm}"`}
+                </p>
+              </div>
+              <Accordion type="single" collapsible className="w-full">
+                {filteredEntries.map((entry) => (
                 <AccordionItem value={entry.id} key={entry.id}>
                   <AccordionTrigger className="text-lg hover:no-underline group">
                     <div className="flex items-center justify-between w-full pr-2">
@@ -206,7 +324,8 @@ export default function LorebookDisplay() {
                   </AccordionContent>
                 </AccordionItem>
               ))}
-            </Accordion>
+              </Accordion>
+            </>
           )}
         </CardContent>
       </Card>
