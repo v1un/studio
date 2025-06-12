@@ -24,6 +24,8 @@ import type {
 import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
+import { migrateToEnhancedState, validateEnhancedState } from '@/lib/enhanced-state-manager';
+import { formatEnhancedContextForAI } from '@/lib/enhanced-context-formatter';
 import { produce } from 'immer';
 import { shouldUseMultiPhase, createMetricsTracker, type SceneGenerationMetrics } from './scene-generation-utils';
 
@@ -338,6 +340,13 @@ const NarrativeAndEventsPromptInputSchema = GenerateNextSceneInputSchemaInternal
   formattedSkillsString: z.string(),
   formattedActiveTemporaryEffectsString: z.string(),
   formattedStoryArcsString: z.string(),
+  // Enhanced context fields
+  enhancedEmotionalContext: z.string(),
+  enhancedRelationshipContext: z.string(),
+  enhancedEnvironmentalContext: z.string(),
+  enhancedNarrativeContext: z.string(),
+  enhancedPlayerContext: z.string(),
+  enhancedConsequenceContext: z.string(),
 });
 
 
@@ -669,9 +678,17 @@ const generateNextSceneFlow = ai.defineFlow(
   async (input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> => {
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     const modelConfig = input.usePremiumAI
-        ? { maxOutputTokens: 32000 } 
+        ? { maxOutputTokens: 32000 }
         : { maxOutputTokens: 8000 };
     const localCorrectionWarnings: string[] = [];
+
+    // Migrate and validate enhanced state
+    const enhancedStoryState = migrateToEnhancedState(input.storyState);
+    const stateValidationWarnings = validateEnhancedState(enhancedStoryState);
+    localCorrectionWarnings.push(...stateValidationWarnings);
+
+    // Format enhanced context for AI
+    const enhancedContext = formatEnhancedContextForAI(enhancedStoryState);
 
     // This prompt now focuses on generating the narrative, events, and THE FULL UPDATED STORY STATE
     const narrativeAndStateUpdatePrompt = ai.definePrompt({
@@ -701,6 +718,23 @@ Quests: {{{formattedQuestsString}}}
 Story Arcs: {{{formattedStoryArcsString}}}
 World Facts: {{#each storyState.worldFacts}}- {{{this}}}{{else}}- None.{{/each}}
 Tracked NPCs: {{{formattedTrackedNPCsString}}}
+
+=== ENHANCED CONTEXT ===
+Character Emotional State: {{{enhancedEmotionalContext}}}
+
+{{{enhancedRelationshipContext}}}
+
+Environmental Context:
+{{{enhancedEnvironmentalContext}}}
+
+Narrative Context:
+{{{enhancedNarrativeContext}}}
+
+Player Preferences: {{{enhancedPlayerContext}}}
+
+Active Consequences:
+{{{enhancedConsequenceContext}}}
+=== END ENHANCED CONTEXT ===
 
 **Your Task (Strictly Adhere to GenerateNextSceneOutputSchemaInternal - deepPartial):**
 1.  **Generate Narrative (generatedMessages):** Continue the story. Each message MUST have 'speaker' and 'content'. (REQUIRED)
@@ -746,22 +780,30 @@ Ensure your ENTIRE output is a single JSON object. ALL numeric fields (prices, s
 `,
     });
 
-    const formattedEquippedItemsString = formatEquippedItems(input.storyState.equippedItems);
-    const formattedQuestsString = formatQuests(input.storyState.quests);
-    const formattedTrackedNPCsString = formatTrackedNPCs(input.storyState.trackedNPCs);
-    const formattedSkillsString = formatSkills(input.storyState.character.skillsAndAbilities);
-    const formattedActiveTemporaryEffectsString = formatActiveTemporaryEffects(input.storyState.character.activeTemporaryEffects);
-    const formattedStoryArcsString = formatStoryArcs(input.storyState.storyArcs, input.storyState.currentStoryArcId);
+    const formattedEquippedItemsString = formatEquippedItems(enhancedStoryState.equippedItems);
+    const formattedQuestsString = formatQuests(enhancedStoryState.quests);
+    const formattedTrackedNPCsString = formatTrackedNPCs(enhancedStoryState.trackedNPCs);
+    const formattedSkillsString = formatSkills(enhancedStoryState.character.skillsAndAbilities);
+    const formattedActiveTemporaryEffectsString = formatActiveTemporaryEffects(enhancedStoryState.character.activeTemporaryEffects);
+    const formattedStoryArcsString = formatStoryArcs(enhancedStoryState.storyArcs, enhancedStoryState.currentStoryArcId);
 
 
     const promptPayload: z.infer<typeof NarrativeAndEventsPromptInputSchema> = {
       ...input,
+      storyState: enhancedStoryState, // Use enhanced state
       formattedEquippedItemsString,
       formattedQuestsString,
       formattedTrackedNPCsString,
       formattedSkillsString,
       formattedActiveTemporaryEffectsString,
       formattedStoryArcsString,
+      // Enhanced context fields
+      enhancedEmotionalContext: enhancedContext.emotionalContext,
+      enhancedRelationshipContext: enhancedContext.relationshipContext,
+      enhancedEnvironmentalContext: enhancedContext.environmentalContext,
+      enhancedNarrativeContext: enhancedContext.narrativeContext,
+      enhancedPlayerContext: enhancedContext.playerContext,
+      enhancedConsequenceContext: enhancedContext.consequenceContext,
     };
 
     console.log("CLIENT (generateNextSceneFlow): Calling narrativeAndStateUpdatePrompt with payload containing EFFECTIVE character stats:", promptPayload.storyState.character);

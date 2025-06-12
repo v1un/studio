@@ -30,6 +30,7 @@ import UserInputForm from "@/components/story-forge/user-input-form";
 import StoryControls from "@/components/story-forge/story-controls";
 import CharacterSheet from "@/components/story-forge/character-sheet";
 import MinimalCharacterStatus from "@/components/story-forge/minimal-character-status";
+import EnhancedCharacterStatus from "@/components/enhanced-tracking/enhanced-character-status";
 import JournalDisplay from "@/components/story-forge/journal-display";
 import LorebookDisplay from "@/components/story-forge/lorebook-display";
 import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
@@ -44,6 +45,7 @@ import { generateUUID } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { migrateToEnhancedState, initializeEnhancedStoryState } from "@/lib/enhanced-state-manager";
 
 
 const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
@@ -203,8 +205,21 @@ export default function StoryForgePage() {
         try {
           const session: GameSession = JSON.parse(sessionData);
           if (session.storyHistory && session.storyHistory.every(turn => Array.isArray(turn.messages))) {
-            setStoryHistory(session.storyHistory);
+            // Migrate story states to enhanced format
+            const migratedStoryHistory = session.storyHistory.map(turn => ({
+              ...turn,
+              storyStateAfterScene: migrateToEnhancedState(turn.storyStateAfterScene)
+            }));
+
+            setStoryHistory(migratedStoryHistory);
             setCurrentSession(session);
+
+            // Save migrated session back to localStorage
+            const migratedSession = {
+              ...session,
+              storyHistory: migratedStoryHistory
+            };
+            localStorage.setItem(`${SESSION_KEY_PREFIX}${activeId}`, JSON.stringify(migratedSession));
           } else {
             console.warn("CLIENT: Old session format detected or missing story history. Clearing.");
             localStorage.removeItem(`${SESSION_KEY_PREFIX}${activeId}`);
@@ -323,8 +338,8 @@ export default function StoryForgePage() {
         npc => npc.name !== foundationResult.characterProfile.name
       );
 
-      const finalStoryState: StructuredStoryState = {
-        character: foundationResult.characterProfile, 
+      const baseStoryState: StructuredStoryState = {
+        character: foundationResult.characterProfile,
         currentLocation: foundationResult.currentLocation,
         inventory: foundationResult.inventory,
         equippedItems: foundationResult.equippedItems,
@@ -334,7 +349,10 @@ export default function StoryForgePage() {
         storyArcs: narrativeElementsResult.storyArcs,
         currentStoryArcId: firstStoryArcId,
         trackedNPCs: filteredTrackedNPCs,
-      };
+      } as any; // Temporary cast for migration
+
+      // Initialize enhanced state
+      const finalStoryState = initializeEnhancedStoryState(baseStoryState);
 
 
       const firstTurn: StoryTurn = {
@@ -1111,9 +1129,9 @@ export default function StoryForgePage() {
                   </Button>
                 </div>
                 <div className="shrink-0">
-                  <MinimalCharacterStatus
-                      character={effectiveCharacterProfileForAI || baseCharacterProfile} 
-                      storyState={currentStoryState} 
+                  <EnhancedCharacterStatus
+                      character={effectiveCharacterProfileForAI || baseCharacterProfile}
+                      storyState={currentStoryState}
                       isPremiumSession={currentSession.isPremiumSession}
                   />
                 </div>
