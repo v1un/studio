@@ -1040,7 +1040,7 @@ export default function StoryForgePage() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-screen bg-background selection:bg-primary/20 selection:text-primary">
+      <div className="flex flex-col h-screen bg-background selection:bg-primary/20 selection:text-primary overflow-hidden">
         <header className="mb-2 text-center pt-4 sm:pt-6 shrink-0">
           <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
             <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
@@ -1051,7 +1051,7 @@ export default function StoryForgePage() {
           </p>
         </header>
 
-        <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto px-4 sm:px-6">
+        <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto px-4 sm:px-6 overflow-hidden">
           {isLoadingInteraction && (
             <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1069,7 +1069,7 @@ export default function StoryForgePage() {
           )}
 
           {currentSession && baseCharacterProfile && currentStoryState && (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
               <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
                 <TabsTrigger value="story" className="text-xs sm:text-sm">
                   <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
@@ -1091,7 +1091,7 @@ export default function StoryForgePage() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden">
+              <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden min-h-0">
                 <div className="shrink-0 flex justify-between items-center">
                   <StoryControls
                       onUndo={handleUndo}

@@ -539,13 +539,13 @@ const foundationFlow = ai.defineFlow(
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
-You are a master storyteller for "{{seriesName}}".
+You are a master storyteller and canon expert for "{{seriesName}}".
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
 Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 'characterCore': Authentically create profile. Include name, class, description. Health/MaxHealth (numbers). Mana/MaxMana (numbers, 0 if not applicable). Stats (5-15, numbers). Level 1, 0 XP, XPToNextLevel (numbers, must be >0). Currency (number).
 'languageReading' & 'languageSpeaking' (numbers, 0-100):
-  - IF seriesName is "Re:Zero" or contains "Re:Zero - Starting Life in Another World" or "Re:Zero", set 'languageSpeaking' to 100 and 'languageReading' to 0. The character description MUST clearly state that the character can understand spoken language but is illiterate.
-  - ELSE, set to 0 for other known canonical language barriers, or 100 for both if no specific barrier applies, or make a series-appropriate choice. The character description MUST reflect any language barriers.
+  - Consider the character's canonical abilities and background. Examples: For transported characters with translation abilities (like Subaru in Re:Zero), set 'languageSpeaking' to 100 and 'languageReading' to 0, mentioning the translation ability in description. For native characters, typically 100 for both. For characters with language barriers, set appropriately low values.
+  - The character description MUST reflect any language barriers or special language abilities.
 'currentLocation': Specific series starting location.
 The 'sceneDescription' should be vivid and set the stage. CRUCIALLY, it MUST conclude with a clear, immediate hook to prompt the player's first action. This could be a question directed at the player (e.g., 'What is the first thing you do?', 'You notice X, what's your reaction?'), a minor event they witness (e.g., 'Suddenly, a figure bumps into you.'), or an interaction initiated by a nearby element (e.g., 'A nearby vendor calls out to you, "New in town, eh?"').
 Output ONLY the JSON. Strictly adhere to Foundation_CharacterAndSceneOutputSchema and all its REQUIRED fields.`,
@@ -596,7 +596,8 @@ Output ONLY JSON for Foundation_SeriesPlotSummaryOutputSchema. Do not include an
         name: 'foundation_initialCharacterSkillsPrompt', model: modelName, input: { schema: Foundation_InitialCharacterSkillsInputSchema }, output: { schema: Foundation_InitialCharacterSkillsOutputSchema }, config: generalModelConfig,
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object. If 'skillsAndAbilities' are provided, each skill MUST have a unique 'id', 'name', 'description', and 'type'.
 For "{{seriesName}}" character: Name: {{characterName}}, Class: {{characterClass}}, Desc: {{characterDescription}}.
-Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills. Include signature abilities if appropriate (e.g., "Return by Death" for Re:Zero Subaru).
+Generate ONLY 'skillsAndAbilities': Array of 2-3 starting skills.
+Include signature abilities appropriate to the character and series (e.g., "Return by Death" and "World's Welcome Gift" for Subaru in Re:Zero). Ensure skills match the character's background and avoid generic skills that don't fit their established nature.
 Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ensure all REQUIRED fields for skills are present.`,
     });
     const skillsInput: z.infer<typeof Foundation_InitialCharacterSkillsInputSchema> = {
@@ -636,7 +637,7 @@ Output ONLY { "skillsAndAbilities": [...] } or { "skillsAndAbilities": [] }. Ens
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialInventoryOutputSchema'. The 'inventory' array is REQUIRED (can be empty). Each item MUST have 'id', 'name', 'description'. 'basePrice' (number) is optional.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'inventory': 0-3 unequipped items. Include optional 'rarity'. For consumables, 'activeEffects' may define temporary buffs with numeric 'duration' (turns, must be positive). 'equipSlot' if equippable, OMITTED otherwise.
-For characters like Natsuki Subaru in Re:Zero arriving from modern Earth, initial inventory should be very sparse or empty, reflecting what he had on him from a convenience store (e.g., a cell phone with dead battery, a bag of chips, a wallet with unusable currency). Avoid giving fantasy items unless it's something he explicitly just picked up in the scene.
+For characters transported from other worlds (e.g., Natsuki Subaru in Re:Zero arriving from modern Earth), initial inventory should reflect what they had on them when transported (e.g., a cell phone, snacks, wallet). For native characters, inventory should match their background and preparation level.
 Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are present. Ensure IDs are unique.`,
     });
     const foundation_initialMainGearPrompt = ai.definePrompt({
@@ -644,7 +645,7 @@ Output ONLY { "inventory": [...] }. Ensure all REQUIRED fields for items are pre
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialMainGearOutputSchema'. Each item ('weapon', 'shield', 'body') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'weapon', 'shield', 'body' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot'. 'activeEffects' should have 'duration: "permanent_while_equipped"'.
-For certain characters or series starts (e.g., Natsuki Subaru in Re:Zero arriving from modern Earth), all main gear slots ('weapon', 'shield', 'body') MUST be \`null\`.
+For unprepared characters (e.g., Natsuki Subaru in Re:Zero arriving from modern Earth), main gear slots ('weapon', 'shield', 'body') should typically be \`null\`. For prepared adventurers, include appropriate starting gear.
 Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialSecondaryGearPrompt = ai.definePrompt({
@@ -652,7 +653,7 @@ Output ONLY { "weapon": ..., "shield": ..., "body": ... }. Ensure all REQUIRED f
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialSecondaryGearOutputSchema'. Each item ('head', 'legs', 'feet', 'hands') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'head', 'legs', 'feet', 'hands' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot'. 'activeEffects' should have 'duration: "permanent_while_equipped"'.
-For characters like Natsuki Subaru in Re:Zero, 'head', 'hands', 'legs', 'feet' slots should likely be \`null\` unless the series canonically gives them immediate, specific non-combat gear.
+For unprepared characters (e.g., Natsuki Subaru in Re:Zero), secondary gear slots should typically be \`null\` unless the series canonically provides specific starting gear.
 Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialAccessoryGearPrompt = ai.definePrompt({
@@ -660,7 +661,7 @@ Output ONLY { "head": ..., "legs": ..., "feet": ..., "hands": ... }. Ensure all 
         prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_InitialAccessoryGearOutputSchema'. Each item ('neck', 'ring1', 'ring2') or null is REQUIRED. If an item, it MUST have 'id', 'name', 'description'.
 For "{{seriesName}}" (Char: {{character.name}}, Scene: {{sceneDescription}}, Loc: {{currentLocation}}).
 Generate ONLY 'neck', 'ring1', 'ring2' equipped items (or null). Include 'basePrice' (number), optional 'rarity', 'equipSlot'. 'activeEffects' should have 'duration: "permanent_while_equipped"'.
-For characters like Natsuki Subaru in Re:Zero, these slots MUST be \`null\`.
+For most starting characters (e.g., Natsuki Subaru in Re:Zero), these accessory slots should typically be \`null\` unless the character canonically starts with specific accessories.
 Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }. Ensure all REQUIRED fields for items are present if an item is generated. Ensure IDs are unique.`,
     });
     const foundation_initialWorldFactsPrompt = ai.definePrompt({
@@ -731,8 +732,18 @@ Output ONLY { "worldFacts": [...] }.`,
     const seriesStyleGuide = styleGuideRaw === null ? undefined : styleGuideRaw;
 
     console.log(`[${new Date().toISOString()}] generateScenarioFoundationFlow: Performing final data sanitation for foundation items.`);
+    const foundationUsedIds = new Set<string>();
     const sanitizeFoundationItem = (item: Partial<ItemType>, prefix: string, index: number | string = '') => {
-        if (!item.id || item.id.trim() === "") item.id = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
+        // Generate unique ID if missing or duplicate
+        if (!item.id || item.id.trim() === "" || foundationUsedIds.has(item.id)) {
+            let newId: string;
+            do {
+                newId = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
+            } while (foundationUsedIds.has(newId));
+            item.id = newId;
+        }
+        foundationUsedIds.add(item.id);
+
         item.name = item.name || "Unnamed Item";
         item.description = item.description || "No description.";
         item.basePrice = item.basePrice ?? 0;
@@ -831,6 +842,12 @@ Character class: {{characterClassInput}} (if empty, select a class/role that fit
 - Character has only basic survival instincts and any canonical abilities from their background
 - Character is unfamiliar with local customs, geography, and social structures
 
+**SERIES-SPECIFIC STAT EXAMPLES:**
+Consider the character's canonical background when setting stats:
+- For transported modern characters (e.g., Subaru in Re:Zero): Set 'languageSpeaking' to 100 if they have translation abilities, 'languageReading' to 0 if illiterate, 'currency' to 0, and stats appropriate for their real-world background
+- For native fantasy characters: Set language skills to 100 for both, currency based on background, stats appropriate for their training/class
+- For characters with language barriers: Adjust language skills accordingly and reflect this in the character description
+
 **SCENE DESCRIPTION (2-3 detailed paragraphs):**
 - Set the scene at a canonical starting location appropriate for new arrivals/beginnings in this series
 - Describe the immediate environment with rich sensory details (sights, sounds, smells, atmosphere)
@@ -844,6 +861,8 @@ Character class: {{characterClassInput}} (if empty, select a class/role that fit
 - Set language skills appropriately (speaking vs reading/writing based on series canon)
 - Include a compelling backstory that explains their presence in this world
 - Balance character competence with room for growth and learning
+- Stats should reflect the character's actual background (e.g., modern teenager vs experienced warrior vs noble vs commoner)
+- Consider whether the character is native to the world or transported from elsewhere
 
 **LOCATION SPECIFICATION:**
 - Provide a specific, named location that exists in or fits seamlessly with the series' geography
@@ -1032,6 +1051,14 @@ Location: {{currentLocation}}
 **STARTING SKILL GUIDELINES:**
 Generate 3-5 starting skills/abilities that follow these principles:
 
+**SERIES-SPECIFIC SKILL EXAMPLES:**
+Consider the character's canonical abilities and background:
+- For characters with signature abilities (e.g., "Return by Death" for Subaru in Re:Zero): Include these defining powers
+- For characters with translation abilities (e.g., "World's Welcome Gift" in Re:Zero): Include language-related skills
+- For transported modern characters: Include modern world knowledge/perspective skills, avoid generic fantasy skills that don't fit their background
+- For native fantasy characters: Include skills appropriate to their class, training, and world
+- Always ensure skills match the character's established background and the series' power systems
+
 **SKILL BALANCE:**
 - Mix of active abilities and passive traits
 - Include both combat and non-combat skills where appropriate
@@ -1168,6 +1195,13 @@ Language Speaking: {{character.languageSpeaking}}/100
 - Consider how the character acquired these items (brought from previous life, found, given, etc.)
 - Respect the series' economic systems and item rarity
 
+**SERIES-SPECIFIC INVENTORY EXAMPLES:**
+Consider the character's background and how they arrived in this world:
+- For transported modern characters (e.g., Subaru in Re:Zero): Include modern items from their previous life (smartphone, wallet, convenience store items), avoid fantasy-specific items, reflect being transported suddenly rather than prepared
+- For native fantasy characters: Include items appropriate to their class, profession, and economic status
+- For characters starting adventures: Include basic adventuring gear appropriate to their preparation level
+- Always ensure items match the character's background and the circumstances of their arrival/starting situation
+
 **INVENTORY GUIDELINES:**
 Generate 3-7 starting inventory items following these principles:
 
@@ -1292,6 +1326,14 @@ Each piece of gear must include:
 - Consider the character's unfamiliarity with local customs and availability
 - Ensure gear is practical for the character's immediate situation
 
+**SERIES-SPECIFIC EQUIPMENT EXAMPLES:**
+Consider the character's background and preparation level:
+- For unprepared transported characters (e.g., Subaru in Re:Zero): Minimal or no combat equipment, modern clothing/accessories, equipment reflecting civilian background
+- For prepared adventurers: Basic combat gear appropriate to their class and experience level
+- For nobles or wealthy characters: Higher quality equipment befitting their status
+- For commoners or poor characters: Simple, worn, or makeshift equipment
+- Always match equipment to the character's background, preparation level, and economic status
+
 Create main gear that provides essential combat capability while maintaining authenticity to "{{seriesName}}" and respecting starting character limitations.
 Output ONLY { "mainGear": [...] }.`,
     });
@@ -1345,9 +1387,19 @@ Output ONLY { "accessoryGear": [...] }.`,
         ...(accessoryGearRaw.accessoryGear || []),
     ];
 
-    // Basic item sanitization
+    // Enhanced item sanitization with unique ID tracking
+    const usedIds = new Set<string>();
     const sanitizeItem = (item: Partial<ItemType>, prefix: string, index: number | string = '') => {
-        if (!item.id || item.id.trim() === "") item.id = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
+        // Generate unique ID if missing or duplicate
+        if (!item.id || item.id.trim() === "" || usedIds.has(item.id)) {
+            let newId: string;
+            do {
+                newId = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
+            } while (usedIds.has(newId));
+            item.id = newId;
+        }
+        usedIds.add(item.id);
+
         item.name = item.name || "Unnamed Item";
         item.description = item.description || "No description.";
         item.basePrice = item.basePrice ?? 0;
@@ -1356,7 +1408,10 @@ Output ONLY { "accessoryGear": [...] }.`,
         return item as ItemType;
     };
 
+    // Sanitize inventory items first
     inventory.forEach((item, idx) => sanitizeItem(item, 'inv', idx));
+
+    // Then sanitize gear items
     allGearItems.forEach((item, idx) => sanitizeItem(item, 'gear', idx));
 
     // Create equipped items structure
@@ -1373,12 +1428,17 @@ Output ONLY { "accessoryGear": [...] }.`,
         ring2: null,
     };
 
-    // Auto-equip some items (simplified logic)
+    // Auto-equip items with improved logic to prevent duplicates
+    const equippedItemIds = new Set<string>();
     allGearItems.forEach(item => {
-        if (item.equipSlot && !equippedItems[item.equipSlot as EquipmentSlot]) {
+        if (item.equipSlot && !equippedItems[item.equipSlot as EquipmentSlot] && !equippedItemIds.has(item.id)) {
             equippedItems[item.equipSlot as EquipmentSlot] = item;
+            equippedItemIds.add(item.id);
         } else {
-            inventory.push(item);
+            // Only add to inventory if not already equipped
+            if (!equippedItemIds.has(item.id)) {
+                inventory.push(item);
+            }
         }
     });
 
@@ -2003,8 +2063,18 @@ Output ONLY { "loreEntries": [{"keyword": "...", "content": "...", "category":"E
 
 
     // --- Final Sanitation Pass ---
+    const narrativeUsedIds = new Set<string>();
     const sanitizeItem = (item: Partial<ItemType>, prefix: string, index: number | string = '') => {
-        if (!item.id || item.id.trim() === "") item.id = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
+        // Generate unique ID if missing or duplicate
+        if (!item.id || item.id.trim() === "" || narrativeUsedIds.has(item.id)) {
+            let newId: string;
+            do {
+                newId = `${prefix}_${Date.now()}_${index}_${Math.random().toString(36).substring(2,7)}`;
+            } while (narrativeUsedIds.has(newId));
+            item.id = newId;
+        }
+        narrativeUsedIds.add(item.id);
+
         item.name = item.name || "Unnamed Item";
         item.description = item.description || "No description.";
         item.basePrice = item.basePrice ?? 0;
@@ -2560,6 +2630,14 @@ Generate 8-12 NPCs including:
 - Consider how NPCs would realistically react to someone like {{characterProfile.name}}
 - Account for the character's starting conditions (no money, limited knowledge, etc.)
 - Include NPCs with varying levels of helpfulness and accessibility
+
+**SERIES-SPECIFIC RELATIONSHIP EXAMPLES:**
+Consider the character's canonical position and reputation:
+- For unknown newcomers (e.g., Subaru in Re:Zero): Most NPCs should start as NEUTRAL (0-25), only helpful NPCs slightly positive (25-50), avoid "Staunch Ally" (75+) unless canonically appropriate
+- For established characters: Set relationships based on their canonical reputation and connections
+- For characters with existing relationships: Reflect their established bonds and conflicts
+- For characters starting new adventures: Consider their background reputation and social connections
+- Always ensure relationship levels match the character's canonical standing in the world
 
 **FUNCTIONAL DIVERSITY:**
 - Include NPCs who serve different narrative and practical functions
