@@ -1126,10 +1126,10 @@ export default function StoryForgePage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="character" className="flex-grow">
-                <CharacterSheet 
-                  character={effectiveCharacterProfileForAI || baseCharacterProfile} 
-                  storyState={currentStoryState} 
+              <TabsContent value="character" className="overflow-y-auto flex-grow">
+                <CharacterSheet
+                  character={effectiveCharacterProfileForAI || baseCharacterProfile}
+                  storyState={currentStoryState}
                 />
               </TabsContent>
 

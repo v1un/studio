@@ -35,7 +35,7 @@ export interface Item {
   id: string;
   name: string;
   description: string;
-  equipSlot?: 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'feet' | 'hands' | 'neck' | 'ring';
+  equipSlot?: EquipmentSlot;
   isConsumable?: boolean;
   effectDescription?: string; // Narrative effect description
   isQuestItem?: boolean;

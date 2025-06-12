@@ -25,6 +25,7 @@ import { EquipSlotEnumInternal } from '@/types/zod-schemas';
 import { lookupLoreTool } from '@/ai/tools/lore-tool';
 import { addLoreEntry as saveNewLoreEntry } from '@/lib/lore-manager';
 import { produce } from 'immer';
+import { shouldUseMultiPhase, createMetricsTracker, type SceneGenerationMetrics } from './scene-generation-utils';
 
 // --- SCHEMAS FOR AI COMMUNICATION (INTERNAL, MOSTLY FROM types/story.ts) ---
 const ItemRarityEnumInternal = z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']);
@@ -340,6 +341,227 @@ const NarrativeAndEventsPromptInputSchema = GenerateNextSceneInputSchemaInternal
 });
 
 
+// Helper function to validate and clean activeEffects
+function validateAndCleanActiveEffects(effects: any[]): any[] {
+  if (!Array.isArray(effects)) return [];
+
+  return effects.filter(effect => {
+    if (!effect || typeof effect !== 'object') return false;
+
+    // Check if type is valid
+    const validTypes = ['stat_modifier', 'temporary_ability', 'passive_aura'];
+    if (!effect.type || typeof effect.type !== 'string' || !validTypes.includes(effect.type)) {
+      console.warn('Invalid activeEffect type found:', effect.type, 'Expected one of:', validTypes);
+      return false;
+    }
+
+    // Ensure required fields exist
+    if (!effect.id || !effect.name || !effect.description) {
+      console.warn('Missing required fields in activeEffect:', effect);
+      return false;
+    }
+
+    // Validate stat modifiers if present
+    if (effect.statModifiers && Array.isArray(effect.statModifiers)) {
+      effect.statModifiers = validateAndCleanStatModifiers(effect.statModifiers);
+    }
+
+    return true;
+  });
+}
+
+// Helper function to validate and clean quest status
+function validateAndCleanQuestStatus(status: any): string {
+  const validStatuses = ['active', 'completed', 'failed'];
+  if (typeof status === 'string' && validStatuses.includes(status)) {
+    return status;
+  }
+
+  // Handle common invalid values
+  if (status === 'available' || status === 'locked') {
+    console.warn('Converting invalid quest status:', status, 'to "active"');
+    return 'active';
+  }
+
+  console.warn('Invalid quest status found:', status, 'Expected one of:', validStatuses, 'Defaulting to "active"');
+  return 'active';
+}
+
+// Helper function to validate and clean quest type
+function validateAndCleanQuestType(type: any): string {
+  const validTypes = ['main', 'side', 'dynamic', 'arc_goal'];
+  if (typeof type === 'string' && validTypes.includes(type)) {
+    return type;
+  }
+
+  console.warn('Invalid quest type found:', type, 'Expected one of:', validTypes, 'Defaulting to "side"');
+  return 'side';
+}
+
+// Helper function to validate and clean equipment slot
+function validateAndCleanEquipSlot(slot: any): string | undefined {
+  if (!slot) return undefined;
+
+  const validSlots = ['weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', 'ring2'];
+  if (typeof slot === 'string' && validSlots.includes(slot)) {
+    return slot;
+  }
+
+  // Handle common invalid values
+  if (slot === 'ring') {
+    console.warn('Converting invalid equipment slot:', slot, 'to "ring1"');
+    return 'ring1';
+  }
+
+  console.warn('Invalid equipment slot found:', slot, 'Expected one of:', validSlots, 'Removing slot');
+  return undefined;
+}
+
+// Helper function to validate and clean item rarity
+function validateAndCleanItemRarity(rarity: any): string | undefined {
+  if (!rarity) return undefined;
+
+  const validRarities = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+  if (typeof rarity === 'string' && validRarities.includes(rarity)) {
+    return rarity;
+  }
+
+  console.warn('Invalid item rarity found:', rarity, 'Expected one of:', validRarities, 'Defaulting to "common"');
+  return 'common';
+}
+
+// Helper function to validate and clean stat modifiers
+function validateAndCleanStatModifiers(statModifiers: any[]): any[] {
+  if (!Array.isArray(statModifiers)) return [];
+
+  const validStats = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'maxHealth', 'maxMana', 'health', 'mana', 'level', 'experiencePoints', 'currency', 'languageReading', 'languageSpeaking'];
+  const validTypes = ['add', 'multiply'];
+
+  return statModifiers.filter(modifier => {
+    if (!modifier || typeof modifier !== 'object') return false;
+
+    // Validate stat name
+    if (!modifier.stat || typeof modifier.stat !== 'string' || !validStats.includes(modifier.stat)) {
+      console.warn('Invalid stat modifier stat found:', modifier.stat, 'Expected one of:', validStats);
+      return false;
+    }
+
+    // Validate type
+    if (!modifier.type || typeof modifier.type !== 'string' || !validTypes.includes(modifier.type)) {
+      console.warn('Invalid stat modifier type found:', modifier.type, 'Expected one of:', validTypes);
+      return false;
+    }
+
+    // Validate value
+    if (typeof modifier.value !== 'number') {
+      console.warn('Invalid stat modifier value found:', modifier.value, 'Expected a number');
+      return false;
+    }
+
+    return true;
+  });
+}
+
+// Helper function to recursively clean story state
+function cleanStoryState(storyState: any): any {
+  if (!storyState || typeof storyState !== 'object') return storyState;
+
+  // Clean inventory items
+  if (Array.isArray(storyState.inventory)) {
+    storyState.inventory = storyState.inventory.map((item: any) => {
+      if (item) {
+        if (Array.isArray(item.activeEffects)) {
+          item.activeEffects = validateAndCleanActiveEffects(item.activeEffects);
+        }
+        if (item.equipSlot) {
+          item.equipSlot = validateAndCleanEquipSlot(item.equipSlot);
+        }
+        if (item.rarity) {
+          item.rarity = validateAndCleanItemRarity(item.rarity);
+        }
+      }
+      return item;
+    });
+  }
+
+  // Clean equipped items
+  if (storyState.equippedItems && typeof storyState.equippedItems === 'object') {
+    Object.keys(storyState.equippedItems).forEach(slot => {
+      const item = storyState.equippedItems[slot];
+      if (item) {
+        if (Array.isArray(item.activeEffects)) {
+          item.activeEffects = validateAndCleanActiveEffects(item.activeEffects);
+        }
+        if (item.equipSlot) {
+          item.equipSlot = validateAndCleanEquipSlot(item.equipSlot);
+        }
+        if (item.rarity) {
+          item.rarity = validateAndCleanItemRarity(item.rarity);
+        }
+      }
+    });
+  }
+
+  // Clean quest reward items and quest status
+  if (Array.isArray(storyState.quests)) {
+    storyState.quests = storyState.quests.map((quest: any) => {
+      if (quest) {
+        // Clean quest status and type
+        if (quest.status) {
+          quest.status = validateAndCleanQuestStatus(quest.status);
+        }
+        if (quest.type) {
+          quest.type = validateAndCleanQuestType(quest.type);
+        }
+
+        // Clean quest reward items
+        if (quest.rewards && Array.isArray(quest.rewards.items)) {
+          quest.rewards.items = quest.rewards.items.map((item: any) => {
+            if (item) {
+              if (Array.isArray(item.activeEffects)) {
+                item.activeEffects = validateAndCleanActiveEffects(item.activeEffects);
+              }
+              if (item.equipSlot) {
+                item.equipSlot = validateAndCleanEquipSlot(item.equipSlot);
+              }
+              if (item.rarity) {
+                item.rarity = validateAndCleanItemRarity(item.rarity);
+              }
+            }
+            return item;
+          });
+        }
+      }
+      return quest;
+    });
+  }
+
+  // Clean NPC merchant inventory
+  if (Array.isArray(storyState.trackedNPCs)) {
+    storyState.trackedNPCs = storyState.trackedNPCs.map((npc: any) => {
+      if (npc && Array.isArray(npc.merchantInventory)) {
+        npc.merchantInventory = npc.merchantInventory.map((item: any) => {
+          if (item) {
+            if (Array.isArray(item.activeEffects)) {
+              item.activeEffects = validateAndCleanActiveEffects(item.activeEffects);
+            }
+            if (item.equipSlot) {
+              item.equipSlot = validateAndCleanEquipSlot(item.equipSlot);
+            }
+            if (item.rarity) {
+              item.rarity = validateAndCleanItemRarity(item.rarity);
+            }
+          }
+          return item;
+        });
+      }
+      return npc;
+    });
+  }
+
+  return storyState;
+}
+
 export async function generateNextScene(input: GenerateNextSceneInput): Promise<GenerateNextSceneOutput> {
   return generateNextSceneFlow(input);
 }
@@ -490,6 +712,32 @@ Tracked NPCs: {{{formattedTrackedNPCsString}}}
 5.  **New Lore (newLoreProposals):** Propose new lore entries if relevant. (Optional)
 6.  **Updated Story Summary (updatedStorySummary):** Append a brief (1-2 sentences) summary of THIS scene's events to the existing story summary. (REQUIRED)
 
+**CRITICAL: Schema Format Requirements:**
+1. ActiveEffects 'type' field MUST be exactly one of: 'stat_modifier', 'temporary_ability', or 'passive_aura'.
+2. Quest 'status' field MUST be exactly one of: 'active', 'completed', or 'failed'.
+3. Quest 'type' field MUST be exactly one of: 'main', 'side', 'dynamic', or 'arc_goal'.
+4. Item 'equipSlot' field MUST be exactly one of: 'weapon', 'shield', 'head', 'body', 'legs', 'feet', 'hands', 'neck', 'ring1', or 'ring2'.
+5. Item 'rarity' field MUST be exactly one of: 'common', 'uncommon', 'rare', 'epic', or 'legendary'.
+6. StatModifier 'stat' field MUST be exactly one of: 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'maxHealth', 'maxMana', 'health', 'mana', 'level', 'experiencePoints', 'currency', 'languageReading', or 'languageSpeaking'.
+7. StatModifier 'type' field MUST be exactly one of: 'add' or 'multiply'.
+DO NOT use schema definitions, objects, or other values - only use these exact string values.
+
+Example correct activeEffect:
+{
+  "id": "effect_sword_strength_001",
+  "name": "Strength Boost",
+  "description": "Increases wielder's strength",
+  "type": "stat_modifier",
+  "duration": "permanent_while_equipped",
+  "statModifiers": [{"stat": "strength", "value": 2, "type": "add"}]
+}
+
+Example correct quest status: "status": "active" (not "available", "locked", etc.)
+Example correct quest type: "type": "side" (not "optional", "secondary", etc.)
+Example correct equipment slot: "equipSlot": "ring1" (not "ring", use "ring1" or "ring2")
+Example correct item rarity: "rarity": "rare" (not "unique", "artifact", etc.)
+Example correct stat modifier: {"stat": "strength", "value": 2, "type": "add"} (not "bonus", "increase", etc.)
+
 **Important Considerations for Story Arcs:**
 -   An arc's completion is now primarily a NARRATIVE decision. You, the AI, decide if the current arc's story has resolved. This might happen before all its main quests are done, or after.
 -   If you mark an arc as completed, fill its 'completionSummary' to reflect the outcome. The client application will handle triggering subsequent arc logic based on this completion.
@@ -560,13 +808,15 @@ Ensure your ENTIRE output is a single JSON object. ALL numeric fields (prices, s
         aiPartialOutput.updatedStoryState.character = input.storyState.character; // Fallback
     }
 
+    // Clean and validate the story state before returning
+    const cleanedStoryState = cleanStoryState(aiPartialOutput.updatedStoryState);
 
     const finalOutput: GenerateNextSceneOutput = {
         generatedMessages: aiPartialOutput.generatedMessages!.map(msg => ({
             speaker: msg.speaker || "GM",
             content: msg.content || "(AI provided no content for this message)"
         })) as AIMessageSegment[],
-        updatedStoryState: aiPartialOutput.updatedStoryState as StructuredStoryState, // Trust AI's output for state
+        updatedStoryState: cleanedStoryState as StructuredStoryState, // Use cleaned state
         activeNPCsInScene: aiPartialOutput.activeNPCsInScene?.filter(npc => npc && npc.name && npc.name.trim() !== '') as ActiveNPCInfoType[] ?? undefined,
         newLoreEntries: aiPartialOutput.newLoreProposals?.filter(lore => lore && lore.keyword && lore.keyword.trim() !== "" && lore.content && lore.content.trim() !== "") as RawLoreEntry[] ?? undefined,
         updatedStorySummary: aiPartialOutput.updatedStorySummary,

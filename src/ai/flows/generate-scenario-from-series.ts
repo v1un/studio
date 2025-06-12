@@ -173,7 +173,7 @@ const Foundation_InitialAccessoryGearOutputSchema = z.object({
 // ===== SCHEMA DEFINITIONS FOR NEW GRANULAR FLOWS =====
 // Moving these schemas here so they can be used by the new flow definitions
 
-const Narrative_QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed', 'available', 'locked']);
+const Narrative_QuestStatusEnumInternal = z.enum(['active', 'completed', 'failed']);
 
 const Narrative_QuestObjectiveSchemaInternal = z.object({
   id: z.string().describe("REQUIRED."),
@@ -188,14 +188,14 @@ const Narrative_ItemSchemaInternal = z.object({
   description: z.string().describe("REQUIRED."),
   basePrice: z.number().describe("REQUIRED. MUST BE a number."),
   rarity: z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']).optional(),
-  equipSlot: z.string().optional(),
+  equipSlot: EquipSlotEnumInternal.optional(),
   activeEffects: z.array(z.object({
     id: z.string().describe("REQUIRED."),
     name: z.string().describe("REQUIRED."),
     description: z.string().describe("REQUIRED."),
-    type: z.enum(['passive_aura', 'on_use', 'on_equip', 'consumable']).describe("REQUIRED."),
+    type: z.enum(['stat_modifier', 'temporary_ability', 'passive_aura']).describe("REQUIRED."),
     statModifiers: z.array(z.object({
-      stat: z.string().describe("REQUIRED."),
+      stat: z.enum(['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma', 'maxHealth', 'maxMana', 'health', 'mana', 'level', 'experiencePoints', 'currency', 'languageReading', 'languageSpeaking']).describe("REQUIRED."),
       value: z.number().describe("REQUIRED. MUST BE a number."),
       type: z.enum(['add', 'multiply']).describe("REQUIRED."),
     })).optional(),
@@ -1175,10 +1175,10 @@ const itemsAndEquipmentFlow = ai.defineFlow(
         currentLocation: input.currentLocation,
     };
 
-    // Define item generation prompts (reusing existing ones)
-    const foundation_initialInventoryPrompt = ai.definePrompt({
-        name: 'foundation_initialInventoryPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: generalModelConfig,
-        prompt: `You are an item design expert for "{{seriesName}}". Create a starting inventory that reflects the character's realistic starting conditions and the series' established item systems.
+    // Step 1: Generate inventory items first
+    const inventoryGenerationPrompt = ai.definePrompt({
+        name: 'inventoryGenerationPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialInventoryOutputSchema }, config: generalModelConfig,
+        prompt: `You are an inventory specialist for "{{seriesName}}". Create a starting inventory that reflects the character's realistic starting conditions and background.
 
 **CHARACTER CONTEXT:**
 Character: {{character.name}} ({{character.class}})
@@ -1189,53 +1189,30 @@ Currency: {{character.currency}} (starting money)
 Language Reading: {{character.languageReading}}/100
 Language Speaking: {{character.languageSpeaking}}/100
 
-**STARTING CONDITION AWARENESS:**
-- Character begins with minimal possessions (unless canonically specified otherwise)
-- Items should reflect what someone in their situation would realistically have
-- Consider how the character acquired these items (brought from previous life, found, given, etc.)
-- Respect the series' economic systems and item rarity
-
-**SERIES-SPECIFIC INVENTORY EXAMPLES:**
+**SERIES-SPECIFIC EXAMPLES:**
 Consider the character's background and how they arrived in this world:
-- For transported modern characters (e.g., Subaru in Re:Zero): Include modern items from their previous life (smartphone, wallet, convenience store items), avoid fantasy-specific items, reflect being transported suddenly rather than prepared
+- For transported modern characters (e.g., Subaru in Re:Zero): Include modern items from their previous life (smartphone, wallet, convenience store items), avoid fantasy-specific items
 - For native fantasy characters: Include items appropriate to their class, profession, and economic status
-- For characters starting adventures: Include basic adventuring gear appropriate to their preparation level
-- Always ensure items match the character's background and the circumstances of their arrival/starting situation
+- For prepared adventurers: Include basic adventuring supplies appropriate to their preparation level
+- For unprepared characters: Focus on personal effects and basic necessities
+- Always ensure items match the character's background and circumstances
 
 **INVENTORY GUIDELINES:**
-Generate 3-7 starting inventory items following these principles:
+Generate 3-7 unequipped items following these principles:
+
+**ITEM CATEGORIES:**
+- Basic consumables (food, water, basic medicines)
+- Simple tools (rope, basic knife, flint and steel, etc.)
+- Personal effects (letters, mementos, identification if applicable)
+- Currency or trade goods (if appropriate to starting conditions)
+- Information items (maps, books, notes - considering literacy limitations)
+- Modern items (for transported characters)
 
 **ITEM AUTHENTICITY:**
 - All items must fit seamlessly within the series' established world and technology level
 - Use naming conventions and descriptions consistent with the series' style
 - Consider cultural and regional variations in item design and availability
-- Ensure items match the series' tone (serious, whimsical, dark, etc.)
-
-**PRACTICAL NECESSITY:**
-- Include basic survival items appropriate for the character's situation
-- Consider immediate needs: food, water, basic tools, clothing
-- Include items that enable basic functionality in the world
-- Balance utility with the character's limited starting resources
-
-**ITEM CATEGORIES TO CONSIDER:**
-- Basic consumables (food, water, basic medicines)
-- Simple tools (rope, basic knife, flint and steel, etc.)
-- Personal effects (letters, mementos, identification if applicable)
-- Basic clothing or accessories beyond equipped items
-- Currency or trade goods (if appropriate to starting conditions)
-- Information items (maps, books, notes - considering literacy limitations)
-
-**ITEM BALANCE:**
-- Avoid overpowered or game-breaking items for starting characters
-- Include items with both benefits and limitations
-- Consider maintenance requirements and durability
-- Ensure items don't trivialize early challenges
-
-**ECONOMIC REALISM:**
-- Items should reflect the character's economic status (likely poor/starting)
-- Consider the local economy and what's available in the starting location
-- Respect currency limitations and purchasing power
-- Include items of varying quality levels
+- Ensure items match the series' tone and aesthetic
 
 **ITEM STRUCTURE REQUIREMENTS:**
 Each item must include:
@@ -1243,149 +1220,188 @@ Each item must include:
 - 'name': Clear, series-appropriate name
 - 'description': Detailed description including appearance, function, and any special properties
 - 'basePrice': Realistic price in the series' currency system
-- Optional: 'rarity', 'activeEffects' (if the item has special properties)
+- Optional: 'rarity', 'activeEffects', 'isConsumable'
 
-**NARRATIVE POTENTIAL:**
-- Include items that could lead to interesting story moments
-- Consider items that might be recognized by NPCs or have cultural significance
-- Include items that could be upgraded or modified later
-- Think about how items might be used creatively in various situations
-
-Create an inventory that provides basic functionality while maintaining the challenge and authenticity of starting with limited resources in "{{seriesName}}".
+Create an inventory that provides basic functionality while maintaining authenticity to "{{seriesName}}" and respecting the character's starting limitations.
 Output ONLY { "inventory": [...] }.`,
     });
 
-    const foundation_initialMainGearPrompt = ai.definePrompt({
-        name: 'foundation_initialMainGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialMainGearOutputSchema }, config: generalModelConfig,
-        prompt: `You are a combat equipment specialist for "{{seriesName}}". Create starting main gear (weapons and primary armor) that reflects the character's background and the series' combat systems.
+    // Step 2a: Combat equipment (weapon, shield)
+    const combatEquipmentPrompt = ai.definePrompt({
+        name: 'combatEquipmentPrompt', model: modelName, input: { schema: z.object({
+            seriesName: z.string(),
+            characterName: z.string(),
+            characterDescription: z.string(),
+            inventoryContext: z.string()
+        }) }, output: { schema: z.object({
+            weapon: Foundation_ItemSchemaInternal.nullable(),
+            shield: Foundation_ItemSchemaInternal.nullable(),
+        }) }, config: generalModelConfig,
+        prompt: `Generate combat equipment for "{{seriesName}}" character {{characterName}}.
 
-**CHARACTER CONTEXT:**
-Character: {{character.name}} ({{character.class}})
-Character Background: {{character.description}}
-Current Scene: {{sceneDescription}}
-Location: {{currentLocation}}
+Character: {{characterDescription}}
+Inventory: {{inventoryContext}}
 
-**COMBAT SYSTEM COMPLIANCE:**
-- Ensure all gear aligns with the series' established combat mechanics and weapon types
-- Respect the series' technology level and available materials
-- Consider the character's class/role and what weapons they would realistically use
-- Maintain consistency with the series' power scaling for starting equipment
+Generate weapon and shield slots:
+- weapon: Primary weapon or null
+- shield: Shield/off-hand item or null
 
-**MAIN GEAR CATEGORIES:**
-Generate 2-4 pieces of main gear including:
+For unprepared characters (like Subaru in Re:Zero), both should be null.
+For adventurers, include appropriate starting gear.
 
-**PRIMARY WEAPONS:**
-- Select weapons appropriate for the character's class and background
-- Consider the character's physical capabilities and training
-- Ensure weapons fit the series' combat style and available technology
-- Include both offensive capabilities and realistic limitations
+Each item needs: id, name, description, equipSlot, basePrice.
 
-**DEFENSIVE EQUIPMENT:**
-- Armor pieces that provide meaningful protection without being overpowered
-- Consider mobility vs protection trade-offs appropriate to the character
-- Ensure armor fits the series' aesthetic and material availability
-- Include cultural or regional design elements where appropriate
-
-**GEAR AUTHENTICITY REQUIREMENTS:**
-- Use weapon and armor types that exist within the series' world
-- Apply appropriate naming conventions and terminology from the series
-- Consider the craftsmanship quality available to starting characters
-- Ensure gear reflects the character's economic status and access to equipment
-
-**BALANCE CONSIDERATIONS:**
-- Starting gear should provide basic combat capability without being overpowered
-- Include meaningful limitations (durability, maintenance needs, skill requirements)
-- Consider how gear might be upgraded or replaced as the character progresses
-- Ensure gear doesn't trivialize early combat encounters
-
-**EQUIPMENT SLOTS:**
-Consider these primary equipment slots:
-- mainHand: Primary weapon or tool
-- offHand: Secondary weapon, shield, or off-hand tool
-- chest: Primary armor piece
-- head: Helmet or headgear (if appropriate)
-
-**ITEM STRUCTURE REQUIREMENTS:**
-Each piece of gear must include:
-- 'id': Unique identifier
-- 'name': Series-appropriate name
-- 'description': Detailed description including appearance, materials, and combat properties
-- 'equipSlot': Appropriate equipment slot
-- 'basePrice': Realistic price reflecting quality and availability
-- Optional: 'activeEffects' for special properties, 'rarity' for exceptional items
-
-**NARRATIVE INTEGRATION:**
-- Consider how the character acquired this gear (inherited, purchased, found, etc.)
-- Include gear that might be recognized by NPCs or have cultural significance
-- Think about gear maintenance and replacement needs
-- Consider how gear reflects the character's personality and fighting style
-
-**STARTING CONDITION AWARENESS:**
-- Gear should reflect limited starting resources and access
-- Avoid equipment that would be restricted to experienced warriors
-- Consider the character's unfamiliarity with local customs and availability
-- Ensure gear is practical for the character's immediate situation
-
-**SERIES-SPECIFIC EQUIPMENT EXAMPLES:**
-Consider the character's background and preparation level:
-- For unprepared transported characters (e.g., Subaru in Re:Zero): Minimal or no combat equipment, modern clothing/accessories, equipment reflecting civilian background
-- For prepared adventurers: Basic combat gear appropriate to their class and experience level
-- For nobles or wealthy characters: Higher quality equipment befitting their status
-- For commoners or poor characters: Simple, worn, or makeshift equipment
-- Always match equipment to the character's background, preparation level, and economic status
-
-Create main gear that provides essential combat capability while maintaining authenticity to "{{seriesName}}" and respecting starting character limitations.
-Output ONLY { "mainGear": [...] }.`,
+Output ONLY { "weapon": ..., "shield": ... }.`,
     });
 
-    const foundation_initialSecondaryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialSecondaryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialSecondaryGearOutputSchema }, config: generalModelConfig,
-        prompt: `Generate secondary gear for "{{seriesName}}" character {{character.name}} ({{character.class}}).
-Output ONLY { "secondaryGear": [...] }.`,
+    // Step 2b: Armor equipment (head, body, legs, feet, hands)
+    const armorEquipmentPrompt = ai.definePrompt({
+        name: 'armorEquipmentPrompt', model: modelName, input: { schema: z.object({
+            seriesName: z.string(),
+            characterName: z.string(),
+            characterDescription: z.string(),
+            inventoryContext: z.string()
+        }) }, output: { schema: z.object({
+            head: Foundation_ItemSchemaInternal.nullable(),
+            body: Foundation_ItemSchemaInternal.nullable(),
+            legs: Foundation_ItemSchemaInternal.nullable(),
+            feet: Foundation_ItemSchemaInternal.nullable(),
+            hands: Foundation_ItemSchemaInternal.nullable(),
+        }) }, config: generalModelConfig,
+        prompt: `Generate armor/clothing for "{{seriesName}}" character {{characterName}}.
+
+Character: {{characterDescription}}
+Inventory: {{inventoryContext}}
+
+Generate armor slots:
+- head: Headgear or null
+- body: Chest armor/clothing or null
+- legs: Leg protection or null
+- feet: Footwear or null
+- hands: Hand protection or null
+
+For unprepared characters (like Subaru in Re:Zero), focus on basic clothing.
+For adventurers, include appropriate armor.
+
+Each item needs: id, name, description, equipSlot, basePrice.
+
+Output ONLY { "head": ..., "body": ..., "legs": ..., "feet": ..., "hands": ... }.`,
     });
 
-    const foundation_initialAccessoryGearPrompt = ai.definePrompt({
-        name: 'foundation_initialAccessoryGearPrompt', model: modelName, input: { schema: Foundation_MinimalContextForItemsFactsInputSchema }, output: { schema: Foundation_InitialAccessoryGearOutputSchema }, config: generalModelConfig,
-        prompt: `Generate accessory gear for "{{seriesName}}" character {{character.name}} ({{character.class}}).
-Output ONLY { "accessoryGear": [...] }.`,
+    // Step 2c: Accessory equipment (neck, ring1, ring2)
+    const accessoryEquipmentPrompt = ai.definePrompt({
+        name: 'accessoryEquipmentPrompt', model: modelName, input: { schema: z.object({
+            seriesName: z.string(),
+            characterName: z.string(),
+            characterDescription: z.string(),
+            inventoryContext: z.string()
+        }) }, output: { schema: z.object({
+            neck: Foundation_ItemSchemaInternal.nullable(),
+            ring1: Foundation_ItemSchemaInternal.nullable(),
+            ring2: Foundation_ItemSchemaInternal.nullable(),
+        }) }, config: generalModelConfig,
+        prompt: `Generate accessories for "{{seriesName}}" character {{characterName}}.
+
+Character: {{characterDescription}}
+Inventory: {{inventoryContext}}
+
+Generate accessory slots:
+- neck: Necklace/amulet or null
+- ring1: Ring or null
+- ring2: Ring or null
+
+For most starting characters, these should be null.
+Only include if character has specific background reason.
+
+Each item needs: id, name, description, equipSlot, basePrice.
+
+Output ONLY { "neck": ..., "ring1": ..., "ring2": ... }.`,
     });
 
-    const itemPromises = [
-        foundation_initialInventoryPrompt(minimalContextForItemsInput),
-        foundation_initialMainGearPrompt(minimalContextForItemsInput),
-        foundation_initialSecondaryGearPrompt(minimalContextForItemsInput),
-        foundation_initialAccessoryGearPrompt(minimalContextForItemsInput),
-    ];
+    // Sequential generation: inventory first, then equipment
+    console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 1 - Generating inventory.`);
+    const inventoryGeneration = inventoryGenerationPrompt(minimalContextForItemsInput);
 
-    let itemResults;
+    let inventoryResult;
     try {
-      itemResults = await Promise.all(itemPromises.map(async (promise, index) => {
-          const callStartTime = Date.now();
-          const promptName = ['inventory', 'mainGear', 'secondaryGear', 'accessoryGear'][index];
-          console.log(`[${new Date(callStartTime).toISOString()}] itemsAndEquipmentFlow: Calling ${promptName}Prompt.`);
-          const result = await promise;
-          console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: ${promptName}Prompt completed in ${Date.now() - callStartTime}ms.`);
-          return result.output;
-      }));
+      const callStartTime = Date.now();
+      const result = await inventoryGeneration;
+      console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 1 completed in ${Date.now() - callStartTime}ms.`);
+      inventoryResult = result.output;
     } catch (e: any) {
-      console.error(`[${new Date().toISOString()}] itemsAndEquipmentFlow: FAILED. Error: ${e.message}`);
-      throw new Error(`AI failed during items generation. Details: ${e.message}`);
+      console.error(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 1 FAILED. Error: ${e.message}`);
+      throw new Error(`AI failed during inventory generation. Details: ${e.message}`);
     }
 
-    const [inventoryOutput, mainGearRaw, secondaryGearRaw, accessoryGearRaw] = itemResults as [
-        z.infer<typeof Foundation_InitialInventoryOutputSchema>,
-        z.infer<typeof Foundation_InitialMainGearOutputSchema>,
-        z.infer<typeof Foundation_InitialSecondaryGearOutputSchema>,
-        z.infer<typeof Foundation_InitialAccessoryGearOutputSchema>,
-    ];
+    const inventory = inventoryResult.inventory || [];
 
-    // Process and sanitize items (simplified version of existing logic)
-    const inventory = inventoryOutput.inventory || [];
-    const allGearItems = [
-        ...(mainGearRaw.mainGear || []),
-        ...(secondaryGearRaw.secondaryGear || []),
-        ...(accessoryGearRaw.accessoryGear || []),
-    ];
+    // Steps 2a-2c: Generate equipment in smaller chunks using inventory context
+    console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2 - Generating equipment in phases.`);
+
+    // Create a simple string summary of inventory for context
+    const inventoryContext = inventory.length > 0
+        ? inventory.map(item => `${item.name}: ${item.description}`).join('; ')
+        : 'No inventory items';
+
+    const equipmentInput = {
+        seriesName: input.seriesName,
+        characterName: input.characterProfile.name,
+        characterDescription: input.characterProfile.description,
+        inventoryContext: inventoryContext
+    };
+
+    // Step 2a: Combat equipment
+    console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2a - Generating combat equipment.`);
+    let combatResult;
+    try {
+      const callStartTime = Date.now();
+      const result = await combatEquipmentPrompt(equipmentInput);
+      console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2a completed in ${Date.now() - callStartTime}ms.`);
+      combatResult = result.output;
+    } catch (e: any) {
+      console.error(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2a FAILED. Error: ${e.message}`);
+      throw new Error(`AI failed during combat equipment generation. Details: ${e.message}`);
+    }
+
+    // Step 2b: Armor equipment
+    console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2b - Generating armor equipment.`);
+    let armorResult;
+    try {
+      const callStartTime = Date.now();
+      const result = await armorEquipmentPrompt(equipmentInput);
+      console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2b completed in ${Date.now() - callStartTime}ms.`);
+      armorResult = result.output;
+    } catch (e: any) {
+      console.error(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2b FAILED. Error: ${e.message}`);
+      throw new Error(`AI failed during armor equipment generation. Details: ${e.message}`);
+    }
+
+    // Step 2c: Accessory equipment
+    console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2c - Generating accessory equipment.`);
+    let accessoryResult;
+    try {
+      const callStartTime = Date.now();
+      const result = await accessoryEquipmentPrompt(equipmentInput);
+      console.log(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2c completed in ${Date.now() - callStartTime}ms.`);
+      accessoryResult = result.output;
+    } catch (e: any) {
+      console.error(`[${new Date().toISOString()}] itemsAndEquipmentFlow: Step 2c FAILED. Error: ${e.message}`);
+      throw new Error(`AI failed during accessory equipment generation. Details: ${e.message}`);
+    }
+
+    // Combine all equipment results
+    const rawEquippedItems = {
+        weapon: combatResult.weapon,
+        shield: combatResult.shield,
+        head: armorResult.head,
+        body: armorResult.body,
+        legs: armorResult.legs,
+        feet: armorResult.feet,
+        hands: armorResult.hands,
+        neck: accessoryResult.neck,
+        ring1: accessoryResult.ring1,
+        ring2: accessoryResult.ring2,
+    };
 
     // Enhanced item sanitization with unique ID tracking
     const usedIds = new Set<string>();
@@ -1408,18 +1424,15 @@ Output ONLY { "accessoryGear": [...] }.`,
         return item as ItemType;
     };
 
-    // Sanitize inventory items first
+    // Sanitize inventory items
     inventory.forEach((item, idx) => sanitizeItem(item, 'inv', idx));
 
-    // Then sanitize gear items
-    allGearItems.forEach((item, idx) => sanitizeItem(item, 'gear', idx));
-
-    // Create equipped items structure
+    // Create equipped items structure with proper slot mapping
     const equippedItems: Required<Record<EquipmentSlot, ItemType | null>> = {
-        mainHand: null,
-        offHand: null,
+        weapon: null,
+        shield: null,
         head: null,
-        chest: null,
+        body: null,
         legs: null,
         feet: null,
         hands: null,
@@ -1428,17 +1441,12 @@ Output ONLY { "accessoryGear": [...] }.`,
         ring2: null,
     };
 
-    // Auto-equip items with improved logic to prevent duplicates
-    const equippedItemIds = new Set<string>();
-    allGearItems.forEach(item => {
-        if (item.equipSlot && !equippedItems[item.equipSlot as EquipmentSlot] && !equippedItemIds.has(item.id)) {
-            equippedItems[item.equipSlot as EquipmentSlot] = item;
-            equippedItemIds.add(item.id);
-        } else {
-            // Only add to inventory if not already equipped
-            if (!equippedItemIds.has(item.id)) {
-                inventory.push(item);
-            }
+    // Process equipped items from the unified result
+    Object.keys(rawEquippedItems).forEach(slot => {
+        const item = rawEquippedItems[slot as keyof typeof rawEquippedItems];
+        if (item) {
+            const sanitizedItem = sanitizeItem(item, 'eqp', slot);
+            equippedItems[slot as EquipmentSlot] = sanitizedItem;
         }
     });
 
@@ -2573,139 +2581,178 @@ const npcGenerationFlow = ai.defineFlow(
     const modelName = input.usePremiumAI ? PREMIUM_MODEL_NAME : STANDARD_MODEL_NAME;
     const modelConfig = { maxOutputTokens: input.usePremiumAI ? 16000 : 8000 };
 
-    // Enhanced NPC generation prompt
-    const enhanced_initialTrackedNPCsPrompt = ai.definePrompt({
-        name: 'enhanced_initialTrackedNPCsPrompt', model: modelName,
+    // Phase 1: Immediate Scene NPCs (3-4 NPCs)
+    const immediateSceneNPCsPrompt = ai.definePrompt({
+        name: 'immediateSceneNPCsPrompt', model: modelName,
         input: { schema: z.object({
           seriesName: z.string(),
-          seriesPlotSummary: z.string(),
-          characterProfile: Foundation_CharacterCoreProfileSchemaInternal,
+          characterName: z.string(),
+          characterDescription: z.string(),
           sceneDescription: z.string(),
           currentLocation: z.string(),
-          loreEntries: z.array(ScenarioNarrative_RawLoreEntryZodSchema),
         }) },
         output: { schema: z.object({ trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal) }) },
         config: modelConfig,
-        prompt: `You are an expert character creator for "{{seriesName}}". Using the provided lore entries as reference, create NPCs that will populate the immediate scenario and provide ongoing story opportunities.
+        prompt: `Create immediate scene NPCs for "{{seriesName}}".
 
-**CONTEXT:**
-Series: {{seriesName}}
-Plot Summary: {{seriesPlotSummary}}
-Player Character: {{characterProfile.name}} ({{characterProfile.class}}) - {{characterProfile.description}}
-Current Scene: {{sceneDescription}}
+Character: {{characterName}} - {{characterDescription}}
+Scene: {{sceneDescription}}
 Location: {{currentLocation}}
-Available Lore: {{loreEntries}}
 
-**NPC CREATION REQUIREMENTS:**
-Generate 8-12 NPCs including:
-
-**IMMEDIATE SCENE NPCs (3-4 characters):**
-- NPCs physically present in the current scene
+Generate 3-4 NPCs physically present in the current scene:
 - Characters the player will interact with immediately
-- Include a mix of helpful, neutral, and potentially challenging personalities
-- Ensure they have clear reasons for being in this location
+- Mix of helpful, neutral, and potentially challenging personalities
+- Clear reasons for being in this location
 
-**MAJOR STORY NPCs (4-6 characters):**
-- Important characters from the series who will influence the story
-- Key allies, mentors, or antagonists the player should know about
-- Characters who drive major plot developments
-- Include both accessible and distant/powerful figures
+For unknown newcomers (like Subaru in Re:Zero), most should start NEUTRAL (0-25).
 
-**LOCAL COMMUNITY NPCs (2-3 characters):**
-- Merchants, guards, innkeepers, or other service providers
-- Local residents who provide world flavor and practical services
-- Characters who can provide information or minor quests
-- Include cultural representatives of the local area
+Each NPC needs: id, name, description, relationshipStatus (-100 to 100), knownFacts (array), firstEncounteredLocation, lastKnownLocation, firstEncounteredTurnId: "initial_turn_0", lastSeenTurnId: "initial_turn_0".
 
-**NPC DESIGN PRINCIPLES:**
-
-**CANON COMPLIANCE:**
-- All NPCs must fit perfectly within the established world of "{{seriesName}}"
-- Respect existing character relationships and power dynamics
-- Maintain consistency with the series' tone and character archetypes
-- Use appropriate naming conventions and cultural elements
-
-**RELATIONSHIP AWARENESS:**
-- Set initial relationship status based on the player character's canonical position
-- Consider how NPCs would realistically react to someone like {{characterProfile.name}}
-- Account for the character's starting conditions (no money, limited knowledge, etc.)
-- Include NPCs with varying levels of helpfulness and accessibility
-
-**SERIES-SPECIFIC RELATIONSHIP EXAMPLES:**
-Consider the character's canonical position and reputation:
-- For unknown newcomers (e.g., Subaru in Re:Zero): Most NPCs should start as NEUTRAL (0-25), only helpful NPCs slightly positive (25-50), avoid "Staunch Ally" (75+) unless canonically appropriate
-- For established characters: Set relationships based on their canonical reputation and connections
-- For characters with existing relationships: Reflect their established bonds and conflicts
-- For characters starting new adventures: Consider their background reputation and social connections
-- Always ensure relationship levels match the character's canonical standing in the world
-
-**FUNCTIONAL DIVERSITY:**
-- Include NPCs who serve different narrative and practical functions
-- Mix of combat-capable and non-combat characters
-- Variety of social classes, occupations, and personality types
-- Balance between approachable and intimidating characters
-
-**STORY INTEGRATION:**
-- Each NPC should have clear potential for ongoing story development
-- Include characters who can provide quests, information, or services
-- Create NPCs with their own goals and motivations
-- Ensure NPCs can drive plot forward through their actions and needs
-
-**NPC STRUCTURE REQUIREMENTS:**
-Each NPC must include:
-- 'id': Unique identifier
-- 'name': Series-appropriate name
-- 'description': Detailed physical and personality description
-- 'relationshipStatus': Numerical value (-100 to 100) based on canonical relationships
-- 'knownFacts': Array of information the NPC knows (can be empty initially)
-- 'firstEncounteredLocation' and 'lastKnownLocation': Set to appropriate locations
-- 'firstEncounteredTurnId' and 'lastSeenTurnId': Set to "initial_turn_0"
-
-**OPTIONAL ENHANCEMENTS:**
-- 'classOrRole': Character's profession or role in society
-- 'health' and 'maxHealth': For combat-capable NPCs
-- 'mana' and 'maxMana': For magic-using NPCs
-- 'isMerchant': true for merchant NPCs with 'merchantInventory'
-
-**STARTING CONDITION CONSIDERATIONS:**
-- NPCs should react appropriately to a newcomer with limited resources
-- Include characters who might help or hinder someone in the player's situation
-- Consider language barriers and cultural misunderstandings
-- Ensure NPC reactions are realistic for the character's starting state
-
-**EXCLUSIONS:**
-- Do NOT include {{characterProfile.name}} in the NPC list
-- Avoid creating NPCs that contradict established series characters
-- Don't create overpowered NPCs that would trivialize challenges
-
-Create NPCs that provide rich interaction opportunities while maintaining authenticity to "{{seriesName}}" and supporting engaging storytelling.
 Output ONLY { "trackedNPCs": [...] }.`,
     });
 
-    const npcsInput = {
+    // Phase 2: Major Story NPCs (4-6 NPCs)
+    const majorStoryNPCsPrompt = ai.definePrompt({
+        name: 'majorStoryNPCsPrompt', model: modelName,
+        input: { schema: z.object({
+          seriesName: z.string(),
+          characterName: z.string(),
+          characterDescription: z.string(),
+          currentLocation: z.string(),
+          existingNPCs: z.array(z.string()) // Just names for context
+        }) },
+        output: { schema: z.object({ trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal) }) },
+        config: modelConfig,
+        prompt: `Create major story NPCs for "{{seriesName}}".
+
+Character: {{characterName}} - {{characterDescription}}
+Location: {{currentLocation}}
+Existing NPCs: {{existingNPCs}}
+
+Generate 4-6 important series characters:
+- Key allies, mentors, or antagonists
+- Characters who drive major plot developments
+- Both accessible and distant/powerful figures
+
+For unknown newcomers (like Subaru in Re:Zero), most should start NEUTRAL (0-25).
+
+Each NPC needs: id, name, description, relationshipStatus (-100 to 100), knownFacts (array), firstEncounteredLocation, lastKnownLocation, firstEncounteredTurnId: "initial_turn_0", lastSeenTurnId: "initial_turn_0".
+
+Output ONLY { "trackedNPCs": [...] }.`,
+    });
+
+    // Phase 3: Local Community NPCs (2-3 NPCs)
+    const localCommunityNPCsPrompt = ai.definePrompt({
+        name: 'localCommunityNPCsPrompt', model: modelName,
+        input: { schema: z.object({
+          seriesName: z.string(),
+          characterName: z.string(),
+          currentLocation: z.string(),
+          existingNPCs: z.array(z.string()) // Just names for context
+        }) },
+        output: { schema: z.object({ trackedNPCs: z.array(Narrative_NPCProfileSchemaInternal) }) },
+        config: modelConfig,
+        prompt: `Create local community NPCs for "{{seriesName}}".
+
+Character: {{characterName}}
+Location: {{currentLocation}}
+Existing NPCs: {{existingNPCs}}
+
+Generate 2-3 local service providers:
+- Merchants, guards, innkeepers, or other service providers
+- Local residents who provide world flavor and practical services
+- Characters who can provide information or minor quests
+
+Most should start NEUTRAL (0-25) for newcomers.
+
+Each NPC needs: id, name, description, relationshipStatus (-100 to 100), knownFacts (array), firstEncounteredLocation, lastKnownLocation, firstEncounteredTurnId: "initial_turn_0", lastSeenTurnId: "initial_turn_0".
+
+Output ONLY { "trackedNPCs": [...] }.`,
+    });
+
+    // Sequential NPC generation in phases
+    const allNPCs: any[] = [];
+
+    // Phase 1: Immediate Scene NPCs
+    console.log(`[${new Date().toISOString()}] npcGenerationFlow: Phase 1 - Generating immediate scene NPCs.`);
+    const immediateInput = {
       seriesName: input.seriesName,
-      seriesPlotSummary: input.seriesPlotSummary,
-      characterProfile: input.characterProfile,
+      characterName: input.characterProfile.name,
+      characterDescription: input.characterProfile.description,
       sceneDescription: input.sceneDescription,
       currentLocation: input.currentLocation,
-      loreEntries: input.loreEntries,
     };
 
-    let npcsResult;
+    let immediateResult;
     try {
-        const { output } = await enhanced_initialTrackedNPCsPrompt(npcsInput);
-        npcsResult = output;
+        const callStartTime = Date.now();
+        const { output } = await immediateSceneNPCsPrompt(immediateInput);
+        console.log(`[${new Date().toISOString()}] npcGenerationFlow: Phase 1 completed in ${Date.now() - callStartTime}ms.`);
+        immediateResult = output;
     } catch (e: any) {
-        console.error(`[${new Date().toISOString()}] npcGenerationFlow: FAILED. Error: ${e.message}`);
-        throw new Error(`AI failed during NPC generation. Details: ${e.message}`);
+        console.error(`[${new Date().toISOString()}] npcGenerationFlow: Phase 1 FAILED. Error: ${e.message}`);
+        throw new Error(`AI failed during immediate scene NPC generation. Details: ${e.message}`);
     }
 
-    if (!npcsResult || !npcsResult.trackedNPCs) {
-      throw new Error('Failed to generate NPCs (REQUIRED field missing).');
+    if (immediateResult?.trackedNPCs) {
+        allNPCs.push(...immediateResult.trackedNPCs);
+    }
+
+    // Phase 2: Major Story NPCs
+    console.log(`[${new Date().toISOString()}] npcGenerationFlow: Phase 2 - Generating major story NPCs.`);
+    const majorInput = {
+      seriesName: input.seriesName,
+      characterName: input.characterProfile.name,
+      characterDescription: input.characterProfile.description,
+      currentLocation: input.currentLocation,
+      existingNPCs: allNPCs.map(npc => npc.name),
+    };
+
+    let majorResult;
+    try {
+        const callStartTime = Date.now();
+        const { output } = await majorStoryNPCsPrompt(majorInput);
+        console.log(`[${new Date().toISOString()}] npcGenerationFlow: Phase 2 completed in ${Date.now() - callStartTime}ms.`);
+        majorResult = output;
+    } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] npcGenerationFlow: Phase 2 FAILED. Error: ${e.message}`);
+        throw new Error(`AI failed during major story NPC generation. Details: ${e.message}`);
+    }
+
+    if (majorResult?.trackedNPCs) {
+        allNPCs.push(...majorResult.trackedNPCs);
+    }
+
+    // Phase 3: Local Community NPCs
+    console.log(`[${new Date().toISOString()}] npcGenerationFlow: Phase 3 - Generating local community NPCs.`);
+    const localInput = {
+      seriesName: input.seriesName,
+      characterName: input.characterProfile.name,
+      currentLocation: input.currentLocation,
+      existingNPCs: allNPCs.map(npc => npc.name),
+    };
+
+    let localResult;
+    try {
+        const callStartTime = Date.now();
+        const { output } = await localCommunityNPCsPrompt(localInput);
+        console.log(`[${new Date().toISOString()}] npcGenerationFlow: Phase 3 completed in ${Date.now() - callStartTime}ms.`);
+        localResult = output;
+    } catch (e: any) {
+        console.error(`[${new Date().toISOString()}] npcGenerationFlow: Phase 3 FAILED. Error: ${e.message}`);
+        throw new Error(`AI failed during local community NPC generation. Details: ${e.message}`);
+    }
+
+    if (localResult?.trackedNPCs) {
+        allNPCs.push(...localResult.trackedNPCs);
+    }
+
+    if (allNPCs.length === 0) {
+      throw new Error('Failed to generate any NPCs across all phases.');
     }
 
     const finalOutput: GenerateNPCsOutput = {
-      trackedNPCs: npcsResult.trackedNPCs.filter(npc => npc.name !== input.characterProfile.name),
+      trackedNPCs: allNPCs.filter(npc => npc.name !== input.characterProfile.name),
     };
 
     console.log(`[${new Date().toISOString()}] npcGenerationFlow: END. Total time: ${Date.now() - flowStartTime}ms`);
