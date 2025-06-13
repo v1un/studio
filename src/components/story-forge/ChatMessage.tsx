@@ -9,11 +9,18 @@ import CombatHelperDisplay from "./CombatHelperDisplay";
 
 interface ChatMessageProps {
   message: DisplayMessage;
+  onStartInteractiveCombat?: () => void;
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, onStartInteractiveCombat }: ChatMessageProps) {
   if (message.speakerType === 'SystemHelper' && message.combatHelperInfo) {
-    return <CombatHelperDisplay combatInfo={message.combatHelperInfo} />;
+    return (
+      <CombatHelperDisplay
+        combatInfo={message.combatHelperInfo}
+        onStartInteractiveCombat={onStartInteractiveCombat}
+        showInteractiveOption={!!onStartInteractiveCombat}
+      />
+    );
   }
   
   const isPlayer = message.speakerType === 'Player';

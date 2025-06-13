@@ -9,9 +9,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface StoryDisplayProps {
   storyHistory: StoryTurn[];
   isLoadingInteraction: boolean; // To prevent scrolling while AI is thinking
+  onStartInteractiveCombat?: () => void;
 }
 
-export default function StoryDisplay({ storyHistory, isLoadingInteraction }: StoryDisplayProps) {
+export default function StoryDisplay({ storyHistory, isLoadingInteraction, onStartInteractiveCombat }: StoryDisplayProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +41,11 @@ export default function StoryDisplay({ storyHistory, isLoadingInteraction }: Sto
     >
       <div className="flex flex-col gap-2 p-1">
         {allMessages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} />
+          <ChatMessage
+            key={msg.id}
+            message={msg}
+            onStartInteractiveCombat={onStartInteractiveCombat}
+          />
         ))}
       </div>
     </ScrollArea>

@@ -5,10 +5,13 @@ import type { CombatHelperInfo, CombatEventLogEntry } from "@/types/story";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { ShieldAlertIcon, HeartIcon, ZapIcon, UserIcon, SwordsIcon, BotIcon, SkullIcon, MessageSquareTextIcon, PlusCircleIcon, MinusCircleIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ShieldAlertIcon, HeartIcon, ZapIcon, UserIcon, SwordsIcon, BotIcon, SkullIcon, MessageSquareTextIcon, PlusCircleIcon, MinusCircleIcon, PlayIcon } from "lucide-react";
 
 interface CombatHelperDisplayProps {
   combatInfo: CombatHelperInfo;
+  onStartInteractiveCombat?: () => void;
+  showInteractiveOption?: boolean;
 }
 
 const EventIcon = ({type}: {type: CombatEventLogEntry['type']}) => {
@@ -22,7 +25,11 @@ const EventIcon = ({type}: {type: CombatEventLogEntry['type']}) => {
     }
 }
 
-export default function CombatHelperDisplay({ combatInfo }: CombatHelperDisplayProps) {
+export default function CombatHelperDisplay({
+  combatInfo,
+  onStartInteractiveCombat,
+  showInteractiveOption = false
+}: CombatHelperDisplayProps) {
   return (
     <Card className="w-full my-4 shadow-md border-destructive/30 bg-destructive/5 animate-fade-in">
       <CardHeader className="pb-3 pt-4">
@@ -81,6 +88,24 @@ export default function CombatHelperDisplay({ combatInfo }: CombatHelperDisplayP
                 ))}
               </ul>
             </ScrollArea>
+          </div>
+        )}
+
+        {/* Interactive Combat Option */}
+        {showInteractiveOption && onStartInteractiveCombat && (
+          <div className="mt-3 pt-3 border-t border-destructive/20">
+            <Button
+              onClick={onStartInteractiveCombat}
+              variant="outline"
+              size="sm"
+              className="w-full"
+            >
+              <PlayIcon className="w-4 h-4 mr-2" />
+              Start Interactive Combat
+            </Button>
+            <p className="text-xs text-gray-600 mt-1 text-center">
+              Take direct control of combat actions and tactics
+            </p>
           </div>
         )}
       </CardContent>

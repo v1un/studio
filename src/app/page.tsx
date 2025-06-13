@@ -34,18 +34,29 @@ import EnhancedCharacterStatus from "@/components/enhanced-tracking/enhanced-cha
 import JournalDisplay from "@/components/story-forge/journal-display";
 import LorebookDisplay from "@/components/story-forge/lorebook-display";
 import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
+import { InventoryManagerWrapper } from "@/components/inventory/InventoryManagerWrapper";
 import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-log-display";
 
 import { simpleTestAction } from '@/ai/actions/simple-test-action';
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon, CompassIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon, CompassIcon, TrendingUp, PackageIcon } from "lucide-react";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { generateUUID } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { migrateToEnhancedState, initializeEnhancedStoryState } from "@/lib/enhanced-state-manager";
+import { generateCombatScenario, createPlayerCombatParticipant } from "@/lib/combat-api";
+import type { CombatState, CombatParticipant } from "@/types/combat";
+import CombatInterface from "@/components/combat/CombatInterface";
+import {
+  checkLevelUp,
+  processLevelUp,
+  initializeCharacterProgression,
+  calculateDerivedStats
+} from "@/lib/progression-engine";
+import ProgressionManager from "@/components/progression/progression-manager";
 
 
 const ACTIVE_SESSION_ID_KEY = "activeStoryForgeSessionId";
@@ -162,6 +173,8 @@ export default function StoryForgePage() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | 'updatingProfile' | 'bridgingContent' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
+  const [activeCombatState, setActiveCombatState] = useState<CombatState | null>(null);
+  const [showCombatInterface, setShowCombatInterface] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -338,13 +351,16 @@ export default function StoryForgePage() {
         npc => npc.name !== foundationResult.characterProfile.name
       );
 
+      // Initialize character with progression system
+      const characterWithProgression = initializeCharacterProgression(foundationResult.characterProfile);
+
       const baseStoryState: StructuredStoryState = {
-        character: foundationResult.characterProfile,
+        character: characterWithProgression,
         currentLocation: foundationResult.currentLocation,
         inventory: foundationResult.inventory,
         equippedItems: foundationResult.equippedItems,
         worldFacts: foundationResult.worldFacts,
-        storySummary: `The adventure begins for ${foundationResult.characterProfile.name} in ${data.seriesName}, at ${foundationResult.currentLocation}. Initial scene: ${foundationResult.sceneDescription.substring(0,100)}...`,
+        storySummary: `The adventure begins for ${characterWithProgression.name} in ${data.seriesName}, at ${foundationResult.currentLocation}. Initial scene: ${foundationResult.sceneDescription.substring(0,100)}...`,
         quests: narrativeElementsResult.quests,
         storyArcs: narrativeElementsResult.storyArcs,
         currentStoryArcId: firstStoryArcId,
@@ -491,8 +507,18 @@ export default function StoryForgePage() {
                 }
                 case 'levelUp': {
                     const e = event as LevelUpEvent;
+
+                    // Initialize progression system if not present
+                    if (!finalUpdatedBaseStoryState.character.progressionPoints) {
+                      finalUpdatedBaseStoryState.character = initializeCharacterProgression(finalUpdatedBaseStoryState.character);
+                    }
+
+                    // Process the level up with progression points
+                    const leveledUpCharacter = processLevelUp(finalUpdatedBaseStoryState.character);
+                    finalUpdatedBaseStoryState.character = leveledUpCharacter;
+
                     systemMessagesForTurn.push(createSystemMessage(
-                        `Level Up! Reached Level ${e.newLevel}. ${e.rewardSuggestion || ''} ${e.reason || ''}`.trim()
+                        `Level Up! Reached Level ${e.newLevel}. You gained progression points! ${e.rewardSuggestion || ''} ${e.reason || ''}`.trim()
                     ));
                     break;
                 }
@@ -644,8 +670,116 @@ export default function StoryForgePage() {
       const previousStoryArcId = currentStoryState.currentStoryArcId; 
       const arcJustCompleted = finalUpdatedBaseStoryState.storyArcs.find(arc => arc.id === previousStoryArcId && arc.isCompleted && !currentStoryState.storyArcs.find(sa => sa.id === arc.id && sa.isCompleted));
 
+      // === ENHANCED ARC SYSTEM INTEGRATION ===
+      // Update current arc with player choice and scene progression
+      if (currentStoryState.currentStoryArcId) {
+        try {
+          const { arcManager } = await import('@/lib/comprehensive-arc-manager');
+
+          // Track player choice if one was made
+          if (userInput && userInput.trim()) {
+            const choiceData = {
+              turnId: newTurnId,
+              choiceText: userInput,
+              choiceDescription: `Player chose: ${userInput}`,
+              alternatives: [], // Could be extracted from scene generation
+              consequences: [],
+              impactScope: 'phase' as const,
+              moralAlignment: 'neutral' as const,
+              agencyScore: 6, // Default score, could be calculated
+              narrativeWeight: 5, // Default weight, could be calculated
+            };
+
+            const arcUpdateResult = arcManager.updateArc(
+              currentStoryState.currentStoryArcId,
+              finalUpdatedBaseStoryState.character,
+              finalUpdatedBaseStoryState,
+              newTurnId,
+              'player_choice',
+              choiceData
+            );
+
+            if (arcUpdateResult.success && arcUpdateResult.updatedArc) {
+              // Update the arc in story state
+              finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                const arcIndex = draftState.storyArcs.findIndex(arc => arc.id === currentStoryState.currentStoryArcId);
+                if (arcIndex !== -1) {
+                  draftState.storyArcs[arcIndex] = arcUpdateResult.updatedArc!;
+                }
+              });
+
+              // Handle failure detection and recovery
+              if (arcUpdateResult.failureDetection?.failures.length) {
+                console.log('Arc failures detected:', arcUpdateResult.failureDetection.failures);
+                // Could show recovery options to player
+              }
+            }
+          }
+        } catch (arcError) {
+          console.error('Enhanced Arc system error:', arcError);
+          // Graceful degradation - continue with existing system
+        }
+      }
+
       if (arcJustCompleted) {
         console.log(`CLIENT: Story Arc "${arcJustCompleted.title}" (ID: ${arcJustCompleted.id}) completed by AI.`);
+
+        // === ENHANCED ARC COMPLETION HANDLING ===
+        try {
+          const { arcManager } = await import('@/lib/comprehensive-arc-manager');
+
+          const arcCompletionResult = arcManager.completeArc(
+            arcJustCompleted.id,
+            finalUpdatedBaseStoryState.character,
+            finalUpdatedBaseStoryState,
+            arcJustCompleted.completionSummary || "The story arc has concluded."
+          );
+
+          if (arcCompletionResult.success) {
+            console.log('Enhanced Arc completion processed:', arcCompletionResult);
+
+            // Apply completion rewards
+            if (arcCompletionResult.completionRewards?.length) {
+              finalUpdatedBaseStoryState = produce(finalUpdatedBaseStoryState, draftState => {
+                arcCompletionResult.completionRewards!.forEach(reward => {
+                  switch (reward.type) {
+                    case 'experience':
+                      draftState.character.experiencePoints += reward.amount;
+                      break;
+                    case 'currency':
+                      draftState.character.currency = (draftState.character.currency || 0) + reward.amount;
+                      break;
+                    case 'skill_points':
+                      if (draftState.character.progressionPoints) {
+                        draftState.character.progressionPoints.skill += reward.amount;
+                      }
+                      break;
+                  }
+                });
+              });
+
+              // Show reward notifications
+              arcCompletionResult.completionRewards.forEach(reward => {
+                systemMessagesForTurn.push(createSystemMessage(
+                  `Arc Completion Reward: ${reward.description} (+${reward.amount} ${reward.type})`,
+                  'SystemHelper'
+                ));
+              });
+            }
+
+            // Show next arc suggestions
+            if (arcCompletionResult.nextArcSuggestions?.length) {
+              systemMessagesForTurn.push(createSystemMessage(
+                `Story Suggestions: ${arcCompletionResult.nextArcSuggestions.join('; ')}`,
+                'SystemHelper'
+              ));
+            }
+          }
+        } catch (arcError) {
+          console.error('Enhanced Arc completion error:', arcError);
+          // Continue with existing completion logic
+        }
+
         systemMessagesForTurn.push(createSystemMessage(
             `EPISODE COMPLETE: ${arcJustCompleted.title}!\n\n${arcJustCompleted.completionSummary || "The story arc has concluded."}`,
             'ArcNotification', 'ARC FINALE'
@@ -1047,6 +1181,106 @@ export default function StoryForgePage() {
     setIsLoadingInteraction(false);
   };
 
+  const handleStartInteractiveCombat = async () => {
+    if (!currentStoryState || !baseCharacterProfile || !currentSession) {
+      toast({
+        title: "Cannot Start Combat",
+        description: "Missing required game state",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoadingInteraction(true);
+    try {
+      // Generate combat scenario
+      const combatInput = {
+        storyContext: currentStoryState.storySummary || "An adventure unfolds",
+        playerCharacter: baseCharacterProfile,
+        currentLocation: currentStoryState.currentLocation,
+        storyState: currentStoryState,
+        combatTrigger: 'player_action' as const,
+        difficultyLevel: 'medium' as const,
+        usePremiumAI: currentSession.isPremiumSession,
+      };
+
+      const combatScenario = await generateCombatScenario(combatInput);
+
+      // Create player participant
+      const playerParticipant = createPlayerCombatParticipant(baseCharacterProfile);
+
+      // Combine all participants
+      const allParticipants = [
+        playerParticipant,
+        ...combatScenario.allies,
+        ...combatScenario.enemies
+      ];
+
+      // Create initial combat state
+      const newCombatState: CombatState = {
+        id: generateUUID(),
+        isActive: true,
+        phase: 'initiative',
+        participants: allParticipants,
+        currentTurnId: '', // Will be set by initiative calculation
+        turnOrder: [],
+        round: 1,
+        environment: combatScenario.environment,
+        actionHistory: [],
+        victoryConditions: combatScenario.victoryConditions,
+        defeatConditions: combatScenario.defeatConditions,
+        startTime: new Date().toISOString(),
+        turnStartTime: new Date().toISOString(),
+      };
+
+      setActiveCombatState(newCombatState);
+      setShowCombatInterface(true);
+      setActiveTab("story");
+
+      toast({
+        title: "Interactive Combat Started!",
+        description: combatScenario.combatDescription,
+      });
+
+    } catch (error: any) {
+      console.error("CLIENT: Failed to start interactive combat:", error);
+      toast({
+        title: "Combat Generation Failed",
+        description: error.message || "Unable to generate combat scenario",
+        variant: "destructive",
+      });
+    }
+    setIsLoadingInteraction(false);
+  };
+
+  const handleCombatEnd = (result: any) => {
+    console.log("CLIENT: Combat ended with result:", result);
+
+    // Update story state based on combat result
+    if (currentStoryState && result.outcome === 'victory') {
+      // Add experience, update health, etc.
+      toast({
+        title: "Victory!",
+        description: result.reason,
+      });
+    } else if (result.outcome === 'defeat') {
+      toast({
+        title: "Defeat",
+        description: result.reason,
+        variant: "destructive",
+      });
+    }
+
+    // Close combat interface
+    setShowCombatInterface(false);
+    setActiveCombatState(null);
+  };
+
+  const handleCombatActionExecuted = (result: any) => {
+    console.log("CLIENT: Combat action executed:", result);
+    // Could show action feedback or update UI
+  };
+
   if (isLoadingPage) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 sm:p-8">
@@ -1088,12 +1322,18 @@ export default function StoryForgePage() {
 
           {currentSession && baseCharacterProfile && currentStoryState && (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
-              <TabsList className="grid w-full grid-cols-6 mb-4 shrink-0">
+              <TabsList className="grid w-full grid-cols-7 mb-4 shrink-0">
                 <TabsTrigger value="story" className="text-xs sm:text-sm">
                   <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
                 </TabsTrigger>
                 <TabsTrigger value="character" className="text-xs sm:text-sm">
                   <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
+                </TabsTrigger>
+                <TabsTrigger value="progression" className="text-xs sm:text-sm">
+                  <TrendingUp className="w-4 h-4 mr-1 sm:mr-2" /> Progression
+                </TabsTrigger>
+                <TabsTrigger value="inventory" className="text-xs sm:text-sm">
+                  <PackageIcon className="w-4 h-4 mr-1 sm:mr-2" /> Inventory
                 </TabsTrigger>
                  <TabsTrigger value="npcs" className="text-xs sm:text-sm">
                   <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
@@ -1135,10 +1375,18 @@ export default function StoryForgePage() {
                       isPremiumSession={currentSession.isPremiumSession}
                   />
                 </div>
-                <StoryDisplay
-                  storyHistory={storyHistory}
-                  isLoadingInteraction={isLoadingInteraction}
-                />
+                {showCombatInterface && activeCombatState ? (
+                  <CombatInterface
+                    onCombatEnd={handleCombatEnd}
+                    onActionExecuted={handleCombatActionExecuted}
+                  />
+                ) : (
+                  <StoryDisplay
+                    storyHistory={storyHistory}
+                    isLoadingInteraction={isLoadingInteraction}
+                    onStartInteractiveCombat={handleStartInteractiveCombat}
+                  />
+                )}
                 <div className="shrink-0 pt-2">
                   <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
                 </div>
@@ -1149,6 +1397,60 @@ export default function StoryForgePage() {
                   character={effectiveCharacterProfileForAI || baseCharacterProfile}
                   storyState={currentStoryState}
                 />
+              </TabsContent>
+
+              <TabsContent value="progression" className="overflow-y-auto flex-grow">
+                <ProgressionManager
+                  character={baseCharacterProfile}
+                  onCharacterUpdate={(updatedCharacter) => {
+                    // Update the character in the current story state
+                    setStoryHistory(prevHistory => {
+                      const newHistory = [...prevHistory];
+                      const lastTurn = newHistory[newHistory.length - 1];
+                      if (lastTurn) {
+                        lastTurn.storyStateAfterScene = {
+                          ...lastTurn.storyStateAfterScene,
+                          character: updatedCharacter
+                        };
+                      }
+                      return newHistory;
+                    });
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="inventory" className="overflow-y-auto flex-grow">
+                {baseCharacterProfile && currentStoryState && (
+                  <InventoryManagerWrapper
+                    character={baseCharacterProfile}
+                    storyState={currentStoryState}
+                    onCharacterUpdate={(updatedCharacter) => {
+                      // Update the character in the current story state
+                      setStoryHistory(prevHistory => {
+                        const newHistory = [...prevHistory];
+                        const lastTurn = newHistory[newHistory.length - 1];
+                        if (lastTurn) {
+                          lastTurn.storyStateAfterScene = {
+                            ...lastTurn.storyStateAfterScene,
+                            character: updatedCharacter
+                          };
+                        }
+                        return newHistory;
+                      });
+                    }}
+                    onStoryStateUpdate={(updatedStoryState) => {
+                      // Update the story state
+                      setStoryHistory(prevHistory => {
+                        const newHistory = [...prevHistory];
+                        const lastTurn = newHistory[newHistory.length - 1];
+                        if (lastTurn) {
+                          lastTurn.storyStateAfterScene = updatedStoryState;
+                        }
+                        return newHistory;
+                      });
+                    }}
+                  />
+                )}
               </TabsContent>
 
               <TabsContent value="npcs" className="overflow-y-auto flex-grow">

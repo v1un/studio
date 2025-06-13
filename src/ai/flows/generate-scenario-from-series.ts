@@ -536,10 +536,31 @@ const foundationFlow = ai.defineFlow(
     let step1StartTime = Date.now();
     console.log(`[${new Date(step1StartTime).toISOString()}] generateScenarioFoundationFlow: STEP 1 - Starting Initial Parallel Batch (Character/Scene, Style Guide, Plot Summary).`);
 
+    // Import generic templates and series adapter
+    const { adaptPromptForSeries } = await import("@/lib/series-adapter");
+    const { GENERIC_CHARACTER_FOUNDATION_TEMPLATE, GENERIC_DETAILED_SCENE_TEMPLATE } = await import("@/ai/prompts/generic-templates");
+
+    const basePrompt = `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
+
+You are a master storyteller and canon expert for "{{seriesName}}".
+
+${GENERIC_CHARACTER_FOUNDATION_TEMPLATE}
+
+${GENERIC_DETAILED_SCENE_TEMPLATE}
+
+INTEGRATION REQUIREMENTS:
+- Create a sceneDescription that follows the HIGH-QUALITY NARRATIVE SCENE GENERATION guidelines
+- Include granular sensory details (sight, sound, smell, touch, taste where relevant)
+- Build moment-by-moment progression that creates engagement
+- Establish character psychology through actions and internal thoughts
+- Create environmental atmosphere that enhances immersion
+- Set up natural relationship development opportunities`;
+
+    const adaptedPrompt = adaptPromptForSeries(basePrompt, input.seriesName);
+
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
-You are a master storyteller and canon expert for "{{seriesName}}".
+        prompt: adaptedPrompt
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
 Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 'characterCore': Authentically create profile. Include name, class, description. Health/MaxHealth (numbers). Mana/MaxMana (numbers, 0 if not applicable). Stats (5-15, numbers). Level 1, 0 XP, XPToNextLevel (numbers, must be >0). Currency (number).
@@ -818,12 +839,38 @@ const characterAndSceneFlow = ai.defineFlow(
     const generalModelConfig = { maxOutputTokens: input.usePremiumAI ? 16000 : 4000 };
     const plotSummaryModelConfig = input.usePremiumAI ? { maxOutputTokens: 16000 } : { maxOutputTokens: 4000 };
 
-    // Define prompts (reusing existing ones)
+    // Import enhanced templates
+    const { adaptPromptForSeries } = await import("@/lib/series-adapter");
+    const { GENERIC_CHARACTER_FOUNDATION_TEMPLATE, GENERIC_DETAILED_SCENE_TEMPLATE } = await import("@/ai/prompts/generic-templates");
+
+    // Build enhanced prompt with detailed scene generation
+    const basePrompt = `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
+
+You are a master storyteller and canon expert for "{{seriesName}}".
+
+${GENERIC_CHARACTER_FOUNDATION_TEMPLATE}
+
+${GENERIC_DETAILED_SCENE_TEMPLATE}
+
+INTEGRATION REQUIREMENTS:
+- Create a sceneDescription that follows the HIGH-QUALITY NARRATIVE SCENE GENERATION guidelines
+- Include granular sensory details (sight, sound, smell, touch, taste where relevant)
+- Build moment-by-moment progression that creates engagement
+- Establish character psychology through actions and internal thoughts
+- Create environmental atmosphere that enhances immersion
+- Set up natural relationship development opportunities
+
+Your task is to create an authentic character and opening scene that strictly adheres to the series' established lore, world rules, and character archetypes.`;
+
+    const adaptedPrompt = adaptPromptForSeries(basePrompt, input.seriesName);
+
+    // Define prompts with enhanced templates
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
-        prompt: `IMPORTANT_INSTRUCTION: Your entire response MUST be a single, valid JSON object conforming to 'Foundation_CharacterAndSceneOutputSchema'. ALL REQUIRED fields (sceneDescription, characterCore, currentLocation AND nested required fields in characterCore like name, class, description, health, maxHealth, level, experiencePoints, experienceToNextLevel) MUST be present.
+        prompt: adaptedPrompt + `
 
-You are a master storyteller and canon expert for "{{seriesName}}". Your task is to create an authentic character and opening scene that strictly adheres to the series' established lore, world rules, and character archetypes.
+User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
+Generate 'sceneDescription', 'characterCore', 'currentLocation'.`
 
 **CANON COMPLIANCE REQUIREMENTS:**
 - Respect ALL established world rules, magic systems, political structures, and cultural norms from the original series
@@ -831,45 +878,7 @@ You are a master storyteller and canon expert for "{{seriesName}}". Your task is
 - Maintain consistency with the series' tone, themes, and narrative style
 - Consider the character's starting point in the series timeline and their canonical knowledge/relationships at that moment
 
-**CHARACTER CREATION GUIDELINES:**
-Character name: {{characterNameInput}} (if empty, create an appropriate name for the series)
-Character class: {{characterClassInput}} (if empty, select a class/role that fits the series' established archetypes)
-
-**STARTING CONDITIONS AWARENESS:**
-- Character begins with NO prior relationships in this world (unless canonically established)
-- Character has NO money, possessions, or local knowledge (unless specified by series canon)
-- Character cannot read/write local language initially (if applicable to series)
-- Character has only basic survival instincts and any canonical abilities from their background
-- Character is unfamiliar with local customs, geography, and social structures
-
-**SERIES-SPECIFIC STAT EXAMPLES:**
-Consider the character's canonical background when setting stats:
-- For transported modern characters (e.g., Subaru in Re:Zero): Set 'languageSpeaking' to 100 if they have translation abilities, 'languageReading' to 0 if illiterate, 'currency' to 0, and stats appropriate for their real-world background
-- For native fantasy characters: Set language skills to 100 for both, currency based on background, stats appropriate for their training/class
-- For characters with language barriers: Adjust language skills accordingly and reflect this in the character description
-
-**SCENE DESCRIPTION (2-3 detailed paragraphs):**
-- Set the scene at a canonical starting location appropriate for new arrivals/beginnings in this series
-- Describe the immediate environment with rich sensory details (sights, sounds, smells, atmosphere)
-- Include environmental storytelling that hints at the world's deeper lore and current state
-- Establish the mood and tone consistent with the series' opening moments
-- Show, don't tell - let details reveal the world's nature organically
-
-**CHARACTER PROFILE REQUIREMENTS:**
-- Create a complete character profile with appropriate starting stats for the series
-- Ensure health, mana, and other stats reflect realistic starting values for this world
-- Set language skills appropriately (speaking vs reading/writing based on series canon)
-- Include a compelling backstory that explains their presence in this world
-- Balance character competence with room for growth and learning
-- Stats should reflect the character's actual background (e.g., modern teenager vs experienced warrior vs noble vs commoner)
-- Consider whether the character is native to the world or transported from elsewhere
-
-**LOCATION SPECIFICATION:**
-- Provide a specific, named location that exists in or fits seamlessly with the series' geography
-- Choose a location that naturally facilitates character introduction and early story development
-- Ensure the location has narrative potential for future scenes and character interactions
-
-Generate: sceneDescription (2-3 rich paragraphs), characterCore (complete profile with appropriate starting conditions), currentLocation (specific canonical place name).
+Generate: sceneDescription (following the detailed scene generation guidelines above), characterCore (complete profile with appropriate starting conditions), currentLocation (specific canonical place name).
 Output ONLY JSON for Foundation_CharacterAndSceneOutputSchema. Do not include any other conversational text.`,
     });
 
@@ -1623,6 +1632,9 @@ Character: {{characterProfile.name}} ({{characterProfile.class}}) - {{characterP
 Current Scene: {{sceneDescription}}
 Location: {{currentLocation}}
 
+**ENHANCED QUEST GENERATION:**
+${await import("@/ai/prompts/generic-templates").then(m => m.GENERIC_QUEST_GENERATION_TEMPLATE)}
+
 **CANON COMPLIANCE REQUIREMENTS:**
 - All quests and story arcs must align perfectly with the established timeline and world state of "{{seriesName}}"
 - Respect the character's canonical starting position and knowledge limitations
@@ -1768,10 +1780,49 @@ const npcsAndLoreFlow = ai.defineFlow(
     const modelConfig = { maxOutputTokens: input.usePremiumAI ? 16000 : 8000 };
 
     // Define all lore and NPC prompts
+    // Import generic templates for relationship-aware NPC generation
+    const { GENERIC_NPC_GENERATION_TEMPLATE } = await import("@/ai/prompts/generic-templates");
+    const { adaptPromptForSeries } = await import("@/lib/series-adapter");
+    const { initializeEnhancedStoryState, formatEnhancedContextForAI } = await import("@/lib/enhanced-state-manager");
+
+    // Create enhanced state context for NPC generation
+    const baseStoryState = {
+      character: input.characterProfile,
+      currentLocation: input.currentLocation,
+      inventory: [],
+      equippedItems: {},
+      quests: [],
+      storyArcs: [],
+      worldFacts: [],
+      trackedNPCs: [],
+    };
+    const enhancedState = initializeEnhancedStoryState(baseStoryState);
+    const enhancedContext = formatEnhancedContextForAI(enhancedState);
+
+    const baseNPCPrompt = `Generate initial NPCs for "{{seriesName}}" with character {{characterProfile.name}}.
+
+**ENHANCED CONTEXT:**
+Character Emotional State: ${enhancedContext.emotionalContext}
+Environmental Context: ${enhancedContext.environmentalContext}
+Scene Description: {{sceneDescription}}
+Current Location: {{currentLocation}}
+
+${GENERIC_NPC_GENERATION_TEMPLATE}
+
+**INTEGRATION REQUIREMENTS:**
+- Create NPCs that naturally fit the current environmental and emotional context
+- Establish clear relationship potential based on the character's emotional state
+- Consider the environmental atmosphere when designing NPC personalities and motivations
+- Set up natural interaction opportunities that enhance the scene's immersion
+- Include NPCs that can drive narrative threads and relationship development
+
+Output ONLY { "trackedNPCs": [...] }.`;
+
+    const adaptedNPCPrompt = adaptPromptForSeries(baseNPCPrompt, input.seriesName);
+
     const narrative_initialTrackedNPCsPrompt = ai.definePrompt({
         name: 'narrative_initialTrackedNPCsPrompt', model: modelName, input: { schema: InitialTrackedNPCsInputSchema }, output: { schema: InitialTrackedNPCsOutputSchema }, config: modelConfig,
-        prompt: `Generate initial NPCs for "{{seriesName}}" with character {{characterProfile.name}}.
-Output ONLY { "trackedNPCs": [...] }.`,
+        prompt: adaptedNPCPrompt,
     });
 
     const narrative_characterLorePrompt = ai.definePrompt({

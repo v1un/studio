@@ -24,15 +24,41 @@ import type {
   NPCProfile,
   LocationDetails,
   WeatherConditions,
-  TimeContext
+  TimeContext,
+  // Enhanced Quest System Types
+  Quest,
+  QuestBranch,
+  QuestChoice,
+  QuestConsequence,
+  PlayerChoice,
+  MoralProfile,
+  EnhancedFaction,
+  WorldState,
+  QuestGenerationSettings,
+  QuestFailureRecord,
+  TimeBasedEvent,
+  ChoiceConsequenceTracking,
+  // Balance System Types
+  GameBalanceSettings,
+  PlayerPerformanceMetrics,
+  // Enhanced Narrative Systems Types
+  GroupDynamicsEntry,
+  RomanticTension,
+  ButterflyEffectChain,
+  ConsequenceConnection,
+  TemporalGameState,
+  TemporalSaveState,
+  MemoryRetentionEntry,
+  PsychologicalEffect
 } from '@/types/story';
 import { generateUUID } from '@/lib/utils';
+import { initializeGameBalance, initializePlayerPerformanceMetrics } from '@/lib/game-balance-engine';
 
 // === INITIALIZATION FUNCTIONS ===
 
 export function initializeEnhancedStoryState(baseState: StructuredStoryState): StructuredStoryState {
   const timestamp = new Date().toISOString();
-  
+
   return {
     ...baseState,
     // Initialize new enhanced systems with defaults
@@ -45,6 +71,36 @@ export function initializeEnhancedStoryState(baseState: StructuredStoryState): S
     playerPreferences: initializePlayerPreferences(),
     choiceConsequences: [],
     systemMetrics: initializeSystemMetrics(),
+
+    // === ENHANCED QUEST AND CHOICE SYSTEM ===
+    enhancedFactions: initializeEnhancedFactions(),
+    worldStates: initializeWorldStates(),
+    playerChoices: [],
+    moralProfile: initializeMoralProfile(),
+    questBranches: {},
+    activeQuestChoices: {},
+    questGenerationSettings: initializeQuestGenerationSettings(),
+    questFailures: [],
+    timeBasedEvents: [],
+
+    // === GAME BALANCE AND DIFFICULTY SYSTEM ===
+    gameBalance: initializeGameBalance(),
+    playerPerformance: initializePlayerPerformanceMetrics(),
+    activeResourceScarcity: [],
+    activeTradeoffs: [],
+    failureHistory: [],
+
+    // === ENHANCED NARRATIVE SYSTEMS ===
+    groupDynamics: [],
+    activeRomanticTensions: [],
+    socialCircles: {},
+    consequenceChains: {},
+    butterflyEffects: [],
+    crossThreadConnections: [],
+    temporalState: undefined, // Only initialized when time loops are activated
+    loopHistory: [],
+    retainedMemories: [],
+    psychologicalEffects: [],
   };
 }
 
@@ -226,6 +282,75 @@ export function initializeSystemMetrics(): SystemMetrics {
     },
     lastUpdated: new Date().toISOString(),
   };
+}
+
+// === ENHANCED QUEST SYSTEM INITIALIZATION ===
+
+export function initializeEnhancedFactions(): EnhancedFaction[] {
+  // Import and initialize basic factions
+  return [];
+}
+
+export function initializeWorldStates(): WorldState[] {
+  return [];
+}
+
+export function initializeMoralProfile(): MoralProfile {
+  return {
+    overallAlignment: 'true_neutral',
+    alignmentHistory: [],
+    moralTraits: [],
+    ethicalDilemmasEncountered: [],
+    reputationByGroup: {},
+    moralInfluenceFactors: [],
+    consistencyScore: 100
+  };
+}
+
+export function initializeQuestGenerationSettings(): QuestGenerationSettings {
+  return {
+    dynamicQuestFrequency: 'medium',
+    preferredQuestTypes: ['main', 'side', 'dynamic'],
+    difficultyPreference: 'adaptive',
+    branchingComplexity: 'moderate',
+    consequenceSeverity: 'moderate',
+    moralComplexityLevel: 50,
+    timeConstraintPreference: 'moderate',
+    failureToleranceLevel: 50,
+    adaptiveGeneration: true,
+    playerChoiceWeight: 70
+  };
+}
+
+// === ENHANCED NARRATIVE SYSTEMS INITIALIZATION ===
+
+export function initializeGroupDynamics(): GroupDynamicsEntry[] {
+  return [];
+}
+
+export function initializeRomanticTensions(): RomanticTension[] {
+  return [];
+}
+
+export function initializeButterflyEffects(): ButterflyEffectChain[] {
+  return [];
+}
+
+export function initializeConsequenceConnections(): ConsequenceConnection[] {
+  return [];
+}
+
+export function initializeTemporalState(): TemporalGameState | undefined {
+  // Only initialize when time loops are activated
+  return undefined;
+}
+
+export function initializeMemoryRetention(): MemoryRetentionEntry[] {
+  return [];
+}
+
+export function initializePsychologicalEffects(): PsychologicalEffect[] {
+  return [];
 }
 
 // === MIGRATION FUNCTIONS ===
@@ -482,6 +607,222 @@ export function updateNarrativeThread(
   };
 }
 
+// === PRIORITY-BASED STATE UPDATE SYSTEM ===
+
+export interface StateUpdate {
+  type: 'relationship' | 'emotion' | 'environment' | 'narrative' | 'player_agency' | 'system';
+  priority: number; // 1 = highest priority, 5 = lowest
+  data: any;
+  description: string;
+  turnId: string;
+}
+
+export function updateStateWithPriority(
+  state: StructuredStoryState,
+  updates: StateUpdate[]
+): StructuredStoryState {
+  // Sort updates by priority (1 = highest, 5 = lowest)
+  const sortedUpdates = [...updates].sort((a, b) => a.priority - b.priority);
+
+  let updatedState = { ...state };
+
+  for (const update of sortedUpdates) {
+    switch (update.type) {
+      case 'relationship':
+        updatedState = applyRelationshipUpdate(updatedState, update);
+        break;
+      case 'emotion':
+        updatedState = applyEmotionalUpdate(updatedState, update);
+        break;
+      case 'environment':
+        updatedState = applyEnvironmentalUpdate(updatedState, update);
+        break;
+      case 'narrative':
+        updatedState = applyNarrativeUpdate(updatedState, update);
+        break;
+      case 'player_agency':
+        updatedState = applyPlayerAgencyUpdate(updatedState, update);
+        break;
+      case 'system':
+        updatedState = applySystemUpdate(updatedState, update);
+        break;
+    }
+  }
+
+  return updatedState;
+}
+
+function applyRelationshipUpdate(state: StructuredStoryState, update: StateUpdate): StructuredStoryState {
+  const { npcId, relationshipChange, interactionType, description } = update.data;
+
+  return updateNPCRelationship(
+    state,
+    npcId,
+    relationshipChange,
+    interactionType,
+    description,
+    update.turnId
+  );
+}
+
+function applyEmotionalUpdate(state: StructuredStoryState, update: StateUpdate): StructuredStoryState {
+  const emotionalUpdates = update.data;
+
+  return updateEmotionalState(state, {
+    ...emotionalUpdates,
+    lastEmotionalUpdate: new Date().toISOString(),
+  });
+}
+
+function applyEnvironmentalUpdate(state: StructuredStoryState, update: StateUpdate): StructuredStoryState {
+  const environmentalUpdates = update.data;
+
+  return updateEnvironmentalContext(state, environmentalUpdates);
+}
+
+function applyNarrativeUpdate(state: StructuredStoryState, update: StateUpdate): StructuredStoryState {
+  const { threadId, threadUpdates, newThread } = update.data;
+
+  if (newThread) {
+    return addNarrativeThread(state, newThread);
+  } else if (threadId && threadUpdates) {
+    return updateNarrativeThread(state, threadId, threadUpdates);
+  }
+
+  return state;
+}
+
+function applyPlayerAgencyUpdate(state: StructuredStoryState, update: StateUpdate): StructuredStoryState {
+  const { preferenceUpdates, choiceRecord } = update.data;
+
+  let updatedState = state;
+
+  if (preferenceUpdates) {
+    updatedState = {
+      ...updatedState,
+      playerPreferences: {
+        ...updatedState.playerPreferences,
+        ...preferenceUpdates,
+        lastAnalyzed: new Date().toISOString(),
+      },
+    };
+  }
+
+  if (choiceRecord) {
+    updatedState = {
+      ...updatedState,
+      playerChoices: [...(updatedState.playerChoices || []), choiceRecord],
+    };
+  }
+
+  return updatedState;
+}
+
+function applySystemUpdate(state: StructuredStoryState, update: StateUpdate): StructuredStoryState {
+  const { metricsUpdates } = update.data;
+
+  if (metricsUpdates) {
+    return {
+      ...state,
+      systemMetrics: {
+        ...state.systemMetrics,
+        ...metricsUpdates,
+        lastUpdated: new Date().toISOString(),
+      },
+    };
+  }
+
+  return state;
+}
+
+// === PRIORITY-BASED UPDATE HELPERS ===
+
+export function createRelationshipUpdate(
+  npcId: string,
+  relationshipChange: number,
+  interactionType: string,
+  description: string,
+  turnId: string
+): StateUpdate {
+  return {
+    type: 'relationship',
+    priority: 1, // Highest priority
+    data: { npcId, relationshipChange, interactionType, description },
+    description: `Relationship change with ${npcId}: ${relationshipChange > 0 ? '+' : ''}${relationshipChange}`,
+    turnId,
+  };
+}
+
+export function createEmotionalUpdate(
+  emotionalChanges: Partial<EmotionalState>,
+  description: string,
+  turnId: string
+): StateUpdate {
+  return {
+    type: 'emotion',
+    priority: 1, // Highest priority (same as relationships)
+    data: emotionalChanges,
+    description,
+    turnId,
+  };
+}
+
+export function createEnvironmentalUpdate(
+  environmentalChanges: Partial<EnvironmentalContext>,
+  description: string,
+  turnId: string
+): StateUpdate {
+  return {
+    type: 'environment',
+    priority: 2, // Second priority
+    data: environmentalChanges,
+    description,
+    turnId,
+  };
+}
+
+export function createNarrativeUpdate(
+  threadData: { threadId?: string; threadUpdates?: Partial<NarrativeThread>; newThread?: Omit<NarrativeThread, 'id'> },
+  description: string,
+  turnId: string
+): StateUpdate {
+  return {
+    type: 'narrative',
+    priority: 3, // Third priority
+    data: threadData,
+    description,
+    turnId,
+  };
+}
+
+export function createPlayerAgencyUpdate(
+  agencyData: { preferenceUpdates?: Partial<PlayerPreferences>; choiceRecord?: any },
+  description: string,
+  turnId: string
+): StateUpdate {
+  return {
+    type: 'player_agency',
+    priority: 4, // Fourth priority
+    data: agencyData,
+    description,
+    turnId,
+  };
+}
+
+export function createSystemUpdate(
+  systemData: { metricsUpdates?: Partial<SystemMetrics> },
+  description: string,
+  turnId: string
+): StateUpdate {
+  return {
+    type: 'system',
+    priority: 5, // Lowest priority
+    data: systemData,
+    description,
+    turnId,
+  };
+}
+
 export function addChoiceConsequence(
   state: StructuredStoryState,
   consequence: Omit<ChoiceConsequence, 'id'>
@@ -522,5 +863,149 @@ export function updateSystemMetrics(
       ...updates,
       lastUpdated: new Date().toISOString(),
     },
+  };
+}
+
+// === ENHANCED QUEST SYSTEM UTILITIES ===
+
+export function addPlayerChoice(
+  state: StructuredStoryState,
+  choice: Omit<PlayerChoice, 'id'>
+): StructuredStoryState {
+  const newChoice: PlayerChoice = {
+    ...choice,
+    id: generateUUID(),
+  };
+
+  return {
+    ...state,
+    playerChoices: [...(state.playerChoices || []), newChoice],
+  };
+}
+
+export function updateQuestWithBranch(
+  state: StructuredStoryState,
+  questId: string,
+  branchId: string,
+  choice: QuestChoice
+): StructuredStoryState {
+  const quests = state.quests.map(quest => {
+    if (quest.id === questId) {
+      return {
+        ...quest,
+        currentBranch: branchId,
+        choiceHistory: [...(quest.choiceHistory || []), choice],
+        updatedAt: new Date().toISOString()
+      };
+    }
+    return quest;
+  });
+
+  return {
+    ...state,
+    quests
+  };
+}
+
+export function addQuestFailure(
+  state: StructuredStoryState,
+  failure: QuestFailureRecord
+): StructuredStoryState {
+  return {
+    ...state,
+    questFailures: [...(state.questFailures || []), failure]
+  };
+}
+
+export function addTimeBasedEvent(
+  state: StructuredStoryState,
+  event: TimeBasedEvent
+): StructuredStoryState {
+  return {
+    ...state,
+    timeBasedEvents: [...(state.timeBasedEvents || []), event]
+  };
+}
+
+export function updateMoralProfile(
+  state: StructuredStoryState,
+  updates: Partial<MoralProfile>
+): StructuredStoryState {
+  return {
+    ...state,
+    moralProfile: {
+      ...state.moralProfile,
+      ...updates
+    }
+  };
+}
+
+export function addWorldState(
+  state: StructuredStoryState,
+  worldState: WorldState
+): StructuredStoryState {
+  return {
+    ...state,
+    worldStates: [...(state.worldStates || []), worldState]
+  };
+}
+
+export function updateWorldState(
+  state: StructuredStoryState,
+  worldStateId: string,
+  updates: Partial<WorldState>
+): StructuredStoryState {
+  const worldStates = (state.worldStates || []).map(ws =>
+    ws.id === worldStateId ? { ...ws, ...updates } : ws
+  );
+
+  return {
+    ...state,
+    worldStates
+  };
+}
+
+export function findPlayerChoice(
+  state: StructuredStoryState,
+  choiceId: string
+): PlayerChoice | undefined {
+  return state.playerChoices?.find(choice => choice.id === choiceId);
+}
+
+export function getRecentPlayerChoices(
+  state: StructuredStoryState,
+  count: number = 5
+): PlayerChoice[] {
+  return (state.playerChoices || []).slice(-count);
+}
+
+export function getActiveTimeBasedEvents(
+  state: StructuredStoryState
+): TimeBasedEvent[] {
+  const now = new Date().toISOString();
+  return (state.timeBasedEvents || []).filter(event =>
+    event.scheduledTime > now
+  );
+}
+
+export function getOverdueTimeBasedEvents(
+  state: StructuredStoryState
+): TimeBasedEvent[] {
+  const now = new Date().toISOString();
+  return (state.timeBasedEvents || []).filter(event =>
+    event.scheduledTime <= now
+  );
+}
+
+export function updateQuestGenerationSettings(
+  state: StructuredStoryState,
+  updates: Partial<QuestGenerationSettings>
+): StructuredStoryState {
+  return {
+    ...state,
+    questGenerationSettings: {
+      ...state.questGenerationSettings,
+      ...updates
+    }
   };
 }

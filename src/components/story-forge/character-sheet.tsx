@@ -10,12 +10,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { 
-    PackageIcon, HeartIcon, ZapIcon, 
-    DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon, 
-    GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon, 
-    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon, BookOpenIcon, MessageSquareIcon, BoltIcon
+import {
+    PackageIcon, HeartIcon, ZapIcon,
+    DumbbellIcon, VenetianMaskIcon, BrainIcon, EyeIcon, SparklesIcon as CharismaIcon, AwardIcon,
+    GaugeIcon, SwordsIcon, ShieldIcon, UserSquareIcon, ShirtIcon, GemIcon,
+    FootprintsIcon, HandIcon, CircleEllipsisIcon, SparklesIcon, StarIcon, CoinsIcon, LanguagesIcon, BookOpenIcon, MessageSquareIcon, BoltIcon,
+    TrendingUpIcon, TreePineIcon, TargetIcon
 } from "lucide-react";
+import { checkLevelUp } from "@/lib/progression-engine";
 
 interface CharacterSheetProps {
   character: CharacterProfile;
@@ -167,8 +169,104 @@ export default function CharacterSheet({ character, storyState }: CharacterSheet
             <StatDisplay icon={CharismaIcon} label="Charisma" value={character.charisma} colorClass="text-pink-500" />
           </div>
         </div>
-        
+
         <Separator />
+
+        {/* Progression Section */}
+        {(character.progressionPoints || character.purchasedSkillNodes?.length || character.activeSpecializations?.length) && (
+          <>
+            <div>
+              <h4 className="font-semibold mb-2 text-md flex items-center">
+                <TrendingUpIcon className="w-4 h-4 mr-1.5 text-purple-500" /> Character Progression
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
+                {character.progressionPoints && (
+                  <>
+                    <StatDisplay
+                      icon={TargetIcon}
+                      label="Attribute Points"
+                      value={character.progressionPoints.attribute}
+                      colorClass="text-orange-500"
+                    />
+                    <StatDisplay
+                      icon={TreePineIcon}
+                      label="Skill Points"
+                      value={character.progressionPoints.skill}
+                      colorClass="text-green-500"
+                    />
+                    <StatDisplay
+                      icon={StarIcon}
+                      label="Specialization Points"
+                      value={character.progressionPoints.specialization}
+                      colorClass="text-blue-500"
+                    />
+                    <StatDisplay
+                      icon={SparklesIcon}
+                      label="Talent Points"
+                      value={character.progressionPoints.talent}
+                      colorClass="text-purple-500"
+                    />
+                  </>
+                )}
+              </div>
+
+              {/* Active Specializations */}
+              {character.activeSpecializations && character.activeSpecializations.length > 0 && (
+                <div className="mt-3">
+                  <h5 className="font-medium mb-1 text-sm">Active Specializations:</h5>
+                  <div className="flex flex-wrap gap-2">
+                    {character.activeSpecializations.map((spec) => (
+                      <TooltipProvider key={spec.id} delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="default" className="cursor-help">
+                              {spec.name} (Lv.{spec.progressionLevel})
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            <div className="space-y-1">
+                              <div className="font-medium">{spec.name}</div>
+                              <div className="text-xs text-muted-foreground">{spec.description}</div>
+                              <div className="text-xs">Progression Level: {spec.progressionLevel}/5</div>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Skill Tree Progress */}
+              {character.purchasedSkillNodes && character.purchasedSkillNodes.length > 0 && (
+                <div className="mt-3">
+                  <h5 className="font-medium mb-1 text-sm">Skill Tree Progress:</h5>
+                  <div className="text-xs text-muted-foreground">
+                    {character.purchasedSkillNodes.length} skill{character.purchasedSkillNodes.length !== 1 ? 's' : ''} learned
+                  </div>
+                </div>
+              )}
+
+              {/* Level Up Indicator */}
+              {(() => {
+                const levelUpCheck = checkLevelUp(character);
+                return levelUpCheck.shouldLevelUp && (
+                  <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="flex items-center gap-2 text-yellow-800">
+                      <AwardIcon className="w-4 h-4" />
+                      <span className="text-sm font-medium">Ready to Level Up!</span>
+                    </div>
+                    <div className="text-xs text-yellow-700 mt-1">
+                      You have enough experience to reach level {levelUpCheck.newLevel}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            <Separator />
+          </>
+        )}
+
         <div>
           <h4 className="font-semibold mb-2 text-md flex items-center">
             <LanguagesIcon className="w-4 h-4 mr-1.5 text-indigo-500" /> Language Skills

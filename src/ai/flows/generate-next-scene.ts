@@ -690,17 +690,31 @@ const generateNextSceneFlow = ai.defineFlow(
     // Format enhanced context for AI
     const enhancedContext = formatEnhancedContextForAI(enhancedStoryState);
 
+    // Import enhanced scene generation templates
+    const { GENERIC_DETAILED_SCENE_TEMPLATE } = await import("@/ai/prompts/generic-templates");
+
     // This prompt now focuses on generating the narrative, events, and THE FULL UPDATED STORY STATE
     const narrativeAndStateUpdatePrompt = ai.definePrompt({
         name: 'narrativeAndStateUpdatePrompt',
         model: modelName,
         input: {schema: NarrativeAndEventsPromptInputSchema}, // Using extended input schema
         // The output is now the full GenerateNextSceneOutputSchemaInternal, as AI updates the state
-        output: {schema: GenerateNextSceneOutputSchemaInternal.deepPartial()}, 
+        output: {schema: GenerateNextSceneOutputSchemaInternal.deepPartial()},
         tools: [lookupLoreTool],
         config: modelConfig,
         prompt: `You are a dynamic storyteller. Your entire response MUST be a single, valid JSON object that adheres to the 'GenerateNextSceneOutputSchemaInternal' (deepPartial).
 You MUST return the 'updatedStoryState' object reflecting ALL changes.
+
+${GENERIC_DETAILED_SCENE_TEMPLATE}
+
+**ENHANCED SCENE GENERATION REQUIREMENTS:**
+- Apply the HIGH-QUALITY NARRATIVE SCENE GENERATION guidelines to create immersive, detailed scenes
+- Include granular sensory details (sight, sound, smell, touch, taste where relevant)
+- Build moment-by-moment progression that creates engagement and natural flow
+- Establish character psychology through actions, reactions, and internal thoughts
+- Create environmental atmosphere that enhances immersion and emotional impact
+- Set up natural relationship development opportunities through meaningful interactions
+
 Series: {{seriesName}}. {{#if seriesStyleGuide}}Style: {{seriesStyleGuide}}{{/if}}
 Story Summary: {{#if storyState.storySummary}}{{{storyState.storySummary}}}{{else}}The story has just begun.{{/if}}
 Previous Scene Summary: {{currentScene}}
