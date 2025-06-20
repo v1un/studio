@@ -132,7 +132,7 @@ export const ItemEnhancementInterface: React.FC<ItemEnhancementInterfaceProps> =
       newLevel: currentLevel + 1,
       newBonuses: calculateEnhancementBonuses(item, currentLevel + 1)
     };
-  }, [item, currentLevel, maxLevel, canEnhance, selectedMaterials]);
+  }, [item, currentLevel, canEnhance, selectedMaterials]);
 
   const handleMaterialSelect = (materialId: string, quantity: number) => {
     setSelectedMaterials(prev => {

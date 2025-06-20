@@ -354,7 +354,7 @@ export default function LorebookDisplay() {
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the lore entry for
-              <strong className="mx-1">"{entryToDelete?.keyword}"</strong>.
+              <strong className="mx-1">&quot;{entryToDelete?.keyword}&quot;</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

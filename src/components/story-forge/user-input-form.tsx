@@ -25,21 +25,31 @@ export default function UserInputForm({ onSubmit, isLoading }: UserInputFormProp
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full space-y-4">
-      <div>
+    <form onSubmit={handleSubmit} className="w-full space-y-3 animate-slide-up">
+      <div className="relative">
         <Label htmlFor="user-action" className="sr-only">Your Action</Label>
         <Textarea
           id="user-action"
-          placeholder="What do you do next?"
+          placeholder="What do you do next? Describe your action in detail..."
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
-          rows={3}
+          rows={2}
           disabled={isLoading}
-          className="text-base shadow-sm"
+          className="text-sm sm:text-base shadow-lg border-border/50 bg-card/50 backdrop-blur-sm transition-all duration-200 focus:shadow-xl focus:bg-card hover:border-border-hover resize-none"
         />
+        <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+          {userInput.length}/500
+        </div>
       </div>
-      <Button type="submit" disabled={isLoading || !userInput.trim()} className="w-full text-lg py-6">
-        <Send className="mr-2 h-5 w-5" />
+      <Button
+        type="submit"
+        disabled={isLoading || !userInput.trim()}
+        className="w-full text-sm sm:text-base py-3 sm:py-4 font-semibold hover-glow"
+        variant="gradient"
+        loading={isLoading}
+        loadingText="Processing your action..."
+      >
+        <Send className="mr-2 h-4 w-4" />
         {isLoading ? "Processing..." : "Send Action"}
       </Button>
     </form>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Enhanced context management utilities to prevent memory leaks and improve performance
@@ -77,9 +77,10 @@ export function useLocalStorage<T>(
   key: string,
   defaultValue: T
 ): [T, (value: T | ((prev: T) => T)) => void, () => void] {
-  const getStoredValue = useCallback((): T => {
+  // Use lazy initialization to avoid SSR issues
+  const [storedValue, setStoredValue] = useState<T>(() => {
     if (typeof window === 'undefined') return defaultValue;
-    
+
     try {
       const item = localStorage.getItem(key);
       return item ? JSON.parse(item) : defaultValue;
@@ -87,15 +88,16 @@ export function useLocalStorage<T>(
       console.warn(`Error reading localStorage key "${key}":`, error);
       return defaultValue;
     }
-  }, [key, defaultValue]);
+  });
 
   const setValue = useCallback((value: T | ((prev: T) => T)) => {
     if (typeof window === 'undefined') return;
-    
+
     try {
-      const valueToStore = value instanceof Function ? value(getStoredValue()) : value;
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
       localStorage.setItem(key, JSON.stringify(valueToStore));
-      
+
       // Dispatch custom event for cross-tab synchronization
       window.dispatchEvent(new CustomEvent('localStorage-change', {
         detail: { key, value: valueToStore }
@@ -103,12 +105,13 @@ export function useLocalStorage<T>(
     } catch (error) {
       console.error(`Error setting localStorage key "${key}":`, error);
     }
-  }, [key, getStoredValue]);
+  }, [key, storedValue]);
 
   const removeValue = useCallback(() => {
     if (typeof window === 'undefined') return;
-    
+
     try {
+      setStoredValue(defaultValue);
       localStorage.removeItem(key);
       window.dispatchEvent(new CustomEvent('localStorage-change', {
         detail: { key, value: null }
@@ -116,9 +119,38 @@ export function useLocalStorage<T>(
     } catch (error) {
       console.error(`Error removing localStorage key "${key}":`, error);
     }
-  }, [key]);
+  }, [key, defaultValue]);
 
-  return [getStoredValue(), setValue, removeValue];
+  // Listen for changes from other tabs
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === key && e.newValue !== null) {
+        try {
+          setStoredValue(JSON.parse(e.newValue));
+        } catch (error) {
+          console.warn(`Error parsing localStorage value for key "${key}":`, error);
+        }
+      }
+    };
+
+    const handleCustomChange = (e: CustomEvent) => {
+      if (e.detail.key === key) {
+        setStoredValue(e.detail.value ?? defaultValue);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('localStorage-change', handleCustomChange as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('localStorage-change', handleCustomChange as EventListener);
+    };
+  }, [key, defaultValue]);
+
+  return [storedValue, setValue, removeValue];
 }
 
 /**

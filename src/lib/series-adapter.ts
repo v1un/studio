@@ -34,6 +34,85 @@ export interface SeriesConfig {
     relationshipDevelopment: string;
     conflictResolution: string;
   };
+  // Enhanced canon compliance system
+  canonCompliance?: {
+    characterStartingConditions: CharacterStartingTemplate[];
+    worldStateValidation: WorldStateRule[];
+    timelineAccuracy: TimelineRule[];
+    loreConsistencyChecks: LoreValidationRule[];
+    narrativeAuthenticity: NarrativeAuthenticityRule[];
+  };
+}
+
+// Enhanced canon compliance interfaces
+export interface CharacterStartingTemplate {
+  characterName: string;
+  isExample: boolean; // true for examples, false for hard requirements
+  physicalState: {
+    age: number;
+    appearance: string;
+    clothing: string[];
+    possessions: string[];
+  };
+  knowledgeState: {
+    worldKnowledge: number; // 0-100 scale
+    languageReading: number;
+    languageSpeaking: number;
+    specialKnowledge: string[];
+    unknownConcepts: string[];
+  };
+  psychologicalState: {
+    personality: string[];
+    mentalConditions: string[];
+    emotionalState: string;
+    motivations: string[];
+  };
+  abilities: {
+    physicalSkills: string[];
+    magicalAbilities: string[];
+    specialPowers: string[];
+    limitations: string[];
+  };
+  specialConditions: {
+    hiddenAbilities: string[];
+    curses: string[];
+    blessings: string[];
+    uniqueTraits: string[];
+  };
+}
+
+export interface WorldStateRule {
+  ruleName: string;
+  isExample: boolean;
+  description: string;
+  validationCriteria: string[];
+  timelinePosition: string;
+  affectedElements: string[];
+}
+
+export interface TimelineRule {
+  eventName: string;
+  isExample: boolean;
+  timelinePosition: string;
+  prerequisiteEvents: string[];
+  characterKnowledgeState: string[];
+  worldStateRequirements: string[];
+}
+
+export interface LoreValidationRule {
+  category: string;
+  isExample: boolean;
+  validationPoints: string[];
+  commonMistakes: string[];
+  correctImplementation: string[];
+}
+
+export interface NarrativeAuthenticityRule {
+  aspect: string;
+  isExample: boolean;
+  authenticityMarkers: string[];
+  toneRequirements: string[];
+  perspectiveGuidelines: string[];
 }
 
 // === SERIES CONFIGURATIONS ===
@@ -113,6 +192,114 @@ export const SERIES_CONFIGS: Record<string, SeriesConfig> = {
       worldBuilding: "Build a world with hidden depths and moral complexity. Every location should have history and ongoing conflicts.",
       relationshipDevelopment: "Develop relationships through shared trials and gradual trust-building. Allow for both positive and negative relationship changes.",
       conflictResolution: "Resolve conflicts through character growth and understanding rather than simple victory. Show consequences of choices."
+    },
+    canonCompliance: {
+      characterStartingConditions: [
+        {
+          characterName: "Natsuki Subaru",
+          isExample: true,
+          physicalState: {
+            age: 17,
+            appearance: "Average height Japanese teenager with black hair and brown eyes",
+            clothing: ["Black and orange tracksuit", "Worn sneakers"],
+            possessions: ["Flip phone (low battery)", "Convenience store snacks", "Small amount of Japanese yen", "Student ID card"]
+          },
+          knowledgeState: {
+            worldKnowledge: 0,
+            languageReading: 0,
+            languageSpeaking: 100,
+            specialKnowledge: ["Modern world technology", "Gaming and anime tropes", "Basic life skills"],
+            unknownConcepts: ["Magic systems", "Political structures", "Local customs", "Currency", "Geography"]
+          },
+          psychologicalState: {
+            personality: ["Inferiority complex", "Protagonist syndrome", "Social awkwardness", "Determination despite fear"],
+            mentalConditions: ["Hikikomori background", "Low self-esteem", "Tendency to overthink"],
+            emotionalState: "Confused and overwhelmed but trying to appear confident",
+            motivations: ["Desire to be useful", "Need for validation", "Protecting those he cares about"]
+          },
+          abilities: {
+            physicalSkills: ["Basic modern world skills", "Video game knowledge"],
+            magicalAbilities: [],
+            specialPowers: [],
+            limitations: ["No combat training", "No magic ability", "Broken gate", "Physically weak"]
+          },
+          specialConditions: {
+            hiddenAbilities: ["Return by Death (unknown to character)"],
+            curses: ["Witch's Scent (inactive initially)"],
+            blessings: [],
+            uniqueTraits: ["Immunity to certain magic effects", "Unusual mana signature"]
+          }
+        }
+      ],
+      worldStateValidation: [
+        {
+          ruleName: "Pre-Royal Selection Timeline",
+          isExample: true,
+          description: "World state must reflect the period before the Royal Selection officially begins",
+          validationCriteria: [
+            "Royal family recently deceased from mysterious disease",
+            "Five candidates not yet officially announced",
+            "Emilia's insignia recently stolen",
+            "Major characters in pre-series positions"
+          ],
+          timelinePosition: "Episode 1 equivalent",
+          affectedElements: ["Political landscape", "Character relationships", "Available quests", "World events"]
+        }
+      ],
+      timelineAccuracy: [
+        {
+          eventName: "Character Arrival in Capital",
+          isExample: true,
+          timelinePosition: "Series beginning",
+          prerequisiteEvents: [],
+          characterKnowledgeState: ["No knowledge of local politics", "Unaware of Royal Selection", "Never met any main characters"],
+          worldStateRequirements: ["Capital in normal state", "Market district active", "Slums accessible"]
+        }
+      ],
+      loreConsistencyChecks: [
+        {
+          category: "Magic System",
+          isExample: true,
+          validationPoints: [
+            "Magic requires functional gate",
+            "Spirit contracts bypass gate requirement",
+            "Mana exists as ambient energy",
+            "Six elemental types plus rare Yin/Yang"
+          ],
+          commonMistakes: [
+            "Giving Subaru functional magic without explanation",
+            "Incorrect elemental classifications",
+            "Misunderstanding spirit contract mechanics"
+          ],
+          correctImplementation: [
+            "Subaru starts with broken gate and no magic",
+            "Magic users require proper training or contracts",
+            "Respect established power scaling"
+          ]
+        }
+      ],
+      narrativeAuthenticity: [
+        {
+          aspect: "Character Perspective",
+          isExample: true,
+          authenticityMarkers: [
+            "Fish-out-of-water confusion",
+            "Modern world references",
+            "Gradual world understanding",
+            "Emotional vulnerability beneath bravado"
+          ],
+          toneRequirements: [
+            "Balance hope with underlying darkness",
+            "Show psychological impact of events",
+            "Maintain character growth focus"
+          ],
+          perspectiveGuidelines: [
+            "Information revealed at character's pace",
+            "No premature plot knowledge",
+            "Authentic emotional responses"
+          ]
+        }
+      ]
     }
   },
   

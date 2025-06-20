@@ -213,14 +213,8 @@ export class ScenarioIntegrationEngine {
   private async integrateGameplaySystems(baseResult: any, enhancedState: StructuredStoryState): Promise<any> {
     const integrations: any = {};
     
-    // Combat integration
-    try {
-      integrations.combatScenario = await this.generateCombatIntegration(baseResult);
-      integrations.systemStatus = { ...integrations.systemStatus, combatIntegration: 'active' };
-    } catch (error) {
-      this.warnings.push(`Combat integration failed: ${error}`);
-      integrations.systemStatus = { ...integrations.systemStatus, combatIntegration: 'disabled' };
-    }
+    // Combat scenarios will be generated dynamically during gameplay
+    integrations.systemStatus = { ...integrations.systemStatus, combatIntegration: 'disabled' };
     
     // Progression integration
     try {
@@ -374,10 +368,7 @@ export class ScenarioIntegrationEngine {
     }));
   }
 
-  private async generateCombatIntegration(baseResult: any): Promise<any> {
-    // This would integrate with the combat generation system
-    return baseResult.initialCombatScenario || null;
-  }
+
 
   private async generateProgressionIntegration(baseResult: any): Promise<any> {
     // This would integrate with the progression system

@@ -107,7 +107,7 @@ export function useCombatSystem(options: UseCombatSystemOptions = {}) {
     if (options.onTurnChange) {
       options.onTurnChange(firstTurnId, newCombatState.phase);
     }
-  }, [options.onTurnChange, options.turnTimeLimit]);
+  }, [options]);
 
   // === ACTION EXECUTION ===
 
@@ -151,7 +151,7 @@ export function useCombatSystem(options: UseCombatSystemOptions = {}) {
     } finally {
       setIsProcessingAction(false);
     }
-  }, [combatState, isProcessingAction, options.onActionExecuted, options.onCombatEnd, options.onTurnChange]);
+  }, [combatState, isProcessingAction, options]);
 
   // === HELPER FUNCTIONS ===
 

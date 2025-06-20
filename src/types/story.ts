@@ -79,6 +79,12 @@ export interface CharacterProfile {
   completedMilestones?: string[]; // IDs of completed progression milestones
   totalExperienceEarned?: number; // Lifetime XP for milestone tracking
 
+  // === ENHANCED SPECIALIZATION SYSTEM ===
+  specializationProgression?: SpecializationProgression;
+  unlockedUniqueAbilities?: UniqueAbility[];
+  activeUniqueAbilities?: string[]; // IDs of currently active unique abilities
+  returnByDeathAbility?: ReturnByDeathAbility; // Special handling for RbD
+
   // Enhanced combat stats (derived from progression)
   attack?: number;
   defense?: number;
@@ -1445,6 +1451,514 @@ export interface ProgressionPoints {
   talent: number;
 }
 
+// === AI-DRIVEN PROGRESSION SYSTEM ===
+
+export interface AISkillTreeGenerationContext {
+  characterProfile: CharacterProfile;
+  recentStoryEvents: string[];
+  currentStoryArc?: StoryArc;
+  usedSkills: string[];
+  characterChoices: PlayerChoice[];
+  environmentalContext: EnvironmentalContext;
+  relationshipContext: RelationshipEntry[];
+  seriesName: string;
+}
+
+export interface AIGeneratedSkillTree extends SkillTree {
+  generationContext: AISkillTreeGenerationContext;
+  adaptationHistory: SkillTreeAdaptation[];
+  narrativeIntegration: NarrativeSkillIntegration;
+  dynamicNodes: DynamicSkillNode[];
+}
+
+export interface SkillTreeAdaptation {
+  id: string;
+  timestamp: Date;
+  triggerEvent: string;
+  adaptationType: 'node_evolution' | 'new_branch' | 'skill_fusion' | 'context_modification';
+  changes: SkillTreeChange[];
+  narrativeReason: string;
+}
+
+export interface SkillTreeChange {
+  type: 'add_node' | 'modify_node' | 'remove_node' | 'add_connection' | 'modify_connection';
+  nodeId?: string;
+  connectionId?: string;
+  oldValue?: any;
+  newValue?: any;
+  description: string;
+}
+
+export interface NarrativeSkillIntegration {
+  storyRelevance: number; // 0-100, how relevant skills are to current story
+  characterAlignment: number; // 0-100, how well skills match character personality
+  progressionCoherence: number; // 0-100, how logically skills follow from experiences
+  futureNarrativePotential: string[]; // Potential story directions these skills enable
+}
+
+export interface DynamicSkillNode extends SkillTreeNode {
+  evolutionTriggers: SkillEvolutionTrigger[];
+  fusionCompatibility: string[]; // IDs of skills this can fuse with
+  narrativeRequirements: NarrativeRequirement[];
+  adaptiveEffects: AdaptiveSkillEffect[];
+  usageHistory: SkillUsageRecord[];
+}
+
+export interface SkillEvolutionTrigger {
+  id: string;
+  type: 'usage_count' | 'story_milestone' | 'character_growth' | 'environmental_factor' | 'relationship_change';
+  condition: string;
+  threshold?: number;
+  evolutionResult: SkillEvolution;
+}
+
+export interface SkillEvolution {
+  newNodeId: string;
+  newName: string;
+  newDescription: string;
+  newEffects: SkillNodeEffect[];
+  narrativeDescription: string;
+}
+
+export interface NarrativeRequirement {
+  type: 'story_event' | 'character_trait' | 'relationship_level' | 'location_visited' | 'choice_made';
+  description: string;
+  isMet: boolean;
+  checkFunction: string; // Function name to validate requirement
+}
+
+export interface AdaptiveSkillEffect extends SkillNodeEffect {
+  contextModifiers: ContextModifier[];
+  scalingFactors: ScalingFactor[];
+}
+
+export interface ContextModifier {
+  context: 'combat' | 'social' | 'exploration' | 'crafting' | 'story_event';
+  modifier: number; // Multiplier for effect strength
+  description: string;
+}
+
+export interface ScalingFactor {
+  scalingType: 'character_level' | 'skill_usage' | 'story_progress' | 'relationship_strength';
+  baseValue: number;
+  scalingRate: number;
+  maxValue?: number;
+}
+
+export interface SkillUsageRecord {
+  timestamp: Date;
+  context: string;
+  effectiveness: number; // 0-100, how effective the skill was
+  storyImpact: number; // 0-100, how much it affected the story
+  characterGrowth: number; // 0-100, how much it contributed to character development
+}
+
+// === AI PROGRESSION RECOMMENDATIONS ===
+
+export interface AIProgressionRecommendation {
+  id: string;
+  type: 'skill_purchase' | 'attribute_allocation' | 'specialization_choice' | 'skill_fusion' | 'trait_development';
+  priority: number; // 0-100, higher is more important
+  reasoning: string;
+  narrativeJustification: string;
+  expectedOutcome: string;
+  confidence: number; // 0-100, AI confidence in recommendation
+  prerequisites: string[];
+  alternatives: AIProgressionAlternative[];
+}
+
+export interface AIProgressionAlternative {
+  description: string;
+  tradeoffs: string[];
+  suitability: number; // 0-100, how well it fits character
+}
+
+export interface AIAttributeAllocationSuggestion {
+  attributeName: keyof AttributeProgression;
+  suggestedPoints: number;
+  reasoning: string;
+  storyAlignment: number; // 0-100, how well it aligns with story direction
+  characterFit: number; // 0-100, how well it fits character personality
+  futureUtility: number; // 0-100, expected future usefulness
+}
+
+export interface AIBackstoryIntegration {
+  id: string;
+  backstoryElement: string;
+  progressionImpact: BackstoryProgressionImpact[];
+  narrativeHooks: string[];
+  characterTraits: string[];
+  availableSkillTrees: string[];
+  restrictedSkillTrees: string[];
+  specialAbilities: string[];
+}
+
+export interface BackstoryProgressionImpact {
+  type: 'skill_affinity' | 'attribute_bonus' | 'special_unlock' | 'restriction' | 'trait_modifier';
+  target: string;
+  effect: number | string;
+  description: string;
+}
+
+export interface DynamicCharacterTrait {
+  id: string;
+  name: string;
+  description: string;
+  category: 'personality' | 'behavioral' | 'emotional' | 'social' | 'combat' | 'intellectual';
+  strength: number; // 0-100, how pronounced this trait is
+  development: TraitDevelopment;
+  skillInfluence: TraitSkillInfluence[];
+  storyImpact: TraitStoryImpact[];
+  evolutionPotential: TraitEvolution[];
+}
+
+export interface TraitDevelopment {
+  baseValue: number;
+  currentValue: number;
+  developmentHistory: TraitDevelopmentRecord[];
+  influencingFactors: string[];
+  developmentTrend: 'increasing' | 'decreasing' | 'stable' | 'fluctuating';
+}
+
+export interface TraitDevelopmentRecord {
+  timestamp: Date;
+  triggerEvent: string;
+  oldValue: number;
+  newValue: number;
+  changeReason: string;
+}
+
+export interface TraitSkillInfluence {
+  skillCategory: SkillTreeCategory;
+  influenceType: 'availability' | 'effectiveness' | 'learning_speed' | 'evolution_chance';
+  modifier: number;
+  description: string;
+}
+
+export interface TraitStoryImpact {
+  storyContext: string;
+  impactType: 'dialogue_option' | 'action_availability' | 'npc_reaction' | 'story_branch';
+  description: string;
+}
+
+export interface TraitEvolution {
+  triggerCondition: string;
+  newTraitId: string;
+  evolutionDescription: string;
+  narrativeSignificance: string;
+}
+
+// === AI SKILL FUSION SYSTEM ===
+
+export interface SkillFusionOpportunity {
+  id: string;
+  sourceSkills: string[];
+  resultingSkill: FusedSkill;
+  fusionRequirements: FusionRequirement[];
+  narrativeContext: string;
+  discoveryMethod: 'experimentation' | 'story_event' | 'ai_suggestion' | 'character_insight';
+  rarity: 'common' | 'uncommon' | 'rare' | 'legendary' | 'unique';
+}
+
+export interface FusedSkill extends DynamicSkillNode {
+  sourceSkills: string[];
+  fusionDate: Date;
+  fusionContext: string;
+  uniqueProperties: string[];
+  evolutionPath: string[];
+}
+
+export interface FusionRequirement {
+  type: 'skill_level' | 'story_milestone' | 'character_trait' | 'environmental_condition' | 'relationship_level';
+  description: string;
+  isMet: boolean;
+  checkValue?: number;
+  requiredValue?: number;
+}
+
+// === HIERARCHICAL SKILL EVOLUTION SYSTEM ===
+
+export interface SkillEvolutionChain {
+  id: string;
+  baseSkillId: string;
+  chainName: string;
+  description: string;
+  maxTier: number;
+  evolutionTiers: SkillEvolutionTier[];
+  branchingPoints: SkillBranchingPoint[];
+  generationContext: SkillChainGenerationContext;
+}
+
+export interface SkillEvolutionTier {
+  tier: number;
+  skillId: string;
+  name: string;
+  description: string;
+  effects: SkillNodeEffect[];
+  requirements: SkillEvolutionRequirement[];
+  unlockConditions: EvolutionUnlockCondition[];
+  mechanicalImprovements: MechanicalImprovement[];
+  narrativeSignificance: string;
+  isUnlocked: boolean;
+  isActive: boolean;
+}
+
+export interface SkillBranchingPoint {
+  atTier: number;
+  branchId: string;
+  branchName: string;
+  branchTheme: SkillBranchTheme;
+  description: string;
+  requirements: BranchRequirement[];
+  evolutionPath: SkillEvolutionTier[];
+  narrativeJustification: string;
+}
+
+export type SkillBranchTheme =
+  | 'combat_focused'
+  | 'elemental_infusion'
+  | 'defensive_mastery'
+  | 'utility_enhancement'
+  | 'social_application'
+  | 'magical_evolution'
+  | 'technological_upgrade'
+  | 'spiritual_transcendence';
+
+export interface BranchRequirement {
+  type: 'story_path' | 'character_focus' | 'environmental_exposure' | 'mentor_training' | 'artifact_interaction';
+  description: string;
+  condition: string;
+  isMet: boolean;
+  priority: number; // Higher priority branches are suggested first
+}
+
+export interface SkillEvolutionRequirement {
+  type: 'usage_count' | 'story_milestone' | 'attribute_threshold' | 'skill_synergy' | 'environmental_trigger';
+  description: string;
+  currentValue: number;
+  requiredValue: number;
+  isMet: boolean;
+  trackingMetric: string;
+}
+
+export interface EvolutionUnlockCondition {
+  id: string;
+  type: 'automatic' | 'player_choice' | 'story_triggered' | 'conditional';
+  description: string;
+  triggerEvent?: string;
+  checkFunction?: string;
+  isActive: boolean;
+}
+
+export interface MechanicalImprovement {
+  type: 'damage_increase' | 'effect_enhancement' | 'new_capability' | 'range_expansion' | 'cost_reduction';
+  description: string;
+  value: number | string;
+  comparedToPrevious: string;
+}
+
+export interface SkillChainGenerationContext {
+  characterClass: string;
+  storyThemes: string[];
+  availableElements: string[];
+  characterFocus: string[];
+  seriesContext: string;
+  generationTimestamp: Date;
+}
+
+// === SKILL USAGE TRACKING ===
+
+export interface SkillUsageTracker {
+  skillId: string;
+  usageCount: number;
+  successfulUses: number;
+  contextualUses: SkillContextualUsage[];
+  lastUsed: Date;
+  averageEffectiveness: number;
+  storyImpactScore: number;
+  evolutionProgress: EvolutionProgress[];
+}
+
+export interface SkillContextualUsage {
+  context: 'combat' | 'social' | 'exploration' | 'crafting' | 'story_event';
+  usageCount: number;
+  effectiveness: number;
+  notableUses: NotableSkillUse[];
+}
+
+export interface NotableSkillUse {
+  timestamp: Date;
+  context: string;
+  description: string;
+  effectiveness: number;
+  storyImpact: number;
+  witnessedBy: string[];
+  consequences: string[];
+}
+
+export interface EvolutionProgress {
+  requirementId: string;
+  currentProgress: number;
+  targetValue: number;
+  progressRate: number;
+  estimatedCompletion?: Date;
+}
+
+// === AI EVOLUTION GENERATION ===
+
+export interface AISkillEvolutionRequest {
+  baseSkill: DynamicSkillNode;
+  characterProfile: CharacterProfile;
+  storyContext: StructuredStoryState;
+  seriesName: string;
+  evolutionDepth: number; // How many tiers to generate
+  branchingOptions: number; // How many branches to create
+  focusThemes: SkillBranchTheme[];
+}
+
+export interface AISkillEvolutionResponse {
+  evolutionChain: SkillEvolutionChain;
+  generatedTiers: SkillEvolutionTier[];
+  branchingOptions: SkillBranchingPoint[];
+  narrativeIntegration: EvolutionNarrativeIntegration;
+  balanceAnalysis: SkillBalanceAnalysis;
+}
+
+export interface EvolutionNarrativeIntegration {
+  storyRelevance: number; // 0-100
+  characterAlignment: number; // 0-100
+  seriesAuthenticity: number; // 0-100
+  progressionCoherence: number; // 0-100
+  narrativeOpportunities: string[];
+  potentialConflicts: string[];
+}
+
+export interface SkillBalanceAnalysis {
+  powerProgression: PowerProgressionAnalysis;
+  mechanicalBalance: MechanicalBalanceCheck;
+  usabilityAssessment: UsabilityAssessment;
+  recommendations: BalanceRecommendation[];
+}
+
+export interface PowerProgressionAnalysis {
+  tierPowerRatings: number[]; // Power rating for each tier
+  progressionCurve: 'linear' | 'exponential' | 'logarithmic' | 'stepped';
+  balanceScore: number; // 0-100, higher is better balanced
+  outlierTiers: number[]; // Tiers that are over/underpowered
+}
+
+export interface MechanicalBalanceCheck {
+  damageScaling: number[]; // Damage values per tier
+  costEfficiency: number[]; // Cost vs benefit per tier
+  versatilityScore: number[]; // How versatile each tier is
+  uniquenessRating: number[]; // How unique each tier's abilities are
+}
+
+export interface UsabilityAssessment {
+  learningCurve: 'easy' | 'moderate' | 'challenging' | 'expert';
+  situationalUtility: number; // 0-100, how useful in various situations
+  playerEngagement: number; // 0-100, how engaging to use
+  strategicDepth: number; // 0-100, strategic complexity
+}
+
+export interface BalanceRecommendation {
+  tier: number;
+  issue: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  suggestion: string;
+  mechanicalAdjustment?: string;
+}
+
+// === EVOLUTION DECISION SYSTEM ===
+
+export interface EvolutionDecisionPoint {
+  id: string;
+  skillId: string;
+  currentTier: number;
+  availableBranches: SkillBranchingPoint[];
+  decisionContext: EvolutionDecisionContext;
+  timeLimit?: Date; // Optional time limit for decision
+  consequences: BranchConsequence[];
+}
+
+export interface EvolutionDecisionContext {
+  triggerEvent: string;
+  storyMoment: string;
+  characterState: string;
+  availableResources: string[];
+  mentorPresence?: string;
+  environmentalFactors: string[];
+}
+
+export interface BranchConsequence {
+  branchId: string;
+  immediateEffects: string[];
+  longTermImplications: string[];
+  storyImpact: string[];
+  characterDevelopment: string[];
+  relationshipEffects: string[];
+}
+
+// === EVOLUTION VISUALIZATION ===
+
+export interface SkillEvolutionTreeData {
+  chainId: string;
+  nodes: EvolutionTreeNode[];
+  connections: EvolutionTreeConnection[];
+  layout: EvolutionTreeLayout;
+  interactionStates: NodeInteractionState[];
+}
+
+export interface EvolutionTreeNode {
+  id: string;
+  tier: number;
+  branchId?: string;
+  position: { x: number; y: number };
+  skillData: SkillEvolutionTier;
+  visualState: NodeVisualState;
+  requirements: VisualRequirement[];
+}
+
+export interface EvolutionTreeConnection {
+  fromNodeId: string;
+  toNodeId: string;
+  connectionType: 'linear' | 'branching' | 'convergent';
+  isActive: boolean;
+  requirements: string[];
+}
+
+export interface EvolutionTreeLayout {
+  width: number;
+  height: number;
+  tierSpacing: number;
+  branchSpacing: number;
+  nodeSize: { width: number; height: number };
+}
+
+export interface NodeVisualState {
+  status: 'locked' | 'available' | 'active' | 'completed' | 'branching_choice';
+  progress: number; // 0-100 for requirements completion
+  highlight: boolean;
+  animation?: 'pulse' | 'glow' | 'shake' | 'none';
+}
+
+export interface NodeInteractionState {
+  nodeId: string;
+  isHovered: boolean;
+  isSelected: boolean;
+  showDetails: boolean;
+  showRequirements: boolean;
+}
+
+export interface VisualRequirement {
+  id: string;
+  description: string;
+  progress: number;
+  isMet: boolean;
+  type: 'usage' | 'story' | 'attribute' | 'environmental';
+  icon: string;
+}
+
 export interface AttributeProgression {
   strength: number;
   dexterity: number;
@@ -1509,19 +2023,335 @@ export interface CharacterSpecialization {
   id: string;
   name: string;
   description: string;
-  category: SkillTreeCategory;
+  category: SpecializationCategory;
   unlockedAtLevel: number;
   bonuses: SpecializationBonus[];
   exclusiveWith?: string[]; // IDs of mutually exclusive specializations
   isActive: boolean;
   progressionLevel: number; // 0-5, how far into this specialization
+  maxProgressionLevel: number; // Maximum progression level for this specialization
+  prerequisites?: SpecializationPrerequisite[];
+  seriesSpecific?: boolean; // True for series-specific specializations
+  rarity: SpecializationRarity;
+  unlockConditions?: SpecializationUnlockCondition[];
 }
 
 export interface SpecializationBonus {
-  type: 'stat_multiplier' | 'skill_cost_reduction' | 'unique_ability' | 'resource_bonus';
+  type: 'stat_multiplier' | 'skill_cost_reduction' | 'unique_ability' | 'resource_bonus' | 'combat_modifier' | 'narrative_influence';
   value: number | string;
   description: string;
   appliesAtLevel: number; // Which progression level this bonus applies
+  conditions?: SpecializationCondition[];
+}
+
+export type SpecializationCategory =
+  | 'combat'
+  | 'magic'
+  | 'social'
+  | 'utility'
+  | 'unique'
+  | 'defensive'
+  | 'support'
+  | 'crafting'
+  | 'exploration'
+  | 'leadership';
+
+export type SpecializationRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'unique';
+
+export interface SpecializationPrerequisite {
+  type: 'level' | 'attribute' | 'skill' | 'specialization' | 'quest' | 'story_event' | 'relationship';
+  target: string;
+  value: number | string;
+  description: string;
+}
+
+export interface SpecializationUnlockCondition {
+  type: 'story_trigger' | 'emotional_state' | 'relationship_level' | 'item_possession' | 'location_visit';
+  target: string;
+  value: number | string;
+  description: string;
+  isHidden?: boolean; // Hidden conditions not shown to player
+}
+
+export interface SpecializationCondition {
+  type: 'health_threshold' | 'mana_threshold' | 'emotional_state' | 'time_of_day' | 'location_type' | 'ally_present';
+  target: string;
+  value: number | string;
+  operator: 'equals' | 'greater_than' | 'less_than' | 'contains';
+}
+
+// === UNIQUE ABILITIES SYSTEM ===
+
+export interface UniqueAbility {
+  id: string;
+  name: string;
+  description: string;
+  category: UniqueAbilityCategory;
+  rarity: 'legendary' | 'mythic' | 'divine';
+  seriesOrigin: string; // Which series this ability comes from
+
+  // Power Level and Balance
+  powerLevel: number; // 1-100, how game-altering this ability is
+  balanceMechanisms: BalanceMechanism[];
+
+  // Activation Requirements
+  activationConditions: AbilityActivationCondition[];
+  cooldownInfo: AbilityCooldown;
+  costs: AbilityCost[];
+
+  // Effects and Restrictions
+  effects: UniqueAbilityEffect[];
+  narrativeRestrictions: NarrativeRestriction[];
+  psychologicalEffects: PsychologicalEffect[];
+
+  // State Management
+  isUnlocked: boolean;
+  isActive: boolean;
+  usageHistory: AbilityUsageRecord[];
+  currentCooldown?: number; // Remaining cooldown in turns/time
+}
+
+export type UniqueAbilityCategory =
+  | 'temporal_manipulation'
+  | 'reality_alteration'
+  | 'death_defiance'
+  | 'mind_control'
+  | 'dimensional_travel'
+  | 'fate_manipulation'
+  | 'soul_manipulation'
+  | 'time_loop'
+  | 'precognition'
+  | 'resurrection';
+
+export interface BalanceMechanism {
+  type: 'cooldown' | 'resource_cost' | 'narrative_restriction' | 'psychological_cost' | 'physical_toll' | 'story_consequence';
+  severity: 'minor' | 'moderate' | 'major' | 'severe';
+  description: string;
+  mechanicalEffect?: string;
+}
+
+export interface AbilityActivationCondition {
+  type: 'death' | 'extreme_emotion' | 'story_trigger' | 'conscious_choice' | 'automatic' | 'desperation';
+  threshold?: number;
+  description: string;
+  isControllable: boolean; // Can the player choose when to activate?
+}
+
+export interface AbilityCooldown {
+  type: 'turns' | 'story_beats' | 'real_time' | 'story_arcs' | 'emotional_recovery';
+  duration: number;
+  description: string;
+  canBeReduced?: boolean;
+  reductionMethods?: string[];
+}
+
+export interface AbilityCost {
+  type: 'health' | 'mana' | 'sanity' | 'memory' | 'relationship' | 'karma' | 'life_force';
+  amount: number;
+  description: string;
+  isPermanent?: boolean;
+}
+
+export interface UniqueAbilityEffect {
+  type: 'state_restoration' | 'knowledge_retention' | 'timeline_reset' | 'reality_change' | 'character_modification';
+  scope: 'self' | 'party' | 'world' | 'timeline' | 'reality';
+  description: string;
+  mechanicalImplementation: string;
+}
+
+export interface NarrativeRestriction {
+  type: 'cannot_reveal' | 'memory_loss' | 'disbelief' | 'temporal_paradox' | 'fate_resistance';
+  description: string;
+  severity: 'minor' | 'moderate' | 'major';
+  workarounds?: string[];
+}
+
+export interface AbilityUsageRecord {
+  usageId: string;
+  timestamp: string;
+  turnId: string;
+  triggerReason: string;
+  stateBeforeUsage: any; // Snapshot of relevant game state
+  stateAfterUsage: any;
+  psychologicalImpact: number; // 0-100
+  narrativeConsequences: string[];
+}
+
+// === RETURN BY DEATH SPECIFIC SYSTEM ===
+
+export interface ReturnByDeathAbility extends UniqueAbility {
+  category: 'time_loop';
+  temporalMechanics: TemporalLoopMechanics;
+  memoryRetention: MemoryRetentionSettings;
+  psychologicalProgression: PsychologicalProgressionTracker;
+  deathTriggers: DeathTriggerCondition[];
+  loopLimitations: LoopLimitation[];
+}
+
+export interface TemporalLoopMechanics {
+  savePointType: 'automatic' | 'story_beats' | 'player_choice' | 'emotional_significance';
+  savePointFrequency: number; // How often save points are created
+  maxRetainedLoops: number; // How many loop iterations to keep in memory
+  temporalStabilityDecay: number; // How much stability decreases per loop
+  realityAnchorPoints: string[]; // Events that cannot be changed
+}
+
+export interface MemoryRetentionSettings {
+  baseRetentionRate: number; // 0-100, how much the character remembers
+  emotionalMemoryBonus: number; // Bonus retention for emotional events
+  traumaticMemoryPenalty: number; // Penalty for traumatic memories
+  relationshipMemoryPersistence: boolean; // Do relationship memories persist?
+  skillMemoryRetention: boolean; // Do learned skills carry over?
+  fragmentedMemoryChance: number; // Chance of partial/unclear memories
+}
+
+export interface PsychologicalProgressionTracker {
+  currentSanity: number; // 0-100
+  maxSanity: number;
+  traumaAccumulation: number; // Increases with each death/loop
+  desensitizationLevel: number; // How numb the character becomes
+  determinationLevel: number; // Drive to succeed despite failures
+  isolationLevel: number; // How disconnected from others they feel
+
+  // Progression stages
+  currentStage: PsychologicalStage;
+  stageProgression: number; // 0-100 progress to next stage
+  availableCopingMechanisms: CopingMechanism[];
+}
+
+export type PsychologicalStage =
+  | 'denial'
+  | 'panic'
+  | 'experimentation'
+  | 'determination'
+  | 'desperation'
+  | 'acceptance'
+  | 'mastery'
+  | 'transcendence';
+
+export interface CopingMechanism {
+  id: string;
+  name: string;
+  description: string;
+  type: 'healthy' | 'unhealthy' | 'adaptive' | 'maladaptive';
+  effectiveness: number; // 0-100
+  sideEffects: string[];
+  unlockConditions: string[];
+}
+
+export interface DeathTriggerCondition {
+  type: 'health_zero' | 'instant_death' | 'emotional_breakdown' | 'story_failure' | 'time_limit';
+  description: string;
+  canBeAvoided: boolean;
+  avoidanceMethods?: string[];
+}
+
+export interface LoopLimitation {
+  type: 'knowledge_restriction' | 'action_limitation' | 'temporal_paradox' | 'fate_resistance';
+  description: string;
+  severity: 'minor' | 'moderate' | 'major';
+  workarounds?: string[];
+}
+
+// === SPECIALIZATION TREE SYSTEM ===
+
+export interface SpecializationTree {
+  id: string;
+  name: string;
+  description: string;
+  category: SpecializationCategory;
+  seriesOrigin?: string; // For series-specific trees
+
+  // Tree Structure
+  nodes: SpecializationNode[];
+  connections: SpecializationConnection[];
+  tiers: SpecializationTier[];
+
+  // Requirements and Restrictions
+  unlockRequirements: SpecializationPrerequisite[];
+  exclusiveWith?: string[]; // Other trees that cannot be taken with this one
+
+  // Progression
+  maxPoints: number;
+  pointsSpent: number;
+  completionBonuses: SpecializationBonus[];
+}
+
+export interface SpecializationNode {
+  id: string;
+  name: string;
+  description: string;
+  tier: number; // 1-5, higher tiers are more powerful
+  position: { x: number; y: number };
+
+  // Costs and Requirements
+  pointCost: number;
+  prerequisites: string[]; // IDs of required nodes
+  levelRequirement?: number;
+
+  // Effects
+  bonuses: SpecializationBonus[];
+  uniqueAbilities?: string[]; // IDs of unique abilities granted
+
+  // State
+  isUnlocked: boolean;
+  isPurchased: boolean;
+
+  // Visual
+  icon: string;
+  color?: string;
+}
+
+export interface SpecializationConnection {
+  fromNodeId: string;
+  toNodeId: string;
+  type: 'prerequisite' | 'synergy' | 'exclusive' | 'enhancement';
+  description?: string;
+}
+
+export interface SpecializationTier {
+  tier: number;
+  name: string;
+  description: string;
+  requiredPoints: number; // Points needed to unlock this tier
+  tierBonus?: SpecializationBonus; // Bonus for reaching this tier
+}
+
+// === SPECIALIZATION PROGRESSION SYSTEM ===
+
+export interface SpecializationProgression {
+  characterId: string;
+  availablePoints: number;
+  totalPointsEarned: number;
+
+  // Active Specializations
+  activeSpecializations: string[]; // IDs of active specializations
+  specializationTrees: { [treeId: string]: SpecializationTree };
+
+  // Unique Abilities
+  unlockedUniqueAbilities: string[]; // IDs of unlocked unique abilities
+  activeUniqueAbilities: string[]; // IDs of currently active unique abilities
+
+  // Progression History
+  progressionHistory: SpecializationProgressionRecord[];
+
+  // Series-Specific
+  seriesSpecializations: { [seriesName: string]: string[] }; // Series -> specialization IDs
+}
+
+export interface SpecializationProgressionRecord {
+  id: string;
+  timestamp: string;
+  turnId: string;
+  action: 'unlock_specialization' | 'purchase_node' | 'activate_ability' | 'earn_points';
+  details: {
+    specializationId?: string;
+    nodeId?: string;
+    abilityId?: string;
+    pointsEarned?: number;
+    pointsSpent?: number;
+  };
+  storyContext: string;
 }
 
 export interface TalentNode {

@@ -16,7 +16,7 @@ import { ItemEnhancementInterface } from './ItemEnhancementInterface';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircleIcon, XCircleIcon, AlertTriangleIcon } from 'lucide-react';
+import { CheckCircleIcon, XCircleIcon, AlertTriangleIcon, PackageIcon } from 'lucide-react';
 
 import type {
   CharacterProfile,
@@ -296,7 +296,48 @@ export const InventoryManagerWrapper: React.FC<InventoryManagerWrapperProps> = (
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Equipment & Inventory</h2>
+          <p className="text-muted-foreground">
+            Manage your equipment, items, crafting materials, and gear optimization
+          </p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="text-right">
+            <div className="text-sm text-muted-foreground">Currency</div>
+            <div className="text-lg font-bold text-yellow-600">
+              {inventoryData.inventoryState.currency} coins
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Equipment Overview */}
+      <div className="bg-muted/30 rounded-lg p-4">
+        <h3 className="font-semibold mb-3 flex items-center">
+          <PackageIcon className="w-5 h-5 mr-2" />
+          Quick Equipment Overview
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+          {Object.entries(inventoryData.inventoryState.equippedItems).map(([slot, item]) => (
+            <div key={slot} className="flex flex-col p-2 border rounded">
+              <span className="font-medium capitalize text-muted-foreground text-xs mb-1">
+                {slot.replace(/([A-Z])/g, ' $1').trim()}
+              </span>
+              <span className={item ? "text-foreground truncate" : "text-muted-foreground italic"}>
+                {item ? item.name : "Empty"}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 text-xs text-muted-foreground text-center">
+          Use the Equipment tab below for detailed equipment management and optimization
+        </div>
+      </div>
+
       {/* Notification */}
       {notification.visible && (
         <Alert className={`${

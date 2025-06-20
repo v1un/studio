@@ -211,7 +211,7 @@ export default function LevelUpModal({ character, isOpen, onClose, onComplete }:
               <div>
                 <h3 className="text-lg font-semibold">Attribute Points</h3>
                 <p className="text-sm text-muted-foreground">
-                  Allocate your attribute points to customize your character's strengths
+                  Allocate your attribute points to customize your character&apos;s strengths
                 </p>
               </div>
               <Badge variant={remainingPoints > 0 ? "default" : "secondary"} className="text-lg px-3 py-1">

@@ -199,7 +199,8 @@ export default function ScenarioGenerationWizard({
   };
 
   const executeCharacterAndScenePhase = async (): Promise<GenerateCharacterAndSceneOutput> => {
-    const { generateCharacterAndScene } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateCharacterAndScene } = await import("@/lib/scenario-api");
+    const { seriesSupportsCanonCompliance, initializeCharacterWithCanonCompliance } = await import("@/lib/canon-compliance-orchestrator");
 
     const input: GenerateCharacterAndSceneInput = {
       seriesName: generationData.seriesName,
@@ -208,38 +209,37 @@ export default function ScenarioGenerationWizard({
       usePremiumAI: generationData.usePremiumAI,
     };
 
-    const result = await generateCharacterAndScene(input);
+    let result = await generateCharacterAndScene(input);
 
-    // Generate initial combat scenario for tactical preparation
-    try {
-      const { generateCombatScenario } = await import("@/ai/flows/combat-generation");
-      const combatScenario = await generateCombatScenario({
-        storyContext: result.sceneDescription,
-        playerCharacter: result.characterProfile,
-        currentLocation: result.currentLocation,
-        storyState: null, // Will be initialized later
-        combatTrigger: 'story_event',
-        difficultyLevel: 'easy', // Starting scenario should be manageable
-        usePremiumAI: generationData.usePremiumAI,
-        specialRequirements: {
-          maxEnemies: 2, // Keep initial combat simple
-          environmentType: result.currentLocation,
+    // Apply canon compliance enhancement if supported
+    if (seriesSupportsCanonCompliance(generationData.seriesName)) {
+      try {
+        const canonResult = await initializeCharacterWithCanonCompliance({
+          seriesName: generationData.seriesName,
+          characterName: generationData.characterName,
+          characterClass: generationData.characterClass,
+          useCanonicalStartingConditions: true,
+        });
+
+        if (canonResult.canonCompliance.isCanonical) {
+          console.log('[ScenarioWizard] Applied canonical character initialization');
+          result = {
+            ...result,
+            characterProfile: canonResult.characterProfile,
+          };
         }
-      });
-
-      // Add combat scenario to result
-      return {
-        ...result,
-        initialCombatScenario: combatScenario,
-      };
-    } catch (error) {
-      console.warn('Combat scenario generation failed, continuing without it:', error);
-      return result;
+      } catch (error) {
+        console.warn('[ScenarioWizard] Canon compliance enhancement failed:', error);
+      }
     }
+
+    // Combat scenarios will be generated dynamically during gameplay
+    // based on current story state and character progression
+    return result;
   };
 
   const executeCharacterSkillsPhase = async (): Promise<GenerateCharacterSkillsOutput> => {
-    const { generateCharacterSkills } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateCharacterSkills } = await import("@/lib/scenario-api");
 
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     if (!characterSceneResult) throw new Error("Character & Scene phase must be completed first");
@@ -257,21 +257,25 @@ export default function ScenarioGenerationWizard({
     // Initialize progression system for the character
     try {
       const { initializeCharacterProgression } = await import("@/lib/progression-engine");
+      const { initializeSpecializationProgression } = await import("@/lib/specialization-engine");
       const { getSeriesConfig } = await import("@/lib/series-adapter");
 
       const seriesConfig = getSeriesConfig(generationData.seriesName);
       const enhancedCharacter = initializeCharacterProgression(result.updatedCharacterProfile);
 
+      // Initialize specialization system
+      const specializationCharacter = initializeSpecializationProgression(enhancedCharacter, generationData.seriesName);
+
       // Add series-appropriate skill trees based on character class
       const availableSkillTrees = determineSkillTreesForCharacter(
-        enhancedCharacter.class || 'Adventurer',
+        specializationCharacter.class || 'Adventurer',
         seriesConfig
       );
 
       return {
         ...result,
         updatedCharacterProfile: {
-          ...enhancedCharacter,
+          ...specializationCharacter,
           availableSkillTrees,
         },
         progressionSetup: {
@@ -318,7 +322,7 @@ export default function ScenarioGenerationWizard({
   };
 
   const executeItemsAndEquipmentPhase = async (): Promise<GenerateItemsAndEquipmentOutput> => {
-    const { generateItemsAndEquipment } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateItemsAndEquipment } = await import("@/lib/scenario-api");
 
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
@@ -481,7 +485,7 @@ export default function ScenarioGenerationWizard({
   };
 
   const executeWorldFactsPhase = async (): Promise<GenerateWorldFactsOutput> => {
-    const { generateWorldFacts } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateWorldFacts } = await import("@/lib/scenario-api");
     
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
@@ -502,7 +506,7 @@ export default function ScenarioGenerationWizard({
   };
 
   const executeQuestsAndArcsPhase = async (): Promise<GenerateQuestsAndArcsOutput> => {
-    const { generateQuestsAndArcs } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateQuestsAndArcs } = await import("@/lib/scenario-api");
     
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
@@ -525,7 +529,7 @@ export default function ScenarioGenerationWizard({
   };
 
   const executeLoreGenerationPhase = async () => {
-    const { generateLoreEntries } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateLoreEntries } = await import("@/lib/scenario-api");
 
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
@@ -549,7 +553,7 @@ export default function ScenarioGenerationWizard({
   };
 
   const executeNPCsPhase = async () => {
-    const { generateNPCs } = await import("@/ai/flows/generate-scenario-from-series");
+    const { generateNPCs } = await import("@/lib/scenario-api");
 
     const characterSceneResult = generationData.phases.find(p => p.id === 'character-scene')?.result as GenerateCharacterAndSceneOutput;
     const skillsResult = generationData.phases.find(p => p.id === 'character-skills')?.result as GenerateCharacterSkillsOutput;
@@ -620,7 +624,6 @@ export default function ScenarioGenerationWizard({
         trackedNPCs: npcsResult.trackedNPCs,
         initialLoreEntries: loreResult.loreEntries,
         // Include any additional integrations from phases
-        initialCombatScenario: characterSceneResult.initialCombatScenario,
         progressionSetup: skillsResult.progressionSetup,
         craftingSetup: itemsResult.craftingSetup,
       };
@@ -636,6 +639,44 @@ export default function ScenarioGenerationWizard({
       // Apply comprehensive integration
       const integratedResult = await integrateScenarioGeneration(baseResult, integrationContext);
 
+      // Apply canon compliance validation if supported
+      let canonComplianceResult = null;
+      const { validateScenarioCanonCompliance, seriesSupportsCanonCompliance } = await import("@/lib/canon-compliance-orchestrator");
+
+      if (seriesSupportsCanonCompliance(generationData.seriesName)) {
+        try {
+          canonComplianceResult = await validateScenarioCanonCompliance({
+            seriesName: generationData.seriesName,
+            characterName: generationData.characterName,
+            characterClass: generationData.characterClass,
+            useCanonicalStartingConditions: true,
+            sceneDescription: characterSceneResult.sceneDescription,
+            currentLocation: characterSceneResult.currentLocation,
+            worldFacts: worldFactsResult.worldFacts,
+            generatedLore: loreResult.loreEntries,
+            timelinePosition: 'Series beginning',
+          });
+
+          console.log(`[ScenarioWizard] Canon compliance score: ${canonComplianceResult.overallComplianceScore}/100`);
+
+          // Apply canon compliance corrections if available
+          if (canonComplianceResult.validatedWorldFacts) {
+            integratedResult.worldFacts = canonComplianceResult.validatedWorldFacts;
+          }
+          if (canonComplianceResult.enhancedLore?.length > 0) {
+            integratedResult.initialLoreEntries = [
+              ...integratedResult.initialLoreEntries,
+              ...canonComplianceResult.enhancedLore
+            ];
+          }
+          if (canonComplianceResult.correctedNarrative) {
+            integratedResult.sceneDescription = canonComplianceResult.correctedNarrative;
+          }
+        } catch (error) {
+          console.warn('[ScenarioWizard] Canon compliance validation failed:', error);
+        }
+      }
+
       // Validate the integrated scenario
       try {
         const { validateScenario } = await import("@/lib/scenario-validation");
@@ -643,25 +684,39 @@ export default function ScenarioGenerationWizard({
 
         console.log('Scenario validation result:', validationResult);
 
-        // Show validation results
+        // Show validation results with canon compliance
         if (validationResult.isValid) {
+          const canonInfo = canonComplianceResult ?
+            ` Canon Compliance: ${canonComplianceResult.overallComplianceScore}/100.` : '';
           toast({
             title: "Scenario Generated Successfully",
-            description: `Quality Score: ${validationResult.score}/100. All systems integrated.`,
+            description: `Quality Score: ${validationResult.score}/100.${canonInfo} All systems integrated.`,
             variant: "default",
           });
         } else {
+          const canonInfo = canonComplianceResult ?
+            ` Canon Compliance: ${canonComplianceResult.overallComplianceScore}/100.` : '';
           toast({
             title: "Scenario Generated with Issues",
-            description: `Quality Score: ${validationResult.score}/100. ${validationResult.errors.length} errors, ${validationResult.warnings.length} warnings.`,
+            description: `Quality Score: ${validationResult.score}/100.${canonInfo} ${validationResult.errors.length} errors, ${validationResult.warnings.length} warnings.`,
             variant: "destructive",
           });
         }
 
-        // Add validation results to the final result
+        // Show canon compliance specific warnings if needed
+        if (canonComplianceResult && !canonComplianceResult.isCanonCompliant) {
+          toast({
+            title: "Canon Compliance Warning",
+            description: `Scenario has ${canonComplianceResult.criticalIssues.length} critical canon issues. Check recommendations for improvements.`,
+            variant: "destructive",
+          });
+        }
+
+        // Add validation and canon compliance results to the final result
         const finalResult = {
           ...integratedResult,
           validationResult,
+          canonComplianceResult,
         };
 
         onComplete(finalResult);

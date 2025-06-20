@@ -1,10 +1,11 @@
 
 "use client";
 
+import { memo, useMemo } from "react";
 import type { DisplayMessage } from "@/types/story";
 import { cn } from "@/lib/utils";
 import Image from 'next/image';
-import { Bot, UserCircle, ShieldAlertIcon, InfoIcon, MilestoneIcon, BookmarkPlusIcon } from "lucide-react"; 
+import { Bot, UserCircle, ShieldAlertIcon, InfoIcon, MilestoneIcon, BookmarkPlusIcon } from "lucide-react";
 import CombatHelperDisplay from "./CombatHelperDisplay";
 
 interface ChatMessageProps {
@@ -12,7 +13,7 @@ interface ChatMessageProps {
   onStartInteractiveCombat?: () => void;
 }
 
-export default function ChatMessage({ message, onStartInteractiveCombat }: ChatMessageProps) {
+function ChatMessage({ message, onStartInteractiveCombat }: ChatMessageProps) {
   if (message.speakerType === 'SystemHelper' && message.combatHelperInfo) {
     return (
       <CombatHelperDisplay
@@ -59,10 +60,10 @@ export default function ChatMessage({ message, onStartInteractiveCombat }: ChatM
     MessageIcon = message.content?.toLowerCase().includes("complete") || message.content?.toLowerCase().includes("finale") ? MilestoneIcon : BookmarkPlusIcon;
   }
   
-  const AvatarComponent = () => {
+  const AvatarComponent = useMemo(() => {
     if (message.speakerType === 'SystemHelper' || message.speakerType === 'ArcNotification') {
       const IconComp = MessageIcon || InfoIcon;
-      return <IconComp className={`w-10 h-10 ${nameLabelColor}`} />; 
+      return <IconComp className={`w-10 h-10 ${nameLabelColor}`} />;
     }
     if (message.avatarSrc) {
       return (
@@ -71,16 +72,18 @@ export default function ChatMessage({ message, onStartInteractiveCombat }: ChatM
           alt={`${speakerLabelToDisplay}'s avatar`}
           width={40}
           height={40}
-          className="rounded-full"
+          className="rounded-full stable-transform"
           data-ai-hint={avatarHintToUse}
+          priority={false}
+          loading="lazy"
         />
       );
     }
     if (isPlayer) {
-      return <UserCircle className="w-10 h-10 text-muted-foreground" />;
+      return <UserCircle className="w-10 h-10 text-muted-foreground stable-transform" />;
     }
-    return <Bot className="w-10 h-10 text-muted-foreground" />;
-  };
+    return <Bot className="w-10 h-10 text-muted-foreground stable-transform" />;
+  }, [message.speakerType, message.avatarSrc, speakerLabelToDisplay, avatarHintToUse, nameLabelColor, isPlayer, MessageIcon]);
 
   const messageAlignmentClass = (message.speakerType === 'SystemHelper' || message.speakerType === 'ArcNotification') 
     ? "justify-center" 
@@ -109,9 +112,9 @@ export default function ChatMessage({ message, onStartInteractiveCombat }: ChatM
         </div>
       ) : (
         <div className={cn("flex items-end gap-2", systemMessageMaxWidth, isPlayer ? "flex-row-reverse" : "flex-row")}>
-          {!isPlayer && ( 
-            <div className="shrink-0">
-              <AvatarComponent />
+          {!isPlayer && (
+            <div className="shrink-0 stable-transform">
+              {AvatarComponent}
             </div>
           )}
           <div
@@ -132,8 +135,8 @@ export default function ChatMessage({ message, onStartInteractiveCombat }: ChatM
             <p className="text-base whitespace-pre-line">{message.content}</p>
           </div>
           {isPlayer && (
-            <div className="shrink-0">
-              <AvatarComponent />
+            <div className="shrink-0 stable-transform">
+              {AvatarComponent}
             </div>
           )}
         </div>
@@ -141,3 +144,5 @@ export default function ChatMessage({ message, onStartInteractiveCombat }: ChatM
     </div>
   );
 }
+
+export default memo(ChatMessage);

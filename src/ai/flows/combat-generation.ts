@@ -203,6 +203,7 @@ const combatGenerationPrompt = ai.definePrompt(
       storyContext: z.string(),
       playerCharacter: z.any(),
       currentLocation: z.string(),
+      storyState: z.any(),
       combatTrigger: z.string(),
       difficultyLevel: z.string(),
       specialRequirements: z.any().optional(),
@@ -212,7 +213,7 @@ const combatGenerationPrompt = ai.definePrompt(
   async (input) => {
     // Initialize balance system if story state has balance settings
     let balanceSystem: GameBalanceSystem | null = null;
-    if (input.storyState.gameBalance && input.storyState.playerPerformance) {
+    if (input.storyState && input.storyState.gameBalance && input.storyState.playerPerformance) {
       balanceSystem = new GameBalanceSystem(
         input.storyState.gameBalance,
         input.storyState.playerPerformance
@@ -335,6 +336,7 @@ const combatGenerationFlow = ai.defineFlow(
         storyContext: input.storyContext,
         playerCharacter: input.playerCharacter,
         currentLocation: input.currentLocation,
+        storyState: input.storyState,
         combatTrigger: input.combatTrigger,
         difficultyLevel: input.difficultyLevel,
         specialRequirements: input.specialRequirements,

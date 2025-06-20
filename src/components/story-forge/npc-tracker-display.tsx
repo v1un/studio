@@ -160,8 +160,8 @@ const NPCEntry: React.FC<{ npc: NPCProfile, currentTurnId: string }> = ({ npc, c
               <ul className="space-y-2 text-xs">
                 {npc.dialogueHistory.slice(-5).map((entry, index) => ( 
                   <li key={index} className="border-b border-border/50 pb-1 last:border-b-0 last:pb-0">
-                    {entry.playerInput && <p><span className="font-medium text-primary/80">You:</span> <span className="text-muted-foreground italic">"{entry.playerInput}"</span></p>}
-                    <p><span className="font-medium text-accent">{npc.name}:</span> <span className="text-muted-foreground">"{entry.npcResponse}"</span></p>
+                    {entry.playerInput && <p><span className="font-medium text-primary/80">You:</span> <span className="text-muted-foreground italic">&quot;{entry.playerInput}&quot;</span></p>}
+                    <p><span className="font-medium text-accent">{npc.name}:</span> <span className="text-muted-foreground">&quot;{entry.npcResponse}&quot;</span></p>
                     <p className="text-right text-muted-foreground/70 text-[10px]">
                       Turn: {formatTurnIdForDisplay(entry.turnId)}
                     </p>

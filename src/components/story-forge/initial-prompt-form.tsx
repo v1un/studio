@@ -45,14 +45,19 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
   };
 
   return (
-    <Card className="w-full shadow-xl animate-fade-in">
-      <CardHeader>
-        <CardTitle className="font-headline text-3xl flex items-center">
-            <BookPlusIcon className="w-7 h-7 mr-2 text-accent"/>
+    <Card variant="elevated" className="w-full max-w-2xl shadow-2xl animate-fade-in hover-lift glass-effect">
+      <CardHeader className="text-center pb-6">
+        <CardTitle gradient className="font-headline text-4xl flex items-center justify-center mb-4">
+            <div className="relative mr-3">
+              <BookPlusIcon className="w-8 h-8 text-accent animate-float"/>
+              <div className="absolute inset-0 w-8 h-8 text-accent animate-ping opacity-20">
+                <BookPlusIcon className="w-8 h-8" />
+              </div>
+            </div>
             Choose Your Universe
         </CardTitle>
-        <CardDescription>
-          Enter the name of a well-known series to begin. You can also suggest a character name and class/role.
+        <CardDescription className="text-lg text-muted-foreground">
+          Enter the name of a well-known series to begin your adventure. You can also suggest a character name and class/role to customize your experience.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -147,7 +152,7 @@ export default function InitialPromptForm({ onSubmitSeries, isLoading }: Initial
           </Button>
 
           <p className="text-xs text-center text-muted-foreground">
-            Advanced generation uses a new multi-phase system that's more reliable and gives you control over each step.
+            Advanced generation uses a new multi-phase system that&apos;s more reliable and gives you control over each step.
           </p>
         </CardFooter>
       </form>

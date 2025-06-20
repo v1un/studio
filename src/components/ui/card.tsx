@@ -1,20 +1,46 @@
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
-const Card = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "rounded-lg border bg-card text-card-foreground shadow-sm",
-      className
-    )}
-    {...props}
-  />
-))
+const cardVariants = cva(
+  "rounded-lg border bg-card text-card-foreground shadow-sm transition-all duration-200",
+  {
+    variants: {
+      variant: {
+        default: "border-border",
+        elevated: "shadow-lg hover:shadow-xl border-border/50",
+        glass: "glass-effect border-border/30",
+        gradient: "bg-gradient-to-br from-card to-card-hover border-border/50",
+        interactive: "hover:bg-card-hover hover:shadow-md cursor-pointer hover-lift",
+        glow: "shadow-lg shadow-primary/10 border-primary/20 hover-glow",
+      },
+      size: {
+        default: "",
+        sm: "p-3",
+        lg: "p-8",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+export interface CardProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof cardVariants> {}
+
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, variant, size, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(cardVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+)
 Card.displayName = "Card"
 
 const CardHeader = React.forwardRef<
@@ -31,12 +57,15 @@ CardHeader.displayName = "CardHeader"
 
 const CardTitle = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
+  React.HTMLAttributes<HTMLDivElement> & {
+    gradient?: boolean
+  }
+>(({ className, gradient, ...props }, ref) => (
   <div
     ref={ref}
     className={cn(
       "text-2xl font-semibold leading-none tracking-tight",
+      gradient && "text-gradient-primary",
       className
     )}
     {...props}

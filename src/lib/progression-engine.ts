@@ -352,7 +352,7 @@ export function initializeCharacterProgression(character: CharacterProfile): Cha
   };
 }
 
-export function processLevelUp(character: CharacterProfile): CharacterProfile {
+export function processLevelUp(character: CharacterProfile, storyState?: any, seriesName?: string): CharacterProfile {
   let currentCharacter = { ...character };
   let totalProgressionPoints = currentCharacter.progressionPoints || initializeProgressionPoints();
 
@@ -365,6 +365,12 @@ export function processLevelUp(character: CharacterProfile): CharacterProfile {
 
     const newLevel = levelUpCheck.newLevel;
     const newProgressionPoints = calculateProgressionPointsForLevel(newLevel);
+
+    // Check if this is a specialization milestone (every 5 levels)
+    if (newLevel % 5 === 0 && storyState && seriesName) {
+      // Trigger dynamic specialization generation
+      triggerDynamicSpecializationGeneration(currentCharacter, storyState, seriesName, newLevel);
+    }
 
     // Calculate remaining XP after level up (handle overflow correctly)
     const excessXP = currentCharacter.experiencePoints - currentCharacter.experienceToNextLevel;
@@ -392,4 +398,41 @@ export function processLevelUp(character: CharacterProfile): CharacterProfile {
     ...currentCharacter,
     progressionPoints: totalProgressionPoints,
   };
+}
+
+// === DYNAMIC SPECIALIZATION INTEGRATION ===
+
+function triggerDynamicSpecializationGeneration(
+  character: CharacterProfile,
+  storyState: any,
+  seriesName: string,
+  newLevel: number
+): void {
+  // Note: Dynamic specialization generation is now handled via API routes
+  // This prevents client-side bundling of genkit-ai dependencies
+  console.log(`[ProgressionEngine] Level ${newLevel} milestone reached for ${character.name}. Dynamic specialization generation available via API.`);
+  
+  // The actual generation will be triggered from the UI when the user
+  // accesses the specialization management interface
+}
+
+function extractRecentEvents(storyState: any): string[] {
+  const events: string[] = [];
+
+  // Extract from narrative threads
+  if (storyState.narrativeThreads) {
+    const recentThreads = storyState.narrativeThreads.slice(-3);
+    recentThreads.forEach((thread: any) => {
+      if (thread.description) {
+        events.push(thread.description);
+      }
+    });
+  }
+
+  // Extract from major events
+  if (storyState.majorEvents) {
+    events.push(...storyState.majorEvents.slice(-2));
+  }
+
+  return events;
 }

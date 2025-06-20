@@ -560,7 +560,8 @@ INTEGRATION REQUIREMENTS:
 
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
-        prompt: adaptedPrompt
+        prompt: `${adaptedPrompt}
+
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
 Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 'characterCore': Authentically create profile. Include name, class, description. Health/MaxHealth (numbers). Mana/MaxMana (numbers, 0 if not applicable). Stats (5-15, numbers). Level 1, 0 XP, XPToNextLevel (numbers, must be >0). Currency (number).
@@ -867,16 +868,30 @@ Your task is to create an authentic character and opening scene that strictly ad
     // Define prompts with enhanced templates
     const foundation_characterAndScenePrompt = ai.definePrompt({
         name: 'foundation_characterAndScenePrompt', model: modelName, input: { schema: Foundation_CharacterAndSceneInputSchema }, output: { schema: Foundation_CharacterAndSceneOutputSchema }, config: generalModelConfig,
-        prompt: adaptedPrompt + `
+        prompt: `${adaptedPrompt}
 
 User character: Name: {{#if characterNameInput}}{{characterNameInput}}{{else}}(Not provided){{/if}}, Class: {{#if characterClassInput}}{{characterClassInput}}{{else}}(Not provided){{/if}}.
-Generate 'sceneDescription', 'characterCore', 'currentLocation'.`
+Generate 'sceneDescription', 'characterCore', 'currentLocation'.
 
 **CANON COMPLIANCE REQUIREMENTS:**
 - Respect ALL established world rules, magic systems, political structures, and cultural norms from the original series
 - Ensure character abilities and limitations align with the series' power scaling and established mechanics
 - Maintain consistency with the series' tone, themes, and narrative style
 - Consider the character's starting point in the series timeline and their canonical knowledge/relationships at that moment
+
+**ENHANCED CANON COMPLIANCE FOR RE:ZERO (EXAMPLE):**
+If generating for Re:Zero series, ensure:
+- Character starts with NO magic abilities (broken gate)
+- Language: Can speak (100) but cannot read (0) due to translation ability
+- Physical state: 17-year-old in tracksuit with modern world items
+- Knowledge: Zero fantasy world knowledge, gaming/anime references only
+- Psychology: Inferiority complex masked by protagonist syndrome
+- Timeline: Pre-Royal Selection, no knowledge of major characters
+- Special conditions: Return by Death unknown, Witch's Scent inactive
+- Starting location: Lugunica capital market district
+
+**GENERIC ADAPTATION PRINCIPLE:**
+Use the Re:Zero example above as a template for other series - adapt the specific details while maintaining the same level of precision for character starting conditions, timeline accuracy, and canon compliance.
 
 Generate: sceneDescription (following the detailed scene generation guidelines above), characterCore (complete profile with appropriate starting conditions), currentLocation (specific canonical place name).
 Output ONLY JSON for Foundation_CharacterAndSceneOutputSchema. Do not include any other conversational text.`,

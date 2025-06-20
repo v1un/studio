@@ -27,7 +27,7 @@ export default function DataCorrectionLogDisplay({ warnings, onClearLogs }: Data
           </Button>
         </div>
         <CardDescription>
-          This log shows instances where the AI's output required backend corrections or defaulting. Review these to help identify areas for AI prompt or logic improvement.
+          This log shows instances where the AI&apos;s output required backend corrections or defaulting. Review these to help identify areas for AI prompt or logic improvement.
         </CardDescription>
       </CardHeader>
       <CardContent>

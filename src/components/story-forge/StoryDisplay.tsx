@@ -34,9 +34,9 @@ export default function StoryDisplay({ storyHistory, isLoadingInteraction, onSta
   }, [] as DisplayMessage[]);
 
   return (
-    <ScrollArea 
-        ref={scrollAreaRef} 
-        className="w-full flex-1 pr-3" // Changed to flex-1 for dynamic height
+    <ScrollArea
+        ref={scrollAreaRef}
+        className="w-full flex-1 pr-2 min-h-[50vh] max-h-none" // Removed max height constraint to allow full expansion
         viewportRef={viewportRef}
     >
       <div className="flex flex-col gap-2 p-1">

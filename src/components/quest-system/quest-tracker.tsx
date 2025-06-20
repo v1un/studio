@@ -344,7 +344,7 @@ export function QuestTracker({ storyState, onQuestSelect, onBranchSelect }: Ques
               <CardContent className="p-6 text-center">
                 <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
                 <h3 className="text-lg font-medium mb-2">No Failed Quests</h3>
-                <p className="text-gray-600">Great job! You haven't failed any quests yet.</p>
+                <p className="text-gray-600">Great job! You haven&apos;t failed any quests yet.</p>
               </CardContent>
             </Card>
           ) : (

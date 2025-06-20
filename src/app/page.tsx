@@ -2,11 +2,16 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { generateScenarioFoundation, generateScenarioNarrativeElements } from "@/ai/flows/generate-scenario-from-series";
-import { fleshOutStoryArcQuests as callFleshOutStoryArcQuests } from "@/ai/flows/flesh-out-chapter-quests";
-import { discoverNextStoryArc as callDiscoverNextStoryArc } from "@/ai/flows/discover-next-story-arc-flow";
-import { updateCharacterDescription as callUpdateCharacterDescription } from "@/ai/flows/update-character-description-flow";
-import { generateBridgingQuest as callGenerateBridgingQuest } from "@/ai/flows/generate-bridging-quest-flow";
+import {
+  generateScenarioFoundation,
+  generateScenarioNarrativeElements,
+  generateNextScene,
+  fleshOutStoryArcQuests as callFleshOutStoryArcQuests,
+  discoverNextStoryArc as callDiscoverNextStoryArc,
+  updateCharacterDescription as callUpdateCharacterDescription,
+  generateBridgingQuest as callGenerateBridgingQuest,
+  simpleTestAction
+} from "@/lib/scenario-api";
 
 import type {
     GenerateScenarioFoundationInput, GenerateScenarioFoundationOutput,
@@ -28,6 +33,10 @@ import InitialPromptForm from "@/components/story-forge/initial-prompt-form";
 import StoryDisplay from "@/components/story-forge/story-display";
 import UserInputForm from "@/components/story-forge/user-input-form";
 import StoryControls from "@/components/story-forge/story-controls";
+import FloatingInputForm from "@/components/story-forge/floating-input-form";
+import ImmersiveStoryDisplay from "@/components/story-forge/immersive-story-display";
+import SmartInputToggle from "@/components/story-forge/smart-input-toggle";
+import ImmersiveHelpOverlay from "@/components/story-forge/immersive-help-overlay";
 import CharacterSheet from "@/components/story-forge/character-sheet";
 import MinimalCharacterStatus from "@/components/story-forge/minimal-character-status";
 import EnhancedCharacterStatus from "@/components/enhanced-tracking/enhanced-character-status";
@@ -37,10 +46,12 @@ import NPCTrackerDisplay from "@/components/story-forge/npc-tracker-display";
 import { InventoryManagerWrapper } from "@/components/inventory/InventoryManagerWrapper";
 import DataCorrectionLogDisplay from "@/components/story-forge/data-correction-log-display";
 
-import { simpleTestAction } from '@/ai/actions/simple-test-action';
+
 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon, CompassIcon, TrendingUp, PackageIcon } from "lucide-react";
+import { Loader2, Sparkles, BookUser, StickyNote, Library, UsersIcon, BookPlus, MessageSquareDashedIcon, AlertTriangleIcon, ClipboardListIcon, TestTubeIcon, Milestone, SearchIcon, InfoIcon, EditIcon, BookmarkIcon, CompassIcon, TrendingUp, PackageIcon, Settings, Moon, Sun } from "lucide-react";
+import { EnhancedLoading } from "@/components/ui/enhanced-loading";
+import { ThemeToggle } from "@/components/ui/theme-provider";
 import { initializeLorebook, clearLorebook } from "@/lib/lore-manager";
 import { generateUUID } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -174,6 +185,39 @@ export default function StoryForgePage() {
   const [loadingType, setLoadingType] = useState<'scenario' | 'nextScene' | 'arcLoad' | 'discoveringArc' | 'updatingProfile' | 'bridgingContent' | null>(null);
   const [activeTab, setActiveTab] = useState("story");
   const [activeCombatState, setActiveCombatState] = useState<CombatState | null>(null);
+  const [isImmersiveMode, setIsImmersiveMode] = useState(false);
+  const [showFloatingInput, setShowFloatingInput] = useState(false);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC to exit immersive mode or close floating input
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (showFloatingInput) {
+          setShowFloatingInput(false);
+        } else if (isImmersiveMode) {
+          setIsImmersiveMode(false);
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + Enter to open floating input
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        setShowFloatingInput(true);
+      }
+
+      // F11 or Ctrl/Cmd + Shift + F for immersive mode toggle
+      if (e.key === 'F11' || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F')) {
+        e.preventDefault();
+        setIsImmersiveMode(!isImmersiveMode);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isImmersiveMode, showFloatingInput]);
   const [showCombatInterface, setShowCombatInterface] = useState(false);
   const { toast } = useToast();
 
@@ -210,6 +254,12 @@ export default function StoryForgePage() {
 
 
   const loadSession = useCallback(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') {
+      setIsLoadingPage(false);
+      return;
+    }
+
     setIsLoadingPage(true);
     const activeId = localStorage.getItem(ACTIVE_SESSION_ID_KEY);
     if (activeId) {
@@ -264,7 +314,7 @@ export default function StoryForgePage() {
   }, [loadSession]);
 
   useEffect(() => {
-    if (isLoadingPage || !currentSession) return;
+    if (typeof window === 'undefined' || isLoadingPage || !currentSession) return;
 
     const sessionToSave: GameSession = {
         ...currentSession,
@@ -422,6 +472,299 @@ export default function StoryForgePage() {
     setIsLoadingInteraction(true);
     setLoadingType('nextScene');
     console.log("CLIENT: User action submitted:", userInput);
+
+    // NEW: Check for any game commands first using the universal chat system
+    const { createChatIntegrationSystem } = await import('@/lib/chat-integration-system');
+    const { CRAFTING_RECIPES } = await import('@/data/item-sets-and-synergies');
+
+    const chatSystem = createChatIntegrationSystem({
+      enableAIGM: true,
+      enableSafetyChecks: true,
+      enableAutoProgression: true,
+      enableInventoryManagement: true,
+      enableWorldStateUpdates: true,
+      enableQuestManagement: true,
+      enableNarrativeEvents: true
+    });
+
+    try {
+      // Process the message through the chat integration system
+      const chatResult = await chatSystem.processChatMessage(
+        userInput,
+        currentStoryState,
+        storyHistory,
+        storyHistory[storyHistory.length - 1]?.id || 'initial',
+        false // isGMCommand = false for player input
+      );
+
+      // If a command was recognized and executed successfully
+      if (chatResult.parsedCommand.isGameCommand && chatResult.commandResult?.success) {
+        console.log("CLIENT: Game command executed successfully:", chatResult.commandResult.message);
+
+        // Update the story state with command results
+        if (chatResult.updatedStoryState) {
+          setCurrentStoryState(chatResult.updatedStoryState);
+        }
+
+        // Create a new turn with the command result
+        const newTurnId = generateUUID();
+        const commandTurn: StoryTurn = {
+          id: newTurnId,
+          messages: [
+            {
+              id: generateUUID(),
+              speakerType: 'Player',
+              speakerNameLabel: baseCharacterProfile.name,
+              content: userInput,
+              timestamp: new Date().toISOString()
+            },
+            {
+              id: generateUUID(),
+              speakerType: 'SystemHelper',
+              speakerNameLabel: 'Game System',
+              content: chatResult.userFeedback,
+              timestamp: new Date().toISOString()
+            },
+            ...chatResult.systemMessages
+          ],
+          storyState: chatResult.updatedStoryState,
+          timestamp: new Date().toISOString()
+        };
+
+        // Add GM system messages if any
+        if (chatResult.gmExecution?.systemMessages) {
+          commandTurn.messages.push(...chatResult.gmExecution.systemMessages);
+        }
+
+        const updatedHistory = [...storyHistory, commandTurn];
+        setStoryHistory(updatedHistory);
+
+        // Show success toast
+        toast({
+          title: "Command Executed",
+          description: chatResult.userFeedback,
+        });
+
+        setIsLoadingInteraction(false);
+        return; // Don't continue to story generation for pure commands
+      }
+
+      // If command was partially recognized but failed
+      if (chatResult.parsedCommand.isGameCommand && !chatResult.commandResult?.success) {
+        console.log("CLIENT: Game command failed:", chatResult.userFeedback);
+
+        toast({
+          title: "Command Failed",
+          description: chatResult.userFeedback,
+          variant: "destructive"
+        });
+
+        setIsLoadingInteraction(false);
+        return;
+      }
+
+      // If it was a help/status request, show the response without continuing to story generation
+      if (chatResult.userFeedback && !chatResult.parsedCommand.isGameCommand &&
+          (userInput.toLowerCase().includes('help') ||
+           userInput.toLowerCase().includes('status') ||
+           userInput.toLowerCase().includes('inventory') ||
+           userInput.toLowerCase().includes('quest'))) {
+
+        const helpTurn: StoryTurn = {
+          id: generateUUID(),
+          messages: [
+            {
+              id: generateUUID(),
+              speakerType: 'Player',
+              speakerNameLabel: baseCharacterProfile.name,
+              content: userInput,
+              timestamp: new Date().toISOString()
+            },
+            {
+              id: generateUUID(),
+              speakerType: 'SystemHelper',
+              speakerNameLabel: 'Game Assistant',
+              content: chatResult.userFeedback,
+              timestamp: new Date().toISOString()
+            }
+          ],
+          storyState: currentStoryState,
+          timestamp: new Date().toISOString()
+        };
+
+        const updatedHistory = [...storyHistory, helpTurn];
+        setStoryHistory(updatedHistory);
+        setIsLoadingInteraction(false);
+        return;
+      }
+
+    } catch (error: any) {
+      console.error("CLIENT: Chat integration system error:", error);
+      // Continue to normal story processing if chat system fails
+    }
+
+    // LEGACY: Check for crafting commands (fallback)
+    const { parseCraftingCommand, findMatchingRecipe, validateCraftingCommand, formatCraftingResult } = await import('@/lib/chat-command-parser');
+
+    const commandResult = parseCraftingCommand(userInput, CRAFTING_RECIPES);
+
+    if (commandResult.isCraftingCommand && commandResult.command) {
+      console.log("CLIENT: Crafting command detected:", commandResult.command);
+
+      // Handle crafting command
+      const recipe = findMatchingRecipe(commandResult.command.recipeName, CRAFTING_RECIPES);
+
+      if (recipe && commandResult.command.recipeName !== 'unknown') {
+        // Validate crafting requirements
+        const availableItems = [
+          ...currentStoryState.inventory,
+          ...(currentStoryState.equippedItems ? Object.values(currentStoryState.equippedItems).filter(Boolean) : [])
+        ];
+
+        const validation = validateCraftingCommand(commandResult.command, recipe, availableItems);
+
+        if (validation.canCraft) {
+          // Attempt crafting
+          try {
+            const { InventoryManager } = await import('@/lib/inventory-manager');
+            const inventoryManager = new InventoryManager(baseCharacterProfile, {
+              unequippedItems: currentStoryState.inventory,
+              equippedItems: currentStoryState.equippedItems || {},
+              craftingMaterials: currentStoryState.inventory.filter(item => item.itemType === 'material'),
+              consumables: currentStoryState.inventory.filter(item => item.isConsumable),
+              questItems: currentStoryState.inventory.filter(item => item.itemType === 'quest'),
+              currency: currentStoryState.character.currency || 0
+            }, CRAFTING_RECIPES);
+
+            const craftingResult = inventoryManager.craftItem(recipe.id);
+
+            // Create system message for crafting result
+            const craftingMessage: DisplayMessage = {
+              id: generateUUID(),
+              speakerType: 'SystemHelper',
+              speakerNameLabel: 'Crafting System',
+              content: formatCraftingResult(
+                craftingResult.success,
+                recipe.name,
+                commandResult.command.quantity || 1,
+                craftingResult.qualityAchieved,
+                craftingResult.experienceGained
+              ),
+              isPlayer: false,
+            };
+
+            // Update story state with crafting results
+            if (craftingResult.success) {
+              const updatedStoryState = produce(currentStoryState, draftState => {
+                // Remove consumed materials
+                craftingResult.materialsConsumed.forEach(material => {
+                  const itemIndex = draftState.inventory.findIndex(item => item.id === material.itemId);
+                  if (itemIndex !== -1) {
+                    const item = draftState.inventory[itemIndex];
+                    if (item.quantity && item.quantity > material.quantity) {
+                      item.quantity -= material.quantity;
+                    } else {
+                      draftState.inventory.splice(itemIndex, 1);
+                    }
+                  }
+                });
+
+                // Add crafted items
+                craftingResult.outputItems.forEach(item => {
+                  draftState.inventory.push(item);
+                });
+
+                // Add experience
+                draftState.character.experiencePoints += craftingResult.experienceGained;
+              });
+
+              setCurrentStoryState(updatedStoryState);
+            }
+
+            // Add crafting message to story
+            setStoryHistory(prevHistory => {
+              const lastTurn = prevHistory[prevHistory.length - 1];
+              const newTurnForCrafting: StoryTurn = {
+                id: `crafting-${generateUUID()}`,
+                messages: [craftingMessage],
+                storyStateAfterScene: currentStoryState
+              };
+              return [...prevHistory, newTurnForCrafting];
+            });
+
+            setIsLoadingInteraction(false);
+            return; // Exit early, don't process as regular action
+
+          } catch (craftingError) {
+            console.error("CLIENT: Crafting error:", craftingError);
+            const errorMessage: DisplayMessage = {
+              id: generateUUID(),
+              speakerType: 'SystemHelper',
+              speakerNameLabel: 'Crafting System',
+              content: `Crafting failed: ${craftingError instanceof Error ? craftingError.message : 'Unknown error'}`,
+              isPlayer: false,
+            };
+
+            setStoryHistory(prevHistory => {
+              const lastTurn = prevHistory[prevHistory.length - 1];
+              const newTurnForError: StoryTurn = {
+                id: `crafting-error-${generateUUID()}`,
+                messages: [errorMessage],
+                storyStateAfterScene: currentStoryState
+              };
+              return [...prevHistory, newTurnForError];
+            });
+
+            setIsLoadingInteraction(false);
+            return;
+          }
+        } else {
+          // Cannot craft - show validation message
+          const validationMessage: DisplayMessage = {
+            id: generateUUID(),
+            speakerType: 'SystemHelper',
+            speakerNameLabel: 'Crafting System',
+            content: validation.message,
+            isPlayer: false,
+          };
+
+          setStoryHistory(prevHistory => {
+            const lastTurn = prevHistory[prevHistory.length - 1];
+            const newTurnForValidation: StoryTurn = {
+              id: `crafting-validation-${generateUUID()}`,
+              messages: [validationMessage],
+              storyStateAfterScene: currentStoryState
+            };
+            return [...prevHistory, newTurnForValidation];
+          });
+
+          setIsLoadingInteraction(false);
+          return;
+        }
+      } else {
+        // Unknown recipe
+        const unknownRecipeMessage: DisplayMessage = {
+          id: generateUUID(),
+          speakerType: 'SystemHelper',
+          speakerNameLabel: 'Crafting System',
+          content: `Unknown recipe: "${commandResult.command.recipeName}". Type "recipes" or check the Recipe Book in your inventory to see available crafting recipes.`,
+          isPlayer: false,
+        };
+
+        setStoryHistory(prevHistory => {
+          const lastTurn = prevHistory[prevHistory.length - 1];
+          const newTurnForUnknown: StoryTurn = {
+            id: `crafting-unknown-${generateUUID()}`,
+            messages: [unknownRecipeMessage],
+            storyStateAfterScene: currentStoryState
+          };
+          return [...prevHistory, newTurnForUnknown];
+        });
+
+        setIsLoadingInteraction(false);
+        return;
+      }
+    }
 
     const playerMessage: DisplayMessage = {
       id: generateUUID(),
@@ -1077,6 +1420,60 @@ export default function StoryForgePage() {
         return [...historyWithoutPending, completedTurn];
       });
 
+      // NEW: Run AI Game Master analysis after each story turn
+      try {
+        const { createChatIntegrationSystem } = await import('@/lib/chat-integration-system');
+        const chatSystem = createChatIntegrationSystem({
+          enableAIGM: true,
+          enableAutoProgression: true,
+          enableInventoryManagement: true,
+          enableWorldStateUpdates: true
+        });
+
+        // Run AI GM analysis on the updated state
+        const gmResult = await chatSystem.processChatMessage(
+          '', // Empty message - just trigger GM analysis
+          finalUpdatedBaseStoryState,
+          [...storyHistory.filter(turn => !turn.id.startsWith('pending-')), completedTurn],
+          completedTurn.id,
+          true // isGMCommand = true for AI GM
+        );
+
+        // If GM made changes, update the state and add system messages
+        if (gmResult.gmExecution && gmResult.gmExecution.systemMessages.length > 0) {
+          console.log("CLIENT: AI GM made automatic adjustments:", gmResult.gmExecution.systemMessages.length, "actions");
+
+          // Update story state with GM changes
+          setCurrentStoryState(gmResult.updatedStoryState);
+          finalUpdatedBaseStoryState = gmResult.updatedStoryState;
+
+          // Add GM messages to the current turn
+          completedTurn.messages.push(...gmResult.gmExecution.systemMessages);
+          completedTurn.storyStateAfterScene = gmResult.updatedStoryState;
+
+          // Update the history with GM messages
+          setStoryHistory(prevHistory => {
+            const historyWithoutPending = prevHistory.filter(turn => !turn.id.startsWith('pending-'));
+            return [...historyWithoutPending, completedTurn];
+          });
+        }
+
+        // Log GM analysis for debugging
+        if (gmResult.gmAnalysis) {
+          console.log("CLIENT: AI GM Analysis:", {
+            storyMomentum: gmResult.gmAnalysis.contextAnalysis.storyMomentum,
+            playerEngagement: gmResult.gmAnalysis.contextAnalysis.playerEngagement,
+            narrativeConsistency: gmResult.gmAnalysis.contextAnalysis.narrativeConsistency,
+            systemBalance: gmResult.gmAnalysis.contextAnalysis.systemBalance,
+            decisions: gmResult.gmAnalysis.decisions.length
+          });
+        }
+
+      } catch (error: any) {
+        console.error("CLIENT: AI GM analysis failed:", error);
+        // Don't block the story flow if GM analysis fails
+      }
+
       if (result.newLoreEntries && result.newLoreEntries.length > 0) {
         const keywords = result.newLoreEntries.map(l => l.keyword).join(', ');
         toast({
@@ -1134,10 +1531,12 @@ export default function StoryForgePage() {
   };
 
   const handleRestart = () => {
-    if (currentSession) {
-      localStorage.removeItem(`${SESSION_KEY_PREFIX}${currentSession.id}`);
+    if (typeof window !== 'undefined') {
+      if (currentSession) {
+        localStorage.removeItem(`${SESSION_KEY_PREFIX}${currentSession.id}`);
+      }
+      localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
     }
-    localStorage.removeItem(ACTIVE_SESSION_ID_KEY);
     clearLorebook();
     setStoryHistory([]);
     setCurrentSession(null);
@@ -1149,7 +1548,7 @@ export default function StoryForgePage() {
   };
 
   const handleClearCorrectionLogs = () => {
-    if (currentSession) {
+    if (currentSession && typeof window !== 'undefined') {
         setCurrentSession(prev => {
             if (!prev) return null;
             const updatedSession = { ...prev, allDataCorrectionWarnings: [] };
@@ -1292,23 +1691,41 @@ export default function StoryForgePage() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-screen bg-background selection:bg-primary/20 selection:text-primary overflow-hidden">
-        <header className="mb-2 text-center pt-4 sm:pt-6 shrink-0">
-          <h1 className="font-headline text-5xl sm:text-6xl font-bold text-primary flex items-center justify-center">
-            <MessageSquareDashedIcon className="w-10 h-10 sm:w-12 sm:h-12 mr-3 text-accent" />
-            Story Forge
-          </h1>
-          <p className="text-muted-foreground text-lg mt-1">
-            Forge your legend in worlds you know, or discover new ones.
-          </p>
+      <div className="flex flex-col h-screen bg-background selection:bg-primary/20 selection:text-primary overflow-hidden relative">
+        {/* Enhanced Header */}
+        <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
+          <div className="w-full max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[85vw] 3xl:max-w-[80vw] 4xl:max-w-[75vw] mx-auto flex h-12 sm:h-14 items-center justify-between px-2 sm:px-4 lg:px-6 xl:px-8">
+            <div className="flex items-center space-x-3">
+              <div className="relative">
+                <Sparkles className="h-8 w-8 text-primary animate-pulse" />
+                <div className="absolute inset-0 h-8 w-8 text-primary animate-ping opacity-20">
+                  <Sparkles className="h-8 w-8" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gradient-primary font-headline">Story Forge</h1>
+                <p className="text-xs text-muted-foreground hidden sm:block">AI-Powered Interactive Fiction</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <ThemeToggle />
+              {currentSession && (
+                <Button variant="ghost" size="icon-sm" className="hover-lift">
+                  <Settings className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
         </header>
 
-        <main className="flex flex-col flex-grow w-full max-w-2xl mx-auto px-4 sm:px-6 overflow-hidden">
+        <main className="flex flex-col flex-grow w-full max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[85vw] 3xl:max-w-[80vw] 4xl:max-w-[75vw] mx-auto px-2 sm:px-4 lg:px-6 xl:px-8 py-3 sm:py-4 lg:py-6 overflow-hidden">
           {isLoadingInteraction && (
-            <div className="flex justify-center items-center p-4 rounded-md bg-card/80 backdrop-blur-sm shadow-md fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 border border-border">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-3 text-lg text-foreground">{loadingMessage || "AI is working..."}</p>
-            </div>
+            <EnhancedLoading
+              variant="ai"
+              size="lg"
+              message={loadingMessage || "AI is working..."}
+              overlay={true}
+            />
           )}
 
           {!currentSession && !isLoadingInteraction && (
@@ -1321,36 +1738,44 @@ export default function StoryForgePage() {
           )}
 
           {currentSession && baseCharacterProfile && currentStoryState && (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden">
-              <TabsList className="grid w-full grid-cols-7 mb-4 shrink-0">
-                <TabsTrigger value="story" className="text-xs sm:text-sm">
-                  <Sparkles className="w-4 h-4 mr-1 sm:mr-2" /> Story
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-grow overflow-hidden animate-fade-in">
+              <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 mb-2 sm:mb-3 lg:mb-4 shrink-0 bg-card/50 backdrop-blur-sm border border-border/50 p-1 rounded-lg gap-1">
+                <TabsTrigger value="story" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Sparkles className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Story</span>
                 </TabsTrigger>
-                <TabsTrigger value="character" className="text-xs sm:text-sm">
-                  <BookUser className="w-4 h-4 mr-1 sm:mr-2" /> Character
+                <TabsTrigger value="character" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <BookUser className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Character</span>
                 </TabsTrigger>
-                <TabsTrigger value="progression" className="text-xs sm:text-sm">
-                  <TrendingUp className="w-4 h-4 mr-1 sm:mr-2" /> Progression
+                <TabsTrigger value="progression" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <TrendingUp className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Progress</span>
                 </TabsTrigger>
-                <TabsTrigger value="inventory" className="text-xs sm:text-sm">
-                  <PackageIcon className="w-4 h-4 mr-1 sm:mr-2" /> Inventory
+                <TabsTrigger value="inventory" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <PackageIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Inventory</span>
                 </TabsTrigger>
-                 <TabsTrigger value="npcs" className="text-xs sm:text-sm">
-                  <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" /> NPCs
+                 <TabsTrigger value="npcs" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <UsersIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">NPCs</span>
                 </TabsTrigger>
-                <TabsTrigger value="journal" className="text-xs sm:text-sm">
-                  <StickyNote className="w-4 h-4 mr-1 sm:mr-2" /> Journal
+                <TabsTrigger value="journal" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <StickyNote className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Journal</span>
                 </TabsTrigger>
-                <TabsTrigger value="lorebook" className="text-xs sm:text-sm">
-                  <Library className="w-4 h-4 mr-1 sm:mr-2" /> Lorebook
+                <TabsTrigger value="lorebook" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Library className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Lorebook</span>
                 </TabsTrigger>
-                <TabsTrigger value="dev-logs" className="text-xs sm:text-sm">
-                  <ClipboardListIcon className="w-4 h-4 mr-1 sm:mr-2" /> Dev Logs
+                <TabsTrigger value="dev-logs" className="text-xs sm:text-sm transition-all duration-200 hover-lift data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <ClipboardListIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Dev Logs</span>
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="story" className="flex flex-col flex-grow space-y-4 overflow-hidden min-h-0">
-                <div className="shrink-0 flex justify-between items-center">
+              <TabsContent value="story" className="flex flex-col flex-grow space-y-2 sm:space-y-3 overflow-hidden min-h-0">
+                <div className="shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 sm:gap-2">
                   <StoryControls
                       onUndo={handleUndo}
                       onRestart={handleRestart}
@@ -1361,7 +1786,7 @@ export default function StoryForgePage() {
                     variant="outline"
                     onClick={handleTestSimpleAction}
                     disabled={isLoadingInteraction}
-                    className="ml-2"
+                    className="sm:ml-2"
                     size="sm"
                   >
                     <TestTubeIcon className="mr-2 h-4 w-4 text-purple-500" />
@@ -1373,6 +1798,7 @@ export default function StoryForgePage() {
                       character={effectiveCharacterProfileForAI || baseCharacterProfile}
                       storyState={currentStoryState}
                       isPremiumSession={currentSession.isPremiumSession}
+                      className="compact-mode"
                   />
                 </div>
                 {showCombatInterface && activeCombatState ? (
@@ -1381,15 +1807,28 @@ export default function StoryForgePage() {
                     onActionExecuted={handleCombatActionExecuted}
                   />
                 ) : (
-                  <StoryDisplay
-                    storyHistory={storyHistory}
-                    isLoadingInteraction={isLoadingInteraction}
-                    onStartInteractiveCombat={handleStartInteractiveCombat}
-                  />
+                  <>
+                    <ImmersiveStoryDisplay
+                      storyHistory={storyHistory}
+                      isLoadingInteraction={isLoadingInteraction}
+                      onStartInteractiveCombat={handleStartInteractiveCombat}
+                      isImmersiveMode={isImmersiveMode}
+                      onToggleImmersiveMode={() => setIsImmersiveMode(!isImmersiveMode)}
+                      onShowFloatingInput={() => setShowFloatingInput(true)}
+                    />
+
+                    {/* Smart Input Toggle - Only show when not in immersive mode */}
+                    {!isImmersiveMode && (
+                      <div className="shrink-0 mt-2">
+                        <SmartInputToggle
+                          onShowFloatingInput={() => setShowFloatingInput(true)}
+                          isLoading={isLoadingInteraction}
+                          variant="inline"
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
-                <div className="shrink-0 pt-2">
-                  <UserInputForm onSubmit={handleUserAction} isLoading={isLoadingInteraction} />
-                </div>
               </TabsContent>
 
               <TabsContent value="character" className="overflow-y-auto flex-grow">
@@ -1485,9 +1924,22 @@ export default function StoryForgePage() {
               </div>
           )}
         </main>
-        <footer className="mt-4 text-center text-sm text-muted-foreground pb-4 sm:pb-6 shrink-0">
+        <footer className="mt-2 text-center text-xs text-muted-foreground pb-2 sm:pb-3 shrink-0">
           <p>&copy; {new Date().getFullYear()} Story Forge. Powered by GenAI.</p>
         </footer>
+
+        {/* Floating Input Form */}
+        <FloatingInputForm
+          onSubmit={handleUserAction}
+          isLoading={isLoadingInteraction}
+          isVisible={showFloatingInput}
+          onToggleVisibility={() => setShowFloatingInput(!showFloatingInput)}
+        />
+
+        {/* Floating Action Button now handled inside ImmersiveStoryDisplay */}
+
+        {/* Immersive Mode Help Overlay */}
+        <ImmersiveHelpOverlay isImmersiveMode={isImmersiveMode} />
       </div>
     </TooltipProvider>
   );

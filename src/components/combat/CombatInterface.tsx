@@ -215,7 +215,7 @@ export default function CombatInterface({
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
           {/* Participants Display */}
           <div className="space-y-4">
             <h3 className="font-semibold flex items-center gap-2">

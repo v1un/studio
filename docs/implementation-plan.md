@@ -109,16 +109,12 @@ export interface SeriesConfig {
 
 ### 3.1 Combat Integration
 
-#### 3.1.1 Add Combat Generation to Phase 1
+#### 3.1.1 Dynamic Combat Generation
 ```typescript
-// File: src/ai/flows/generate-scenario-from-series.ts
-// In character-scene phase, add:
-const combatScenario = await generateInitialCombatScenario({
-  characterProfile: result.characterProfile,
-  currentLocation: result.currentLocation,
-  seriesContext: input.seriesName,
-  difficultyLevel: 'easy', // Starting scenario
-});
+// Combat scenarios are generated dynamically during gameplay
+// based on current story state and character progression.
+// No pre-generation during scenario creation to ensure
+// encounters are balanced for current character level and story context.
 ```
 
 #### 3.1.2 Tactical Considerations

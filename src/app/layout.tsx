@@ -1,11 +1,37 @@
 
-import type {Metadata} from 'next';
+import type {Metadata, Viewport} from 'next';
+import { Inter } from 'next/font/google';
+import { Literata } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import { ThemeProvider } from "@/components/ui/theme-provider";
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const literata = Literata({
+  subsets: ['latin'],
+  variable: '--font-literata',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Story Forge',
   description: 'Craft your own adventures with Story Forge, an AI-powered storytelling game.',
+  keywords: ['storytelling', 'AI', 'game', 'interactive fiction', 'RPG'],
+  authors: [{ name: 'Story Forge Team' }],
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#8B5CF6' },
+    { media: '(prefers-color-scheme: dark)', color: '#8B5CF6' }
+  ],
 };
 
 export default function RootLayout({
@@ -14,17 +40,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet" />
-        <link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400..700;1,7..72,400..700&display=swap" rel="stylesheet" />
-
-      </head>
-      <body className="font-body antialiased h-full bg-background">
-        {children}
-        <Toaster />
+    <html lang="en" className={`h-full ${inter.variable} ${literata.variable}`} suppressHydrationWarning>
+      <body className="font-body antialiased h-full bg-background text-foreground overflow-x-hidden">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange={false}
+        >
+          <div className="relative min-h-full bg-gradient-to-br from-background via-background-secondary to-background-tertiary">
+            {children}
+            <Toaster />
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );

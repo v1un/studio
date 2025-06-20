@@ -55,24 +55,24 @@ function QuickStatsCard({ character, storyState }: { character: CharacterProfile
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center space-x-2">
-          <User className="w-5 h-5" />
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center space-x-2 text-base">
+          <User className="w-4 h-4" />
           <span>{character.name}</span>
-          <Badge variant="outline">Level {character.level}</Badge>
+          <Badge variant="outline" className="text-xs">Level {character.level}</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {/* Core Stats */}
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 gap-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Heart className="w-4 h-4 text-red-500" />
-              <span className="text-sm font-medium">Health</span>
+              <Heart className="w-3 h-3 text-red-500" />
+              <span className="text-xs font-medium">Health</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Progress value={healthPercentage} className="w-20 h-2" />
-              <span className={`text-sm font-bold ${getHealthColor(healthPercentage)}`}>
+              <Progress value={healthPercentage} className="w-16 h-1.5" />
+              <span className={`text-xs font-bold ${getHealthColor(healthPercentage)}`}>
                 {character.health}/{character.maxHealth}
               </span>
             </div>
@@ -267,32 +267,34 @@ function ActiveQuestsCard({ storyState }: { storyState: StructuredStoryState }) 
   );
 }
 
-export default function EnhancedCharacterStatus({ 
-  character, 
-  storyState, 
-  isPremiumSession = false, 
-  className = '' 
+export default function EnhancedCharacterStatus({
+  character,
+  storyState,
+  isPremiumSession = false,
+  className = ''
 }: EnhancedCharacterStatusProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const isCompactMode = className.includes('compact-mode');
 
   return (
     <div className={className}>
       {/* Quick Overview - Always Visible */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-3 lg:gap-4 ${isCompactMode ? 'mb-2' : 'mb-4'}`}>
         <QuickStatsCard character={character} storyState={storyState} />
         <QuickRelationshipsCard storyState={storyState} />
         <ActiveQuestsCard storyState={storyState} />
       </div>
 
       {/* Expand/Collapse Button */}
-      <div className="flex justify-center mb-4">
+      <div className={`flex justify-center ${isCompactMode ? 'mb-2' : 'mb-4'}`}>
         <Button
           variant="outline"
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex items-center space-x-2"
+          size={isCompactMode ? "sm" : "default"}
         >
           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          <span>{isExpanded ? 'Hide' : 'Show'} Detailed Status</span>
+          <span className={isCompactMode ? "text-sm" : ""}>{isExpanded ? 'Hide' : 'Show'} Detailed Status</span>
         </Button>
       </div>
 

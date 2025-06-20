@@ -133,7 +133,7 @@ export default function SkillTreeViewer({ character, onCharacterUpdate }: SkillT
         <div>
           <h2 className="text-2xl font-bold">Skill Trees</h2>
           <p className="text-muted-foreground">
-            Develop your character's abilities and unlock new powers
+            Develop your character&apos;s abilities and unlock new powers
           </p>
         </div>
         <Badge variant="secondary" className="text-lg px-3 py-1">
